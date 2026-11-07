@@ -40,7 +40,7 @@ Node* assembly_root(World& w,Node& n,JointGraph& graph) {
     // Exact native tie ordering is unspecified; keep one local selection for
     // every query in this world, independent of which member was queried.
     std::unordered_set<std::string> ids;for(auto* p:candidates)ids.insert(p->id);
-    for(const auto& id:w.order)if(ids.count(id))return find_node(w,id);
+    sync_world_indices(w);Node* best_root=nullptr;for(auto* p:candidates)if(!best_root||p->order_index<best_root->order_index)best_root=p;if(best_root)return best_root;
     throw std::runtime_error("assembly root is unavailable");
 }
 int get_assembly_root(lua_State* L) {
@@ -177,11 +177,11 @@ void invalidate_joint_topology(World& w,Node& n,const std::string& key) {
         w.active_pose_joints.erase(n.id);w.joint_topology_dirty=true;
     } else if(key=="Anchored"&&pivot_part(w,n))w.joint_topology_dirty=true;
     else if(key=="Parent") {
-        w.joint_topology_dirty=true;
+        w.joint_topology_dirty=true;const bool has_children=!direct_children(w,n.id).empty();if(!has_children&&!joint_rigid(n)&&!pivot_part(w,n))return;
         // Invalidate affected edges even when a subtree leaves and re-enters
         // the same world within one scheduler turn.
         auto affected=[&](const std::string& id) {
-            auto* node=find_node(w,id);return id==n.id||(node&&is_descendant_of(w,*node,n.id));
+            if(!has_children)return id==n.id;auto* node=find_node(w,id);return id==n.id||(node&&is_descendant_of(w,*node,n.id));
         };
         for(auto it=w.active_pose_joints.begin();it!=w.active_pose_joints.end();) {
             if(affected(it->first)||affected(it->second.first)||affected(it->second.second))it=w.active_pose_joints.erase(it);
@@ -237,7 +237,7 @@ void flush_joint_poses(World& w,std::unordered_set<std::string> pending,const st
         }
         PoseChanges changes;
         // Stable order keeps mutation records deterministic across runs.
-        for(const auto& id:w.order)if(roots.count(id)) {
+        if(!roots.empty())for(const auto& id:w.order)if(roots.count(id)) {
             auto parts=prepare_joint_poses(w,graph,*roots.at(id),modified,true,authoritative);
             for(auto& item:parts)changes.push_back(std::move(item));
         }

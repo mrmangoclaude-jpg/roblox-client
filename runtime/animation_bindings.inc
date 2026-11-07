@@ -55,7 +55,7 @@ Node* animator_for(World& w,Node& n,bool create){
     if(n.destroyed)throw std::runtime_error("animation receiver is destroyed");
     if(n.class_name=="Animator")return &n;
     if(n.class_name!="Humanoid"&&n.class_name!="AnimationController")throw std::runtime_error("Animator, Humanoid or AnimationController required");
-    for(const auto& id:w.order){auto& child=w.nodes.at(id);if(!child.destroyed&&child.class_name=="Animator"&&parent_id(w,child)==n.id)return &child;}
+    for(const auto& id:direct_children(w,n.id)){auto& child=w.nodes.at(id);if(!child.destroyed&&child.class_name=="Animator")return &child;}
     return create?animation_node(w,"Animator","Animator",n.id):nullptr;
 }
 const Json* track_clip(World& w,const AnimationTrackState& track){auto it=w.animation.clips.find(track.reference);return it==w.animation.clips.end()?nullptr:&it->second;}

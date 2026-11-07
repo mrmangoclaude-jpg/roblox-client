@@ -100,7 +100,7 @@ int player_distance_from_character(lua_State* L) {
     Node* character=reference->is_object()&&reference->contains("$ref")?find_node(world,reference->at("$ref").get<std::string>()):nullptr;
     Node* root=nullptr;
     if(character) {
-        for(const auto& id:world.order){auto* node=find_node(world,id);if(node&&!node->destroyed&&parent_id(world,*node)==character->id&&instance_name(world,*node)=="HumanoidRootPart"){root=node;break;}}
+        for(const auto& id:direct_children(world,character->id)){auto* node=find_node(world,id);if(node&&!node->destroyed&&instance_name(world,*node)=="HumanoidRootPart"){root=node;break;}}
         if(!root){auto* primary=property_value(world,*character,"PrimaryPart");if(primary&&primary->is_object()&&primary->contains("$ref"))root=find_node(world,primary->at("$ref").get<std::string>());}
     }
     if(!root||!class_is_a(world,root->class_name,"BasePart")){lua_pushnumber(L,0);return 1;}

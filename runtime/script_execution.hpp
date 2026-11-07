@@ -12,6 +12,7 @@ class ScriptExecution {
     world_bindings::World& world;
     SourceScheduler& scheduler;
     Json catalog=Json::object(),local_sources=Json::object();
+    size_t local_sources_bytes=2;
     Json builtin_scripts=Json::array();
     int interface_ref=LUA_NOREF;
     bool initial_ready=true;
@@ -31,7 +32,7 @@ class ScriptExecution {
     }
     int invoke(lua_State* L,int operation) {
         if(operation==0) {
-            for(auto& [id,node]:world.nodes) {
+            for(const auto& id:world_bindings::get_script_order(world)) { auto& node=world.nodes.at(id);
                 if(node.script_code.is_object()&&node.script_code.value("authored_override",false))continue;
                 if(local_sources.contains(id))node.script_code=local_sources[id];
                 else if(catalog.contains(id))node.script_code=catalog[id];
@@ -87,9 +88,9 @@ class ScriptExecution {
         if(operation==5) {
             auto id=instance_id(L,1);size_t length=0;const char* text=luaL_checklstring(L,2,&length);
             if(length>128*1024)throw std::runtime_error("script source exceeds 128 KiB");
-            Json proposed=local_sources;proposed[id]=Json{{"source",std::string(text,length)}};
-            if(proposed.dump().size()>4*1024*1024)throw std::runtime_error("local source catalog exceeds 4 MiB");
-            local_sources=std::move(proposed);world.nodes.at(id).script_code=local_sources[id];return 0;
+            Json entry{{"source",std::string(text,length)}};size_t entry_bytes=Json(id).dump().size()+entry.dump().size()+2;size_t old_bytes=local_sources.contains(id)?Json(id).dump().size()+local_sources[id].dump().size()+2:0;
+            if(local_sources_bytes-old_bytes+entry_bytes>4*1024*1024)throw std::runtime_error("local source catalog exceeds 4 MiB");
+            local_sources_bytes=local_sources_bytes-old_bytes+entry_bytes;local_sources[id]=std::move(entry);world.nodes.at(id).script_code=local_sources[id];return 0;
         }
         if(operation==6){push_method(L,"status");lua_call(L,0,1);return 1;}
         if(operation==7){auto id=instance_id(L,1);lua_pushlstring(L,id.data(),id.size());return 1;}

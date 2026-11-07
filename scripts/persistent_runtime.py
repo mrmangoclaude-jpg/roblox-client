@@ -585,7 +585,7 @@ class PersistentClientScriptRuntime:
                 raise
             self.world = world
             self._session_stats_sent = snapshot['session_stats']
-            self.revision = snapshot['sequence']
+            self.revision = snapshot.get('sequence', world.revision)
             if hasattr(world.actions, 'retain'):
                 self._action_journal = world.actions
                 self._action_reader = self._action_journal.retain(self.revision)
@@ -742,6 +742,13 @@ class PersistentClientScriptRuntime:
     def render_frame(self):
         # The owner thread supplies a read-only VM projection. No per-frame
         # Luau jobs, script catalog copies, or replay-journal snapshots.
+        if self._background_lane is not None:
+            if self.host is None: return {'ok': False, 'error': 'The game frame is temporarily unavailable.'}
+            if self._background_context is not None:
+                self._finish_background(wait=False)
+                if self._background_context is not None: return {'ok': False, 'error': 'The game frame is temporarily unavailable.'}
+            if self.world is not None and self.world.revision - self.revision <= 2048: self._synchronize_once(timeout_ms=10)
+            return self.host.call({'op':'render'})
         self.synchronize(timeout_ms=10)
         return self.host.call({'op':'render'})
 

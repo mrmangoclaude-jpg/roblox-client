@@ -43,6 +43,7 @@ struct Node {
     std::string script_origin;
     std::string image_load_token;
     bool image_loaded=false;
+    size_t order_index=static_cast<size_t>(-1);
 };
 
 struct Signal {
@@ -182,6 +183,11 @@ struct World {
     }
     std::unordered_map<std::string, Node> nodes;
     std::vector<std::string> order;
+    std::unordered_map<std::string, std::vector<std::string>> children_cache;
+    std::vector<std::string> script_order;
+    std::vector<std::string> joint_order;
+    size_t indexed_order_size = 0;
+    bool children_dirty = true;
     std::unordered_map<std::string, std::string> services;
     std::string local_player;
     std::string job_id;
@@ -276,6 +282,7 @@ void dispatch_events(lua_State* from,World& world);
 // Settle function callbacks between scheduler turns without advancing a frame.
 void progress_invocations(lua_State* from,World& world);
 void update_snapshot(lua_State* from,World& world,const std::string& text);
+void update_snapshot(lua_State* from,World& world,const Json& delta);
 // Apply a validated local engine pose to the local Character overlay only.
 // This never changes received node properties, replication sequence, or mutations.
 Json apply_engine_poses(World& world,const Json& poses);
@@ -286,6 +293,7 @@ void complete_remote_server(lua_State* from,World& world,const Json& responses);
 void push_instance(lua_State* L,World& world,const std::string& id);
 std::string instance_display_name(World& world,const std::string& id);
 Json script_nodes(World& world);
+const std::vector<std::string>& get_script_order(World& world);
 // Read-only bounded projection for local browser/native display surfaces.
 Json render_snapshot(World& world);
 void render_gui_action(World& world,const Json& action);

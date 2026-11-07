@@ -6,6 +6,21 @@ on:
 permissions:
   contents: read
 jobs:
+  windows-binary:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select stable Rust
+        run: rustup default stable
+      - name: Build headless-luau release binary
+        run: cargo build --release --locked --jobs 4 --manifest-path rust-client/Cargo.toml
+      - name: Upload Windows headless-luau artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-headless-luau
+          path: rust-client/target/release/headless-luau.exe
+          if-no-files-found: error
   offline:
     strategy:
       fail-fast: false

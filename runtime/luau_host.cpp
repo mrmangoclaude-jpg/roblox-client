@@ -474,7 +474,7 @@ public:
             scheduler->start(thread);lua_pop(environment,1);
         } else if(operation=="update") {
             request_stage="world_update";
-            world_bindings::update_snapshot(environment,*world,command.at("delta").dump());
+            world_bindings::update_snapshot(environment,*world,command.at("delta"));
             if(command.at("delta").contains("script_sources"))script_execution->update(command.at("delta").at("script_sources"));
             if(command.at("delta").contains("initial_replication_complete"))script_execution->set_initial_ready(command.at("delta").at("initial_replication_complete").get<bool>());
             if(command.at("delta").contains("engine_poses"))engine_poses=&command.at("delta").at("engine_poses");

@@ -31,7 +31,7 @@ CFrameValue pivot_inverse(const CFrameValue& cf){CFrameValue result;frame_invers
 std::vector<Node*> pivot_descendants(World& w,Node& n,bool include_self=false) {
     std::vector<Node*> result;
     if(include_self)result.push_back(&n);
-    for(const auto& id:w.order){auto& child=w.nodes.at(id);if(!child.destroyed&&is_descendant_of(w,child,n.id))result.push_back(&child);}
+    for(Node* child:descendant_nodes(w,n,false))if(!child->destroyed)result.push_back(child);
     return result;
 }
 std::pair<CFrameValue,FrameVector> pivot_bounds(World& w,Node& n,const CFrameValue& axes) {

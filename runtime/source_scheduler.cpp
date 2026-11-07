@@ -83,7 +83,7 @@ int SourceScheduler::identity_api(lua_State* L) {
         // Identity is the VM's native integer field. Preserve Luau's numeric
         // conversion even for nonstandard IDs; unknown IDs grant no engine
         // capabilities and do not change the thread's source provenance.
-        int value=luaL_checkinteger(L,1);
+        double raw=luaL_checknumber(L,1);if(!(raw>=0))return luaL_error(L,"identity must be non-negative"),0;int value=std::isinf(raw)?9:luaL_checkinteger(L,1);
         try{set_identity(L,value);}catch(const std::exception& e){return luaL_error(L,"%s",e.what()),0;}
         return 0;
     }

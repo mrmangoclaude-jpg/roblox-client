@@ -599,12 +599,75 @@ bool class_is_a(const World& world, const std::string& actual, const std::string
 }
 std::string character_motion_root_id(World&,Node&);
 #include "physics_force_bindings.inc"
+using Children = std::unordered_map<std::string,std::vector<std::string>>;
+bool is_script_class(const std::string& cls) {
+    return cls=="LocalScript"||cls=="ModuleScript"||cls=="Script";
+}
+bool is_joint_index_class(World& w,const std::string& cls) {
+    return cls=="WeldConstraint"||class_is_a(w,cls,"JointInstance")||class_is_a(w,cls,"Constraint");
+}
+void sync_world_indices(World& w) {
+    if(w.children_dirty) {
+        w.children_cache.clear();w.script_order.clear();w.joint_order.clear();
+        for(size_t i=0;i<w.order.size();++i) {
+            auto& node=w.nodes.at(w.order[i]);node.order_index=i;
+            if(is_script_class(node.class_name))w.script_order.push_back(node.id);
+            if(is_joint_index_class(w,node.class_name))w.joint_order.push_back(node.id);
+            auto p=parent_id(w,node);if(!p.empty())w.children_cache[p].push_back(node.id);
+        }
+        w.indexed_order_size=w.order.size();w.children_dirty=false;return;
+    }
+    for(size_t i=w.indexed_order_size;i<w.order.size();++i) {
+        auto& node=w.nodes.at(w.order[i]);node.order_index=i;
+        if(is_script_class(node.class_name))w.script_order.push_back(node.id);
+        if(is_joint_index_class(w,node.class_name))w.joint_order.push_back(node.id);
+        auto p=parent_id(w,node);if(!p.empty())w.children_cache[p].push_back(node.id);
+    }
+    w.indexed_order_size=w.order.size();
+}
+const Children& get_children_index(World& w) {
+    sync_world_indices(w);return w.children_cache;
+}
+const std::vector<std::string>& get_joint_order(World& w) {
+    sync_world_indices(w);return w.joint_order;
+}
+const std::vector<std::string>& direct_children(World& w,const std::string& parent) {
+    static const std::vector<std::string> empty;
+    const auto& children=get_children_index(w);
+    auto it=children.find(parent);return it==children.end()?empty:it->second;
+}
+std::vector<Node*> descendant_nodes(World& w,Node& root,bool include_root=false) {
+    std::vector<Node*> result;
+    if(include_root)result.push_back(&root);
+    const auto& children=get_children_index(w);
+    auto root_it=children.find(root.id);
+    if(root_it==children.end()||root_it->second.empty())return result;
+    const size_t start_offset=result.size();
+    std::deque<std::string> pending(root_it->second.begin(),root_it->second.end());
+    std::unordered_set<std::string> seen{root.id};
+    while(!pending.empty()) {
+        auto id=std::move(pending.front());pending.pop_front();
+        if(!seen.insert(id).second)continue;
+        Node* child=find_node(w,id);if(!child)continue;
+        result.push_back(child);
+        auto it=children.find(id);
+        if(it!=children.end())for(const auto& grand:it->second)pending.push_back(grand);
+    }
+    if(result.size()-start_offset>1) {
+        std::sort(result.begin()+start_offset,result.end(),[](const Node* a,const Node* b){return a->order_index<b->order_index;});
+    }
+    return result;
+}
 void push_children(lua_State* L, World& world, const Node& parent, bool recursive) {
     lua_newtable(L); int idx=1;
-    for (const std::string& id:world.order) {
-        Node& child=world.nodes.at(id);
-        bool match = recursive ? is_descendant_of(world,child,parent.id) : parent_id(world,child)==parent.id;
-        if (match) { push_node(L,world,&child); lua_rawseti(L,-2,idx++); }
+    if(!recursive) {
+        for(const std::string& id:direct_children(world,parent.id)) {
+            push_node(L,world,&world.nodes.at(id));lua_rawseti(L,-2,idx++);
+        }
+        return;
+    }
+    for(Node* child:descendant_nodes(world,const_cast<Node&>(parent),false)) {
+        push_node(L,world,child);lua_rawseti(L,-2,idx++);
     }
 }
 int is_a(lua_State* L) {
@@ -616,13 +679,21 @@ int get_descendants(lua_State* L) { Handle* h=checked_handle(L,1); push_children
 int find_child(lua_State* L) {
     Handle* h=checked_handle(L,1); std::string name=luaL_checkstring(L,2); bool recursive=lua_gettop(L)>=3 && lua_toboolean(L,3);
     World& w=*h->world;
-    for(const std::string& id:w.order) { Node& n=w.nodes.at(id); if((recursive?is_descendant_of(w,n,h->node->id):parent_id(w,n)==h->node->id) && instance_name(w,n)==name) { push_node(L,w,&n); return 1; } }
+    if(!recursive) {
+        for(const std::string& id:direct_children(w,h->node->id)) { Node& n=w.nodes.at(id); if(instance_name(w,n)==name) { push_node(L,w,&n); return 1; } }
+    } else {
+        for(Node* n:descendant_nodes(w,*h->node,false)) { if(instance_name(w,*n)==name) { push_node(L,w,n); return 1; } }
+    }
     lua_pushnil(L); return 1;
 }
 int find_class(lua_State* L, bool which) {
     Handle* h=checked_handle(L,1); std::string name=luaL_checkstring(L,2); bool recursive=which && lua_gettop(L)>=3 && lua_toboolean(L,3);
     World& w=*h->world;
-    for(const std::string& id:w.order) { Node& n=w.nodes.at(id); bool child=recursive?is_descendant_of(w,n,h->node->id):parent_id(w,n)==h->node->id; if(child && (which?class_is_a(w,n.class_name,name):n.class_name==name)) { push_node(L,w,&n); return 1; } }
+    if(!recursive) {
+        for(const std::string& id:direct_children(w,h->node->id)) { Node& n=w.nodes.at(id); if(which?class_is_a(w,n.class_name,name):n.class_name==name) { push_node(L,w,&n); return 1; } }
+    } else {
+        for(Node* n:descendant_nodes(w,*h->node,false)) { if(which?class_is_a(w,n->class_name,name):n->class_name==name) { push_node(L,w,n); return 1; } }
+    }
     lua_pushnil(L); return 1;
 }
 int find_child_class(lua_State* L) { return find_class(L,false); }
@@ -900,6 +971,25 @@ std::vector<Node*> ancestors(World& w,const std::string& parent) {
     return result;
 }
 void parent_events(World& w,Node& node,const std::string& old_parent,const std::string& new_parent) {
+    const bool already_indexed=!w.children_dirty&&node.order_index<w.indexed_order_size&&
+        node.order_index<w.order.size()&&w.order[node.order_index]==node.id;
+    sync_world_indices(w);
+    if(already_indexed&&old_parent!=new_parent) {
+        if(!old_parent.empty()) {
+            auto it=w.children_cache.find(old_parent);
+            if(it!=w.children_cache.end()) {
+                auto& vec=it->second;
+                vec.erase(std::remove(vec.begin(),vec.end(),node.id),vec.end());
+            }
+        }
+        if(!new_parent.empty()) {
+            auto& vec=w.children_cache[new_parent];
+            auto pos=std::lower_bound(vec.begin(),vec.end(),node.id,[&](const std::string& a,const std::string& b) {
+                return w.nodes.at(a).order_index<w.nodes.at(b).order_index;
+            });
+            if(pos==vec.end()||*pos!=node.id)vec.insert(pos,node.id);
+        }
+    }
     if(old_parent==new_parent)return;
     if(node.class_name=="ScrollingFrame")w.active_scroll_layouts.insert(node.id);
     if(class_is_a(w,node.class_name,"GuiObject")) {
@@ -912,7 +1002,7 @@ void parent_events(World& w,Node& node,const std::string& old_parent,const std::
     if(!w.hierarchy_events_observed) {
         emit(w,node,"Changed",Json::array({"Parent"}));emit(w,node,"property:Parent");return;
     }
-    std::vector<Node*> subtree{&node};for(auto& id:w.order)if(is_descendant_of(w,w.nodes.at(id),node.id))subtree.push_back(&w.nodes.at(id));
+    std::vector<Node*> subtree=descendant_nodes(w,node,true);
     auto old=ancestors(w,old_parent),now=ancestors(w,new_parent);
     for(auto* p:old)if(std::find(now.begin(),now.end(),p)==now.end())for(auto* n:subtree)emit(w,*p,"DescendantRemoving",Json::array({Json{{"$ref",n->id}}}));
     if(auto* p=find_node(w,old_parent))emit(w,*p,"ChildRemoved",Json::array({Json{{"$ref",node.id}}}));
@@ -1334,7 +1424,7 @@ int instance_index(lua_State* L) {
     if(n.class_name=="RunService" && (key=="IsRunning" || key=="IsClient")){lua_pushcfunction(L,run_service_true,"RunService mode");return 1;}
     const Json* value=property_value(w,n,key);
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
-    if(!value)for(const auto& id:w.order){Node& child=w.nodes.at(id);if(parent_id(w,child)==n.id&&instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
+    if(!value)for(const auto& id:direct_children(w,n.id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
     if(!value){luaL_error(L,"property '%s' unavailable in snapshot for %s (%s)",key.c_str(),n.name.c_str(),n.class_name.c_str());return 0;}
     // The replication reader retains PhysicalProperties as a 5/6-scalar
     // array. Expose the typed source value without altering received data.
@@ -1439,11 +1529,8 @@ Node* ensure_client_service(World& w,const std::string& service) {
     append_mutations(w,std::move(entries));parent_events(w,created,"",w.game_id);return &created;
 }
 Node* ensure_http_service(World& w){return ensure_client_service(w,"HttpService");}
-using Children = std::unordered_map<std::string,std::vector<std::string>>;
-Children children_index(World& w) {
-    Children children;
-    for(const auto& id:w.order) {const auto& node=w.nodes.at(id);auto p=parent_id(w,node);if(!p.empty())children[p].push_back(id);}
-    return children;
+const Children& children_index(World& w) {
+    return get_children_index(w);
 }
 bool archivable(World& w,const Node& n) {
     auto* value=property_value(w,n,"Archivable");
@@ -1464,7 +1551,7 @@ int clone_instance(lua_State* L) {
     Handle* h=checked_handle(L,1);World& w=*h->world;
     try {
         if(!archivable(w,*h->node)){lua_pushnil(L);return 1;}
-        const auto children=children_index(w);
+        const auto& children=children_index(w);
         std::deque<std::string> pending{h->node->id};std::vector<std::string> selected;
         while(!pending.empty()) {
             auto id=pending.front();pending.pop_front();const auto& node=w.nodes.at(id);
@@ -1481,7 +1568,7 @@ int clone_instance(lua_State* L) {
             const Node& original=w.nodes.at(id);Node copy=original;
             copy.image_load_token.clear();copy.image_loaded=false;
             if(copy.class_name=="LocalScript"||copy.class_name=="ModuleScript"||copy.class_name=="Script")copy.script_origin=id;
-            copy.id=ids.at(id);copy.name=instance_name(w,original);copy.destroyed=false;copy.server_owned=false;
+            copy.id=ids.at(id);copy.order_index=static_cast<size_t>(-1);copy.name=instance_name(w,original);copy.destroyed=false;copy.server_owned=false;
             auto parent=parent_id(w,original);copy.parent=id==h->node->id?"":ids.at(parent);
             auto overrides=w.local_properties.find(id);
             if(overrides!=w.local_properties.end())for(auto it=overrides->second.begin();it!=overrides->second.end();++it)copy.properties[it.key()]=it.value();
@@ -1516,7 +1603,7 @@ int clone_instance(lua_State* L) {
     }catch(const std::exception& e){luaL_error(L,"Clone failed: %s",e.what());return 0;}
 }
 void destroy_roots(World& w,const std::vector<std::string>& roots) {
-    const auto children=children_index(w);
+    const auto& children=children_index(w);
     std::deque<std::string> pending(roots.begin(),roots.end());std::vector<std::string> selected;
     std::unordered_set<std::string> seen;
     while(!pending.empty()) {
@@ -1582,11 +1669,11 @@ void set_current_camera(World& w,Node& workspace,Node* camera) {
     entries.push_back(Json{{"kind","set"},{"id",workspace.id},{"property","CurrentCamera"},{"value",value}});
     std::vector<std::string> obsolete;
     bool reparent_selected=false;
-    for(const auto& id:w.order) {
+    for(const auto& id:direct_children(w,workspace.id)) {
         const auto& node=w.nodes.at(id);
         // Only direct Workspace cameras are discarded. Cameras stored in a
         // Folder/Model remain available for subsequent selection.
-        if(id!=selected&&!node.destroyed&&node.class_name=="Camera"&&parent_id(w,node)==workspace.id) {
+        if(id!=selected&&!node.destroyed&&node.class_name=="Camera") {
             obsolete.push_back(id);
             if(!create&&is_descendant_of(w,*camera,id))reparent_selected=true;
         }
@@ -1595,7 +1682,7 @@ void set_current_camera(World& w,Node& workspace,Node* camera) {
     // Reserve the full replacement before changing the active reference.
     auto budget_entries=entries;
     if(!obsolete.empty()) {
-        auto children=children_index(w);
+        const auto& children=children_index(w);
         std::deque<std::string> pending(obsolete.begin(),obsolete.end());
         std::vector<std::string> removed;std::unordered_set<std::string> seen;
         while(!pending.empty()) {
@@ -1647,17 +1734,16 @@ int destroy_instance(lua_State* L) {
     return 0;
 }
 int clear_children(lua_State* L) {
-    Handle* h=checked_handle(L,1);std::vector<std::string> roots;
-    for(const auto& id:h->world->order)if(parent_id(*h->world,h->world->nodes.at(id))==h->node->id)roots.push_back(id);
+    Handle* h=checked_handle(L,1);std::vector<std::string> roots=direct_children(*h->world,h->node->id);
     try{destroy_roots(*h->world,roots);refresh_current_camera(*h->world);}catch(const std::exception& e){luaL_error(L,"ClearAllChildren failed: %s",e.what());}
     return 0;
 }
 int remove_instance(lua_State* L) {
     auto* h=checked_handle(L,1);auto& world=*h->world;if(h->node->destroyed)return 0;
-    auto children=children_index(world);std::vector<std::string> pending{h->node->id},order;
+    const auto& children=children_index(world);std::vector<std::string> pending{h->node->id},order;
     while(!pending.empty()) {
         auto id=pending.back();pending.pop_back();order.push_back(id);
-        for(const auto& child:children[id])pending.push_back(child);
+        if(auto it=children.find(id);it!=children.end())for(const auto& child:it->second)pending.push_back(child);
     }
     // Unveil's legacy Remove detaches the entire tree and preserves listeners,
     // attributes and reparentability. It is deliberately distinct from Destroy.
@@ -1777,7 +1863,7 @@ int wait_for_child(lua_State* L) {
         auto remaining=std::chrono::duration<double>(Clock::time_point::max()-Clock::now()).count();
         if(duration<remaining)deadline=Clock::now()+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(duration));
     }
-    for(const auto& id:w.order){Node& child=w.nodes.at(id);if(parent_id(w,child)==h->node->id&&instance_name(w,child)==name){push_node(L,w,&child);return 1;}}
+    for(const auto& id:direct_children(w,h->node->id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==name){push_node(L,w,&child);return 1;}}
     if(!w.scheduler||!lua_isyieldable(L)){luaL_error(L,"WaitForChild requires a scheduled yieldable thread");return 0;}
     if(w.child_waiters.size()>=2048){luaL_error(L,"WaitForChild waiter limit exceeded");return 0;}
     try{w.scheduler->wait_signal(L);}catch(const std::exception& e){luaL_error(L,"WaitForChild failed: %s",e.what());return 0;}
@@ -2547,6 +2633,7 @@ World parse_snapshot(const std::string& text) {
             auto target=(*value)["$ref"].get<std::string>();if(!find_node(w,target))w.pending_characters[id]=target;
         }
     }
+    sync_world_indices(w);
     refresh_current_camera(w);
     // Initial received part poses are authoritative. Seed connectivity without
     // snapping a captured world; later topology changes activate pose solving.
@@ -2623,7 +2710,7 @@ void push_instance(lua_State* L,World& world,const std::string& id){auto* node=f
 std::string instance_display_name(World& world,const std::string& id){return instance_name(world,world.nodes.at(id));}
 void push_player_scripts(lua_State* L,World& w) {
     auto* player=find_node(w,w.local_player);if(!player){lua_pushnil(L);return;}
-    for(const auto& id:w.order){auto& node=w.nodes.at(id);if(!node.destroyed&&node.class_name=="PlayerScripts"&&parent_id(w,node)==player->id){push_node(L,w,&node);return;}}
+    for(const auto& id:direct_children(w,player->id)){auto& node=w.nodes.at(id);if(!node.destroyed&&node.class_name=="PlayerScripts"){push_node(L,w,&node);return;}}
     if(w.nodes.size()>=kMaxNodes+1000)throw std::runtime_error("client container limit exceeded");
     Node node;do{node.id="local:"+std::to_string(w.next_local_id++);}while(w.nodes.count(node.id));
     node.class_name="PlayerScripts";node.name="PlayerScripts";node.parent=player->id;node.server_owned=false;node.attributes_known=true;node.collection_tags_known=true;
@@ -2632,11 +2719,13 @@ void push_player_scripts(lua_State* L,World& w) {
     auto id=node.id;auto [it,ok]=w.nodes.emplace(id,std::move(node));w.order.push_back(id);append_mutations(w,std::move(entries));
     parent_events(w,it->second,"",player->id);push_node(L,w,&it->second);
 }
+const std::vector<std::string>& get_script_order(World& w) {
+    sync_world_indices(w);return w.script_order;
+}
 Json script_nodes(World& w) {
     Json rows=Json::array();
-    for(const auto& id:w.order) {
+    for(const auto& id:get_script_order(w)) {
         auto& n=w.nodes.at(id);
-        if(n.class_name!="LocalScript"&&n.class_name!="ModuleScript"&&n.class_name!="Script")continue;
         Json row{{"id",id},{"destroyed",n.destroyed}};
         for(const char* key:{"Disabled","Enabled","RunContext"}) {
             const Json* value=property_value(w,n,key);if(value)row[key]=*value;
@@ -2784,7 +2873,7 @@ void dispatch_events(lua_State* from,World& world) {
     }
     for(auto it=world.child_waiters.begin();it!=world.child_waiters.end();) {
         Node* found=nullptr;
-        for(const auto& id:world.order){Node& child=world.nodes.at(id);if(parent_id(world,child)==it->parent&&instance_name(world,child)==it->name){found=&child;break;}}
+        for(const auto& id:direct_children(world,it->parent)){Node& child=world.nodes.at(id);if(instance_name(world,child)==it->name){found=&child;break;}}
         if(found||std::chrono::steady_clock::now()>=it->deadline) {
             world.scheduler->wake_signal(it->thread,[&](lua_State* target){if(found)push_node(target,world,found);else lua_pushnil(target);return 1;});
             lua_unref(from,it->reference);it=world.child_waiters.erase(it);
@@ -2838,7 +2927,9 @@ void complete_chat(lua_State* from,World& w,const Json& responses) {
 }
 void update_snapshot(lua_State* from,World& w,const std::string& text) {
     if(text.size()>8*1024*1024)throw std::runtime_error("world delta exceeds 8 MiB");
-    Json delta=Json::parse(text);
+    update_snapshot(from,w,Json::parse(text));
+}
+void update_snapshot(lua_State* from,World& w,const Json& delta) {
     if(!delta.is_object()||delta.value("version",0)!=1||!delta.value("delta",false)
        ||!delta.contains("actions")||!delta["actions"].is_array()||delta["actions"].size()>10000)
         throw std::runtime_error("invalid ordered world delta");
@@ -2876,10 +2967,12 @@ void update_snapshot(lua_State* from,World& w,const std::string& text) {
                 auto [it,ok]=w.nodes.emplace(id,std::move(incoming));w.order.push_back(id);
                 it->second.parent=parent;parent_events(w,it->second,"",parent);
             } else if(!w.locally_destroyed.count(id)) {
+                sync_world_indices(w);
                 auto old_parent=parent_id(w,*existing);auto old_name=instance_name(w,*existing);
+                auto order_index=existing->order_index;
                 auto attributes=existing->attributes;bool known=existing->attributes_known;
                 auto tags=existing->collection_tags;bool tags_known=existing->collection_tags_known;
-                *existing=std::move(incoming);w.local_properties.erase(id);
+                *existing=std::move(incoming);existing->order_index=order_index;w.local_properties.erase(id);
                 if(!action.at("node").contains("attributes")){existing->attributes=std::move(attributes);existing->attributes_known=known;}
                 if(!action.at("node").contains("collection_tags")){existing->collection_tags=std::move(tags);existing->collection_tags_known=tags_known;}
                 if(old_name!=existing->name)property_events(w,*existing,"Name");
@@ -3007,14 +3100,12 @@ void update_snapshot(lua_State* from,World& w,const std::string& text) {
         } else if(kind=="remove") {
             Node* n=find_node(w,id);
             if(n&&!n->destroyed&&!w.locally_destroyed.count(id)) {
-                // Reuse the parent index for a consecutive stream-out batch.
-                // Creates/reparents invalidate it before the next removal.
-                if(!removal_children_ready){removal_children=children_index(w);removal_children_ready=true;}
                 std::deque<std::string> pending{id};
                 while(!pending.empty()) {
                     auto key=pending.front();pending.pop_front();Node& node=w.nodes.at(key);
                     if(node.destroyed)continue;
-                    auto child=removal_children.find(key);if(child!=removal_children.end())for(const auto& value:child->second)pending.push_back(value);
+                    const auto& children=get_children_index(w);
+                    auto child=children.find(key);if(child!=children.end())for(const auto& value:child->second)pending.push_back(value);
                     emit(w,node,"Destroying");parent_events(w,node,parent_id(w,node),"");
                     node.parent.clear();node.destroyed=true;clear_local_property(w,key,"Parent");
                     for(auto& c:w.connections)if(c->signal->node==&node){c->connected=false;c->auto_disconnected=true;}

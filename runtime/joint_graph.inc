@@ -51,7 +51,7 @@ struct JointGraph {
         while(parent[id]!=id){auto next=parent[id];parent[id]=result;id=next;}return result;
     }
     explicit JointGraph(World& world,const std::vector<std::string>* selected=nullptr):w(world) {
-        for(const auto& id:selected?*selected:w.order) {
+        for(const auto& id:selected?*selected:get_joint_order(w)) {
             auto& node=w.nodes.at(id);if(node.destroyed||!joint_node(w,node))continue;
             JointEdge edge;edge.joint=&node;edge.rigid=joint_rigid(node);
             bool attachments=!joint_part_endpoints(w,node),inactive=false,single=false,mode_unknown=false;

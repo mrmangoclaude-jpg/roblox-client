@@ -42,6 +42,24 @@ struct Options {
     arguments: Vec<f64>,
 }
 
+fn default_socket() -> PathBuf {
+    env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.ancestors()
+                .skip(1)
+                .take(5)
+                .find(|dir| dir.join("rove.py").is_file() || dir.join("secrets").is_dir())
+                .map(|dir| dir.join("secrets/client-script.sock"))
+        })
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("secrets/client-script.sock")
+        })
+}
+
 fn parse(arguments: &[String]) -> Result<Options, String> {
     let submit = arguments.first().is_some_and(|v| v == "submit");
     let mut result = Options {
@@ -49,10 +67,7 @@ fn parse(arguments: &[String]) -> Result<Options, String> {
         worker: false,
         source: PathBuf::new(),
         snapshot: None,
-        socket: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("secrets/client-script.sock"),
+        socket: default_socket(),
         timeout_ms: 250,
         memory_mb: 512,
         arguments: Vec::new(),
@@ -323,10 +338,7 @@ fn main() {
                 }
                 PathBuf::from(&arguments[3])
             } else {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
-                    .unwrap()
-                    .join("secrets/client-script.sock")
+                default_socket()
             };
             console_request(&socket, &json!({"op":"status","job_id":job}))
         })();

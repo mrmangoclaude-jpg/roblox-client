@@ -165,7 +165,7 @@ void collection_parent_events(World& w,Node& root,const std::string& old_parent,
     };
     const bool was=in_tree(old_parent),now=in_tree(new_parent);if(was==now)return;
     std::vector<Node*> subtree{&root};
-    for(const auto& id:w.order){Node& candidate=w.nodes.at(id);if(&candidate!=&root&&is_descendant_of(w,candidate,root.id))subtree.push_back(&candidate);}
+    subtree=descendant_nodes(w,root,true);
     for(Node* node:subtree){
         if(node->destroyed||!node->collection_tags_known)continue;
         for(const auto& tag:node->collection_tags)collection_emit(w,*node,tag,now);
