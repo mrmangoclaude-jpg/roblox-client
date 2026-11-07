@@ -65,11 +65,14 @@ def certificate_pins(pins, report):
 
 
 def allocation(*, target=None):
+    from platform_files import read_private
     path = ROOT / "secrets/last-join.json"
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
-        raise SessionError("Join response must be a regular owner-only file")
-    saved = json.loads(path.read_text())
+    # POSIX mode bits are meaningless on Windows (always 0o666); read_private
+    # checks the owner/DACL there and the mode bits elsewhere.
+    try:
+        saved = json.loads(read_private(path, 4 * 1024 * 1024))
+    except (OSError, ValueError):
+        raise SessionError("Join response must be a regular owner-only file") from None
     if target is None:
         target = json.loads((ROOT / "outputs/gamejoin/target-selection.json").read_text())
     elif isinstance(target, dict):
