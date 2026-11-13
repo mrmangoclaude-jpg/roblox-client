@@ -18,7 +18,14 @@ from pathlib import Path
 from typing import Any
 
 from movement_collision import ray_aabb, ray_obb, rotation_matrix
-from physics_rotation import RotationField, rotation_is_identity
+from physics_rotation import (
+    RotationCodecError,
+    RotationField,
+    decode_native_quaternion,
+    native_compact_selector_to_matrix,
+    native_property_selector_to_matrix,
+    rotation_is_identity,
+)
 
 Vector3 = tuple[float, float, float]
 _ROOT = Path(__file__).resolve().parents[1]
@@ -242,8 +249,41 @@ def _vector9(value):
     return tuple(result)
 
 
+def _packed_quaternion_matrix(packed: object) -> tuple[float, ...] | None:
+    if isinstance(packed, str):
+        try:
+            raw = bytes.fromhex(packed)
+        except ValueError:
+            return None
+    elif isinstance(packed, (bytes, bytearray)):
+        raw = bytes(packed)
+    else:
+        return None
+    if len(raw) != 6:
+        return None
+    try:
+        (x, y, z, w), _ = decode_native_quaternion(raw)
+    except RotationCodecError:
+        return None
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if not math.isfinite(norm) or norm <= 0.:
+        return None
+    x, y, z, w = x / norm, y / norm, z / norm, w / norm
+    matrix = (
+        1. - 2. * (y * y + z * z), 2. * (x * y - z * w), 2. * (x * z + y * w),
+        2. * (x * y + z * w), 1. - 2. * (x * x + z * z), 2. * (y * z - x * w),
+        2. * (x * z - y * w), 2. * (y * z + x * w), 1. - 2. * (x * x + y * y),
+    )
+    try:
+        return rotation_matrix(matrix)
+    except ValueError:
+        return None
+
+
 def _received_rotation(cframe, record_type):
-    """Use complete matrices or the already-established identity selectors."""
+    """Decode complete matrices, valid selectors, or 6-byte packed quaternions."""
+    if not isinstance(cframe, dict):
+        return None
     rotation = cframe.get('rotation')
     if isinstance(rotation,(tuple,list)):
         if len(rotation) == 3 and all(isinstance(row,(tuple,list)) and len(row) == 3 for row in rotation):
@@ -251,6 +291,18 @@ def _received_rotation(cframe, record_type):
         try:return rotation_matrix(rotation)
         except ValueError:return None
     if _identity_rotation(cframe,record_type):return (1.,0.,0.,0.,1.,0.,0.,0.,1.)
+    if record_type == 27 and rotation == 0 and cframe.get('packed_rotation') is not None:
+        return _packed_quaternion_matrix(cframe.get('packed_rotation'))
+    if record_type in (51, 57) and isinstance(rotation, (str, bytes, bytearray)):
+        return _packed_quaternion_matrix(rotation)
+    if type(rotation) is int:
+        try:
+            if record_type in (27, 51):
+                return rotation_matrix(native_property_selector_to_matrix(rotation))
+            if record_type == 57:
+                return rotation_matrix(native_compact_selector_to_matrix(rotation))
+        except (RotationCodecError, ValueError):
+            return None
     return None
 
 
@@ -268,9 +320,9 @@ def _property_type_map(schema: dict, class_index: int) -> dict[str, tuple[int, i
         return {}
 
 
-def _block_shape(schema: dict, property_types: dict[str, tuple[int, int | None]], props: dict,
-                 *, allow_default: bool = False) -> tuple[bool, bool]:
-    """Return (supported, inferred); missing shape inference is opt-in only."""
+def _part_shape(schema: dict, property_types: dict[str, tuple[int, int | None]], props: dict,
+                *, allow_default: bool = False) -> tuple[str | None, bool]:
+    """Return (shape_name, inferred); missing shape inference is opt-in only."""
     shape_names = ('Shape', 'shape', 'NetworkShape', 'PartType', 'PrimitiveType')
     present = [name for name in shape_names if name in props]
     enum_names = [entry.get('name') for entry in schema.get('enums', [])
@@ -280,23 +332,33 @@ def _block_shape(schema: dict, property_types: dict[str, tuple[int, int | None]]
         if (allow_default and meta is not None and meta[0] == 7
                 and type(meta[1]) is int and 0 <= meta[1] < len(enum_names)
                 and enum_names[meta[1]] == 'PartType'):
-            return True, True
-        return False, False
-    values = []
+            return 'Block', True
+        return None, False
+    kinds = set()
     for name in present:
         meta = property_types.get(name)
         value = props[name]
         if meta is None or type(value) is not int or meta[0] != 7:
-            return False, False
+            return None, False
         enum_id = meta[1]
         if type(enum_id) is not int or not 0 <= enum_id < len(enum_names):
-            return False, False
+            return None, False
         enum_name = enum_names[enum_id]
-        block_value = {'PartType': 1, 'PrimitiveType': 3}.get(enum_name)
-        if block_value is None:
-            return False, False
-        values.append(value == block_value)
-    return (bool(values) and all(values)), False
+        kind = {
+            'PartType': {1: 'Block', 3: 'Wedge'},
+            'PrimitiveType': {3: 'Block'},
+        }.get(enum_name, {}).get(value)
+        if kind is None:
+            return None, False
+        kinds.add(kind)
+    return (next(iter(kinds)) if len(kinds) == 1 else None), False
+
+
+def _block_shape(schema: dict, property_types: dict[str, tuple[int, int | None]], props: dict,
+                 *, allow_default: bool = False) -> tuple[bool, bool]:
+    """Return (supported, inferred); missing shape inference is opt-in only."""
+    kind, inferred = _part_shape(schema, property_types, props, allow_default=allow_default)
+    return kind == 'Block', inferred
 
 
 def _fresh_complete_creation(world: object, key: Any) -> bool:
@@ -305,20 +367,29 @@ def _fresh_complete_creation(world: object, key: Any) -> bool:
     return isinstance(state, dict) and state.get('fresh') is True and state.get('complete') is True
 
 
-def _default_can_collide(world: object, key: Any, class_name: str,
-                         *, allow_network_constructor_defaults: bool = False) -> tuple[bool | None, bool]:
-    """Return (value, inferred); network-path inference is opt-in and experimental."""
-    if not _is_part_descendant(class_name) or not _fresh_complete_creation(world, key):
+def _fresh_constructor_bool(world: object, key: Any, class_name: str, prop_name: str,
+                            *, allow_network_constructor_defaults: bool = False,
+                            require_part_descendant: bool = True) -> tuple[bool | None, bool]:
+    if (require_part_descendant and not _is_part_descendant(class_name)) or not _fresh_complete_creation(world, key):
         return None, False
     creation = getattr(world, 'creation', None)
     state = creation.get(key) if isinstance(creation, dict) else None
-    if not allow_network_constructor_defaults and not (
-            isinstance(state, dict) and state.get('ordinary') is True):
+    ordinary = isinstance(state, dict) and state.get('ordinary') is True
+    if not allow_network_constructor_defaults and not ordinary:
         return None, False
-    spec = _constructor_properties().get(class_name, {}).get('CanCollide')
+    spec = _constructor_properties().get(class_name, {}).get(prop_name)
     if not isinstance(spec, dict) or spec.get('type') != 'boolean' or type(spec.get('value')) is not bool:
         return None, False
-    return spec['value'], not bool(state.get('ordinary') is True)
+    return spec['value'], not ordinary
+
+
+def _default_can_collide(world: object, key: Any, class_name: str,
+                         *, allow_network_constructor_defaults: bool = False) -> tuple[bool | None, bool]:
+    """Return (value, inferred); network-path inference is opt-in and experimental."""
+    return _fresh_constructor_bool(
+        world, key, class_name, 'CanCollide',
+        allow_network_constructor_defaults=allow_network_constructor_defaults,
+        require_part_descendant=True)
 
 
 def _part_size(props: dict, property_types: dict[str, tuple[int, int | None]]):
@@ -355,7 +426,8 @@ def _received_part_frame(world: object, key: Any, props: dict,
         normalized = frame
         if value_type == 27 and 'rotation_id' in frame:
             normalized = {'position': frame.get('position'),
-                          'rotation': frame.get('rotation_id')}
+                          'rotation': frame.get('rotation_id'),
+                          'packed_rotation': frame.get('packed_rotation')}
         candidates.append((versions.get(name, 0), name == 'CFrame', normalized, value_type))
     if not candidates:
         return None, None
@@ -420,14 +492,35 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
             continue
         if class_name == 'MeshPart' and allow_visual_mesh_approximation:
             mesh=(visual_meshes.get(key) if isinstance(visual_meshes,dict) else None)
-            anchored=props.get('Anchored')
+            if 'CanCollide' in props:
+                can_collide, can_collide_inferred = props['CanCollide'], False
+            else:
+                can_collide, can_collide_inferred = _fresh_constructor_bool(
+                    world, key, class_name, 'CanCollide',
+                    allow_network_constructor_defaults=allow_network_constructor_defaults,
+                    require_part_descendant=False)
+            if 'Anchored' in props:
+                anchored, anchored_inferred = props['Anchored'], False
+            elif include_unanchored:
+                anchored, anchored_inferred = _fresh_constructor_bool(
+                    world, key, class_name, 'Anchored',
+                    allow_network_constructor_defaults=allow_network_constructor_defaults,
+                    require_part_descendant=False)
+            else:
+                anchored, anchored_inferred = None, False
             admitted_anchor=(anchored is True or (include_unanchored and anchored is False))
             frame,record_type=_received_part_frame(world,key,props,_property_type_map(schema,instance['class']))
             if (isinstance(mesh,TriangleMesh) and mesh.source==key
-                    and props.get('CanCollide') is True and admitted_anchor
+                    and can_collide is True and admitted_anchor
                     and frame is not None and _received_rotation(frame,record_type) is not None):
+                extra = []
+                if can_collide_inferred:
+                    extra.append(f'CanCollide=true: exact-build {class_name} constructor default applied to fresh complete network creation')
+                if anchored_inferred:
+                    extra.append(f'Anchored=false: exact-build {class_name} constructor default applied to fresh complete network creation')
+                extra.append('opt-in visual mesh approximation; MeshPart CollisionFidelity/collision asset is not available')
                 colliders.append(TriangleMesh(mesh.vertices,mesh.triangles,key,
-                    mesh.assumptions+('opt-in visual mesh approximation; MeshPart CollisionFidelity/collision asset is not available',)))
+                    mesh.assumptions+tuple(extra)))
             else:
                 unsupported.append((key,'visual mesh approximation missing or lacks explicit collidable, anchor, and pose evidence'))
             continue
@@ -451,15 +544,23 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
             if can_collide is None:
                 unsupported.append((key, 'CanCollide default unavailable without enabled fresh complete creation inference'))
             continue
-        anchored=props.get('Anchored')
+        if 'Anchored' in props:
+            anchored, anchored_inferred = props['Anchored'], False
+        elif include_unanchored:
+            anchored, anchored_inferred = _fresh_constructor_bool(
+                world, key, class_name, 'Anchored',
+                allow_network_constructor_defaults=allow_network_constructor_defaults,
+                require_part_descendant=True)
+        else:
+            anchored, anchored_inferred = None, False
         if anchored is not True and not (include_unanchored and anchored is False):
             unsupported.append((key, 'part Anchored state is unavailable or unanchored support was not enabled'))
             continue
-        shape_ok, shape_inferred = _block_shape(
+        shape_kind, shape_inferred = _part_shape(
             schema, property_types, props,
             allow_default=(allow_network_constructor_defaults
                            and _fresh_complete_creation(world, key)))
-        if not shape_ok:
+        if shape_kind is None:
             unsupported.append((key, 'Part shape is unknown or not a supported Block'))
             continue
         cframe, record_type = _received_part_frame(world, key, props, property_types)
@@ -484,10 +585,28 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
         assumptions = []
         if can_collide_inferred:
             assumptions.append(f'CanCollide=true: exact-build {class_name} constructor default applied to fresh complete network creation; network reset path is unproven')
+        if anchored_inferred:
+            assumptions.append(f'Anchored=false: exact-build {class_name} constructor default applied to fresh complete network creation')
         if shape_inferred:
             assumptions.append(f'shape=PartType.Block(1): documented new-Part default applied to fresh complete {class_name} network creation; exact-build constructor/network reset path is unproven')
         try:
-            if rotation == (1.,0.,0.,0.,1.,0.,0.,0.,1.):
+            if shape_kind == 'Wedge':
+                hx, hy, hz = half
+                cx, cy, cz = center
+                r0, r1, r2, r3, r4, r5, r6, r7, r8 = rotation
+                local_verts = (
+                    (-hx, -hy, -hz), (hx, -hy, -hz), (hx, -hy, hz),
+                    (-hx, -hy, hz), (hx, hy, hz), (-hx, hy, hz),
+                )
+                world_verts = tuple(
+                    (cx + r0 * lx + r1 * ly + r2 * lz,
+                     cy + r3 * lx + r4 * ly + r5 * lz,
+                     cz + r6 * lx + r7 * ly + r8 * lz)
+                    for lx, ly, lz in local_verts
+                )
+                wedge_tris = ((0, 4, 1), (0, 5, 4), (3, 2, 4), (3, 4, 5), (0, 1, 2), (0, 2, 3), (0, 3, 5), (1, 4, 2))
+                collider = TriangleMesh(world_verts, wedge_tris, key, tuple(assumptions))
+            elif rotation == (1.,0.,0.,0.,1.,0.,0.,0.,1.):
                 lower,upper=tuple(center[i]-half[i] for i in range(3)),tuple(center[i]+half[i] for i in range(3))
                 if any(not math.isfinite(v) for v in lower+upper) or any(lower[i] >= upper[i] for i in range(3)):
                     raise ValueError('invalid world bounds')
@@ -499,6 +618,19 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
             continue
         colliders.append(collider)
     return GroundGeometry(tuple(colliders), tuple(unsupported))
+
+
+def _cast_collider_down(origin: Vector3, collider, max_distance: float, margin: float):
+    if isinstance(collider, TriangleMesh):
+        return _ray_triangle_mesh(origin, collider, max_distance, margin)
+    if isinstance(collider, VoxelGrid):
+        return _ray_voxels(origin, collider, max_distance, margin)
+    if isinstance(collider, OBB):
+        return ray_obb(origin, (0., -1., 0.), collider.center, collider.half_size, collider.rotation, max_distance)
+    return ray_aabb(origin, (0., -1., 0.), collider.minimum, collider.maximum, max_distance)
+
+
+_SHALLOW_EMBED_TOLERANCE = 0.05
 
 
 def ground_raycast(position: object, geometry: GroundGeometry, *,
@@ -519,16 +651,20 @@ def ground_raycast(position: object, geometry: GroundGeometry, *,
         if (x < lower[0]-margin or x > upper[0]+margin or z < lower[2]-margin or z > upper[2]+margin
                 or foot[1] < lower[1]-margin or foot[1]-max_distance > upper[1]+margin):
             continue
-        if isinstance(collider,TriangleMesh):
-            hit=_ray_triangle_mesh(foot,collider,max_distance,margin)
-        elif isinstance(collider,VoxelGrid):
-            hit=_ray_voxels(foot,collider,max_distance,margin)
-        elif isinstance(collider,OBB):
-            hit = ray_obb(foot,(0.,-1.,0.),collider.center,collider.half_size,collider.rotation,max_distance)
-        else:
-            hit = ray_aabb(foot, (0., -1., 0.), collider.minimum, collider.maximum, max_distance)
+        hit = _cast_collider_down(foot, collider, max_distance, margin)
         if hit is not None and hit.normal[1] > 1e-7:
-            hits.append(GroundHit(foot[1] - hit.distance, hit.distance, collider,hit.normal))
+            hits.append(GroundHit(foot[1] - hit.distance, hit.distance, collider, hit.normal))
+            continue
+        if foot[1] <= upper[1] + margin and upper[1] - foot[1] <= _SHALLOW_EMBED_TOLERANCE:
+            probe_top = min(upper[1] + 0.01, foot[1] + _SHALLOW_EMBED_TOLERANCE + 0.01)
+            probe_span = probe_top - foot[1]
+            if probe_span > 0.:
+                top_hit = _cast_collider_down((x, probe_top, z), collider, probe_span, margin)
+                if top_hit is not None and top_hit.normal[1] > 1e-7:
+                    hit_y = (top_hit.y if isinstance(top_hit, GroundHit)
+                             else probe_top - top_hit.distance)
+                    if -margin <= hit_y - foot[1] <= _SHALLOW_EMBED_TOLERANCE + margin:
+                        hits.append(GroundHit(hit_y, 0., collider, top_hit.normal))
     return min(hits, key=lambda item: item.distance) if hits else None
 
 

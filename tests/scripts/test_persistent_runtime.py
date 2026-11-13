@@ -250,6 +250,17 @@ held:GetPropertyChangedSignal("Name"):Connect(function()error("receipt callback 
         self.assertEqual(second['values'],['UpdatedFromServer',1])
         self.assertEqual(world.instances[key]['properties']['Name'],b'UpdatedFromServer')
 
+    def test_world_update_falls_back_when_single_action_exceeds_delta_byte_budget(self):
+        world, key = fixture()
+        runtime = PersistentClientScriptRuntime(lambda: world, 123)
+        self.addCleanup(runtime.close)
+        self.assertTrue(runtime.execute('return 1')['ok'])
+        world.instances[key]['properties']['Name'] = b'X' * (5 * 1024 * 1024)
+        world.touch(key, ['Name'])
+        delta, _, _, _ = runtime._world_update(world)
+        self.assertEqual(len(delta['actions']), 1)
+        self.assertEqual(delta['sequence'], world.revision)
+
 
 class PersistentStatusTests(unittest.TestCase):
     @staticmethod

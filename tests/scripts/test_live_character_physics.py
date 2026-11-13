@@ -258,6 +258,17 @@ class LiveCharacterPhysicsTests(unittest.TestCase):
         self.assertEqual(second['network_send_attempt_count'], 1)
         self.assertEqual(len(failures), 1)
 
+    def test_single_list_root_without_explicit_anchored_uses_proven_constructor_default(self):
+        world, root = ready_world()
+        del world.instances[root]['properties']['Anchored']
+        world.creation[root] = {'fresh': True, 'complete': True, 'ordinary': False}
+        driver = LiveCharacterPhysics(experimental_enabled=True,
+                                      prediction=PredictionStub())
+        sent = []
+        result = self.tick(driver, world, lambda c, p, **kw: sent.append(p), 1.0)
+        self.assertEqual(result['network_send_count'], 1)
+        self.assertEqual(result['status'], 'client_send_returned_server_acceptance_unconfirmed')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -179,6 +179,16 @@ class WorldSnapshotTests(unittest.TestCase):
         w.touch(key,['Name']);w.touch(key,['Name'])
         with self.assertRaisesRegex(ValueError,'overrun'):make_world_delta(w,cursor)
 
+    def test_snapshot_exposes_client_services_and_known_defaults(self):
+        w, _ = fixture()
+        snapshot = make_world_snapshot(w, 123)
+        self.assertIn('ContentProvider', snapshot['services'])
+        self.assertIn('PathfindingService', snapshot['services'])
+        self.assertIsNone(snapshot['defaults']['Player']['Character'])
+        self.assertEqual(snapshot['defaults']['Player']['CameraMinZoomDistance'], 0.5)
+        self.assertEqual(snapshot['defaults']['Player']['CameraMaxZoomDistance'], 400.0)
+        self.assertEqual(snapshot['default_origins']['ScreenGui']['ZIndexBehavior'], 'class_default')
+
 
 if __name__ == '__main__':
     unittest.main()

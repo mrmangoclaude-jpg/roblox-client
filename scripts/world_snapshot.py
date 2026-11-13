@@ -27,6 +27,22 @@ def _archivable_defaults():
             if fields.get('properties',{}).get('Archivable',{}).get('type')=='boolean'}
 
 
+def _class_property_types(world, class_index):
+    cache = getattr(world, '_class_property_types_cache', None)
+    if cache is None or getattr(world, '_class_property_types_schema_id', None) != id(world.schema):
+        props = world.schema['properties']
+        cache = [
+            {props[pi]['name']: props[pi]['type'] for pi in cls.get('properties', ())}
+            for cls in world.schema['classes']
+        ]
+        try:
+            world._class_property_types_cache = cache
+            world._class_property_types_schema_id = id(world.schema)
+        except AttributeError:
+            pass
+    return cache[class_index]
+
+
 def instance_id(key):
     return None if key is None else f'{key[0]}:{key[1]}'
 
@@ -148,8 +164,7 @@ def _received_value(world, value, type_id=None):
 
 def _node_snapshot(world, key, instance, *, creation=None, versions=None):
     cls = world.schema['classes'][instance['class']]
-    types = {world.schema['properties'][pi]['name']: world.schema['properties'][pi]['type']
-             for pi in cls.get('properties', [])}
+    types = _class_property_types(world, instance['class'])
     properties, origins = {}, {}
     for name, value in instance['properties'].items():
         if name in ('Source', 'Bytecode', 'ScriptBytecode'):
@@ -242,10 +257,40 @@ def make_world_snapshot(world, user_id, *, job_id=None, include_script_sources=T
         if key in world.top_containers:
             services[node['class_name']] = node['id']
         nodes.append(node)
+    for service_name in ('ContentProvider', 'PathfindingService'):
+        if service_name not in services:
+            service_id = f'service:{service_name}'
+            services[service_name] = service_id
+            nodes.append({'id': service_id, 'class_name': service_name,
+                          'name': service_name, 'parent': 'game',
+                          'properties': {}, 'origins': {}})
+    defaults = {
+        'Player': {
+            'Character': None,
+            'CameraMinZoomDistance': 0.5,
+            'CameraMaxZoomDistance': 400.0,
+        },
+        'ImageHandleAdornment': {
+            'Size': {'$vector2': [1.0, 1.0]},
+        },
+        'ParticleEmitter': {
+            'EmissionDirection': {'$enum': {'type': 'NormalId', 'name': 'Top', 'value': 1}},
+        },
+        'ScreenGui': {
+            'ZIndexBehavior': {'$enum': {'type': 'ZIndexBehavior', 'name': 'Sibling', 'value': 1}},
+        },
+        'TextChatService': {
+            'ChatVersion': {'$enum': {'type': 'ChatVersion', 'name': 'TextChatService', 'value': 1}},
+        },
+    }
+    default_origins = {
+        class_name: {prop: 'class_default' for prop in props}
+        for class_name, props in defaults.items()
+    }
     player = world.avatar(user_id)['player_key']
     snapshot = {'version': 1, 'local_player': instance_id(player), 'services': services,
-                'nodes': nodes, 'class_parents': class_parents, 'defaults': {},
-                'default_origins': {}, 'sequence': world.revision,
+                'nodes': nodes, 'class_parents': class_parents, 'defaults': defaults,
+                'default_origins': default_origins, 'sequence': world.revision,
                 'script_sources': script_catalog(world) if include_script_sources else {},
                 'initial_replication_complete': 13 in world.tags,
                 'class_events': {cls['name']: [world.schema['events'][i]['name'] for i in cls.get('events', [])]
@@ -293,11 +338,9 @@ def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None)
             action['node'] = _node_snapshot(world, record['key'], record['instance'],
                                             creation=record['creation'], versions=record['property_revisions'])
         elif kind == 'set':
-            cls = world.schema['classes'][record['class']]
             if {'Source','Bytecode','ScriptBytecode'} & record['fields'].keys():
                 action['script_code_changed'] = True
-            types = {world.schema['properties'][i]['name']: world.schema['properties'][i]['type']
-                     for i in cls.get('properties', [])}
+            types = _class_property_types(world, record['class'])
             action['fields'] = {name: ({'$ref': instance_id(value)} if value else None)
                                 if name == 'Parent' else _received_value(world, value, types.get(name))
                                 for name, value in record['fields'].items()

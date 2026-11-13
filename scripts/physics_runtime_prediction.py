@@ -195,13 +195,21 @@ def _cached_node_snapshots(world, keys, *, read_only=False):
     return result
 
 
-def _snapshot_for_keys(world, player, character, children):
+def _snapshot_for_keys(world, player, character, children, *, allow_network_constructor_defaults=False):
     """Build the local controller view from an already-maintained key set."""
     keys = {key for key in (player, character) if key is not None}
     keys.update(children)
+    nodes = _cached_node_snapshots(world, keys)
+    if allow_network_constructor_defaults:
+        for node in nodes:
+            if (node.get('constructor_defaults_known') is True
+                    and 'Anchored' not in node.get('properties', {})
+                    and node.get('class_name') in ('Part', 'MeshPart', 'Seat', 'VehicleSeat', 'SpawnLocation')):
+                node.setdefault('properties', {})['Anchored'] = False
+                node.setdefault('origins', {})['Anchored'] = 'class_default'
     return {'local_player': instance_id(player),
             'initial_replication_complete': 13 in world.tags,
-            'nodes': _cached_node_snapshots(world, keys)}
+            'nodes': nodes}
 
 
 def _descendant_keys(world, ancestor):
@@ -470,9 +478,10 @@ class RuntimePhysicsPrediction:
                 self._mesh_asset_signature = signature
                 self._geometry_dirty = True
         if own_dirty:
-            snapshot = _snapshot_for_keys(world, self._player_key,
-                                          self._character_key,
-                                          self._character_children | self._no_collision_keys)
+            snapshot = _snapshot_for_keys(
+                world, self._player_key, self._character_key,
+                self._character_children | self._no_collision_keys,
+                allow_network_constructor_defaults=self.allow_network_constructor_defaults)
             self.bridge.update(snapshot)
         if (own_dirty or geometry_dirty) and self.bridge.controller is not None:
             environment_snapshot = _snapshot_for_keys(

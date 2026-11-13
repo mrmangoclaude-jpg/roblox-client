@@ -20,8 +20,9 @@ def unpack_container(blob):
     if not isinstance(blob, bytes) or not 8 < len(blob) <= MAX_BYTES:
         raise ValueError('Invalid bytecode-container size')
     key = bytes(((blob[i] ^ b'RSB1'[i]) - i * 41) & 255 for i in range(4))
-    raw = bytes(value ^ ((key[i % 4] + i * 41) & 255)
-                for i, value in enumerate(blob))
+    period = bytes((key[i & 3] + i * 41) & 255 for i in range(256))
+    mask = (period * (len(blob) // 256 + 1))[:len(blob)]
+    raw = (int.from_bytes(blob, 'little') ^ int.from_bytes(mask, 'little')).to_bytes(len(blob), 'little')
     checksum_matches = raw[:4] == b'RSB1' and ticket_hash(raw, 42) == int.from_bytes(key, 'little')
     observe_container_checksum(checksum_matches)
     if not checksum_matches:

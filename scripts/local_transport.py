@@ -31,7 +31,12 @@ def connect(path, timeout=8):
 
 
 def probe(path, timeout=.2):
-    connection, _ = connect(path, timeout)
+    try:
+        connection, _ = connect(path, timeout)
+    except TimeoutError as error:
+        if os.name == 'nt':
+            raise ConnectionRefusedError('Windows loopback listener is not active') from error
+        raise
     connection.close()
 
 

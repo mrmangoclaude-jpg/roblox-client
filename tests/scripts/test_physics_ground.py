@@ -329,6 +329,49 @@ class DecodedGeometryTests(unittest.TestCase):
         self.assertIn('voxels are not modeled',reasons['terrain'])
         self.assertIn('collision shape is not modeled',reasons['mesh'])
 
+    def test_type27_valid_selector_and_packed_quaternion_decode_rotated_colliders(self):
+        from physics_rotation import encode_native_quaternion, native_matrix3x3_to_quaternion
+        import math
+        # 45 degree yaw around Y
+        angle = math.pi / 4
+        mat = (math.cos(angle), 0., math.sin(angle), 0., 1., 0., -math.sin(angle), 0., math.cos(angle))
+        packed = encode_native_quaternion(native_matrix3x3_to_quaternion(mat)).hex()
+        world = make_world({
+            1: part(CanCollide=True, Anchored=True,
+                    CFrame={'position': [0, 0, 0], 'rotation_id': 9, 'packed_rotation': None},
+                    Size=[10, 2, 10]),
+            2: part(CanCollide=True, Anchored=True,
+                    CFrame={'position': [20, 0, 0], 'rotation_id': 0, 'packed_rotation': packed},
+                    Size=[10, 2, 10]),
+        })
+        geometry = extract_ground(world)
+        self.assertEqual(len(geometry.colliders), 2)
+        self.assertFalse(geometry.unsupported)
+
+    def test_wedge_part_extracts_triangle_mesh_and_supports_ground_raycast(self):
+        world = make_world({
+            1: part(CanCollide=True, Anchored=True, Shape=3,
+                    CFrame={'position': [0, 2, 0], 'rotation_id': 2},
+                    Size=[4, 4, 4]),
+        })
+        geom = extract_ground(world)
+        self.assertEqual(len(geom.colliders), 1)
+        self.assertIsInstance(geom.colliders[0], TriangleMesh)
+        hit = ground_raycast((0, 8, 0), geom, foot_offset=0, max_distance=10)
+        self.assertIsNotNone(hit)
+        self.assertAlmostEqual(hit.y, 2.0, places=5)
+
+    def test_ground_raycast_recovers_shallowly_embedded_foot(self):
+        geom = extract_ground(make_world({
+            1: part(CanCollide=True, Anchored=True,
+                    CFrame={'position': [0, 0, 0], 'rotation_id': 2},
+                    Size=[10, 2, 10]),
+        }))
+        hit = ground_raycast((0., 3.997, 0.), geom, foot_offset=3.0, max_distance=0.25)
+        self.assertIsNotNone(hit)
+        self.assertAlmostEqual(hit.y, 1.0)
+        self.assertEqual(hit.distance, 0.0)
+
 
 
 if __name__ == '__main__':

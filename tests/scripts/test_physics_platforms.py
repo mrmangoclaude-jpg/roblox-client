@@ -21,7 +21,7 @@ class MovingPlatformTests(unittest.TestCase):
                 'ReplicationPV': {'position': [4, 5, 6], 'rotation': 1,
                                   'position_present': True}}},
             43: {'class': 0, 'properties': {'Anchored': False,
-                'CFrame': {'position': [7, 8, 9], 'rotation': 5}}},
+                'CFrame': {'position': [7, 8, 9], 'rotation': 99}}},
             44: {'class': 0, 'properties': {'CFrame': {'position': [0, 0, 0],
                                                        'rotation': identity}}},
             45: {'class': 0, 'properties': {'Anchored': False}},

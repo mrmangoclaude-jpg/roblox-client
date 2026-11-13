@@ -203,6 +203,12 @@ class LiveCharacterPhysics:
             root_node = _node_snapshot(world, root_key, root)
             anchored = root_node.get("properties", {}).get("Anchored")
             anchored_origin = root_node.get("origins", {}).get("Anchored")
+            if (self.experimental_enabled and anchored is None
+                    and root_node.get("constructor_defaults_known") is True
+                    and root_node.get("class_name") in (
+                        "Part", "MeshPart", "Seat", "VehicleSeat", "SpawnLocation")):
+                anchored = False
+                anchored_origin = "class_default"
             if type(anchored) is not bool or anchored is True or anchored_origin not in (
                     "received", "class_default"):
                 self._invalidate_own_binding()

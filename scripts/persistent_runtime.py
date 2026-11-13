@@ -684,7 +684,12 @@ class PersistentClientScriptRuntime:
             self.stats['world_replay_retention'] = self._action_journal.retention_stats()
 
     def _world_update(self, world):
-        delta = make_world_delta(world, self.revision, max_actions=2048, max_bytes=4*1024*1024)
+        try:
+            delta = make_world_delta(world, self.revision, max_actions=2048, max_bytes=4*1024*1024)
+        except ValueError as error:
+            if 'exceeds the delta byte budget' not in str(error):
+                raise
+            delta = make_world_delta(world, self.revision, max_actions=1, max_bytes=None)
         statistics = self._session_statistics()
         if statistics != self._session_stats_sent:
             delta['session_stats'] = statistics
@@ -999,7 +1004,7 @@ class PersistentClientScriptRuntime:
                 # Initialization happens once, before any asynchronous calls.
                 return self.poll()
             now = time.monotonic()
-            if completed is None and now-self.last_poll < .05:
+            if completed is None and not ((self.world is not None and self.world.revision > self.revision) or self.remote_server_results or self._background_source_pending is not None) and now-self.last_poll < .05:
                 return None
             self.last_poll = now
             budget = self._background_step_budget()

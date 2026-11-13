@@ -8,10 +8,27 @@ MAX_CODE = 128 * 1024
 MAX_CATALOG = 3 * 1024 * 1024
 
 
+def _referenced_shared(value, shared, out, depth=0):
+    if depth > 3 or not shared:
+        return
+    if isinstance(value, dict) and isinstance(value.get('shared'), str):
+        try:
+            k = bytes.fromhex(value['shared'])
+        except ValueError:
+            return
+        if k in shared and k not in out:
+            raw = shared[k]
+            out[k] = raw
+            _referenced_shared(raw, shared, out, depth + 1)
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            _referenced_shared(item, shared, out, depth + 1)
+
+
 class CodePreparationQueue:
-    """One bounded background verifier; never stall the network event loop."""
+    """Bounded background verifier; never stall the network event loop."""
     def __init__(self):
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='script-code')
+        self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='script-code')
         self.pending = {}
 
     def resolve(self, key, digest, properties, shared, *, allow_small_unsigned=False):
@@ -26,10 +43,13 @@ class CodePreparationQueue:
                 try:return future.result()
                 except Exception:return {'reason':'code_preparation_failed'}
             else:return None
-        if len(self.pending) < 16:
+        if len(self.pending) < 64:
             code = {name: properties.get(name) for name in ('Source','Bytecode','ScriptBytecode')}
+            needed_shared = {}
+            for v in code.values():
+                _referenced_shared(v, shared, needed_shared)
             policy = {'allow_small_unsigned': True} if allow_small_unsigned else {}
-            job = bind_container_observer(prepare_script, code, dict(shared), **policy)
+            job = bind_container_observer(prepare_script, code, needed_shared, **policy)
             self.pending[key] = (digest, self.executor.submit(job))
         return None
 
@@ -138,17 +158,50 @@ def prepare_script(properties, shared=None, *, verify=None, unpack=None, normali
     return {'reason': reason}
 
 
+def _script_priority(world, key, instance, class_name):
+    props = instance['properties']
+    if props.get('Disabled') is True or props.get('Enabled') is False:
+        return 4
+    if class_name == 'Script' and props.get('RunContext') != 2:
+        return 5
+    cur = instance.get('parent')
+    hops = 0
+    top_name = ''
+    while cur and hops < 16:
+        hops += 1
+        parent = world.instances.get(cur)
+        if not parent:
+            break
+        nxt = parent.get('parent')
+        if not nxt or nxt not in world.instances:
+            top_name = world.schema['classes'][parent['class']]['name']
+            break
+        cur = nxt
+    if class_name in ('LocalScript', 'Script'):
+        if top_name in ('ReplicatedFirst', 'StarterPlayer', 'StarterGui', 'StarterPack', 'Players'):
+            return 0
+        return 1
+    if top_name in ('ReplicatedFirst', 'StarterPlayer', 'StarterGui', 'Players'):
+        return 1
+    return 2
+
+
 def script_catalog(world):
     """Cache by each script's actual code/shared-string inputs, not world traffic."""
     cache = getattr(world, '_script_catalog_cache', {})
     current, next_cache, budget = {}, {}, 0
     allow_small_unsigned = getattr(world, 'allow_small_unsigned_scripts', False) is True
     policy = {'allow_small_unsigned': True} if allow_small_unsigned else {}
+    classes = world.schema['classes']
+    script_items = []
     for key, instance in world.instances.items():
-        if world.schema['classes'][instance['class']]['name'] not in ('Script', 'LocalScript', 'ModuleScript'):
-            continue
-        if len(current) >= 4096:
-            raise ValueError('Script catalog exceeds 4096 entries')
+        cname = classes[instance['class']]['name']
+        if cname in ('Script', 'LocalScript', 'ModuleScript'):
+            script_items.append((_script_priority(world, key, instance, cname), key, instance))
+    if len(script_items) > 4096:
+        raise ValueError('Script catalog exceeds 4096 entries')
+    script_items.sort(key=lambda item: item[0])
+    for _, key, instance in script_items:
         properties = instance['properties']
         # repr is only an in-memory fingerprint input; it is never printed/saved.
         fingerprint = hashlib.sha256()
@@ -162,6 +215,7 @@ def script_catalog(world):
         old = cache.get(key)
         if old and old[0] == digest:
             entry = old[1]
+            length = old[2] if len(old) > 2 else len(json.dumps(entry, ensure_ascii=True).encode()) + 128
         else:
             queue = getattr(world, '_script_preparation_queue', None)
             source = properties.get('Source')
@@ -177,12 +231,12 @@ def script_catalog(world):
                     continue
             else:
                 entry = prepare_script(properties, world.shared, **policy)
-        length = len(json.dumps(entry, ensure_ascii=True).encode()) + 128
+            length = len(json.dumps(entry, ensure_ascii=True).encode()) + 128
         if budget + length > MAX_CATALOG:
             entry = {'reason': 'catalog_size_limit'}
             length = 128
         else:
-            next_cache[key] = (digest, entry)
+            next_cache[key] = (digest, entry, length)
         current[f'{key[0]}:{key[1]}'] = entry
         budget += length
     world._script_catalog_cache = next_cache

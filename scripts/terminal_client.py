@@ -109,7 +109,7 @@ def session_command(place_id, duration, *, physics=True, walk_for_minute=False, 
                '--duration', str(duration), '--progress', '--script-console',
                '--persistent-scripts', '--chat-console','--log-level',log_level]
     if physics:
-        command.append('--physics')
+        command.extend(['--physics', '--visual-mesh-collisions'])
     if walk_for_minute:
         command.append('--walk-for-minute')
     if place_id == 6252985844 and (ROOT / 'secrets/private-client-framework-rpc.json').is_file():
