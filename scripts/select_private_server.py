@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Resolve the user-provided Roblox server invite stored in the private directory."""
 import json
+from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlsplit
 
@@ -8,8 +9,9 @@ from roblox_session import ROOT, RobloxSession, SessionError
 from join_allocation import write_private
 
 
-def main():
-    url = json.loads((ROOT / 'secrets/private-server-link.json').read_text())['url']
+def resolve_invite(url, *, state_root=None, cookie=None, archive_previous=True):
+    """Resolve and verify a Roblox private-server share link for one profile root."""
+    state_root = Path(state_root) if state_root is not None else ROOT
     parsed = urlsplit(url)
     query = parse_qs(parsed.query)
     codes = query.get('code', [])
@@ -17,7 +19,7 @@ def main():
             or parsed.path not in ('/share', '/share-links') or query.get('type') != ['Server']
             or len(codes) != 1 or not re.fullmatch(r'[a-fA-F0-9]{32}', codes[0])):
         raise SessionError('Expected a Roblox server share link')
-    session = RobloxSession()
+    session = RobloxSession(cookie=cookie)
     reply = session.request('apis.roblox.com', '/sharelinks/v1/resolve-link', 'POST',
                             {'linkId': codes[0], 'linkType': 'Server'}, csrf_retry=True)
     if reply['http_status'] != 200 or reply['challenge_present'] or not isinstance(reply['data'], dict):
@@ -37,13 +39,23 @@ def main():
     target = {'place_id': place, 'universe_id': invite.get('universeId'),
               'selection': 'user_selected_private_server', 'is_playable': True,
               'display_name': rows[0].get('name'), 'private_server_invite_resolved': True}
-    current = ROOT / 'outputs/gamejoin/target-selection.json'
-    if current.exists():
+    out_dir = state_root / 'outputs/gamejoin'
+    secrets_dir = state_root / 'secrets'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    current = out_dir / 'target-selection.json'
+    if archive_previous and current.exists():
         previous = json.loads(current.read_text())
         archive = current.with_name('target-selection-%s.json' % previous['place_id'])
         archive.write_text(json.dumps(previous, indent=2) + '\n')
-    write_private(ROOT / 'secrets/private-server-target.json', invite)
+    write_private(secrets_dir / 'private-server-target.json', invite)
     current.write_text(json.dumps(target, indent=2) + '\n')
+    return target
+
+
+def main():
+    url = json.loads((ROOT / 'secrets/private-server-link.json').read_text())['url']
+    target = resolve_invite(url, state_root=ROOT)
     print(json.dumps(target, indent=2))
     return 0
 

@@ -166,15 +166,19 @@ class PersistentLuauHost:
 
 class PersistentClientScriptRuntime:
     def __init__(self, world_provider, user_id, job_id=None, *, background_budget_ms=50,
+                 memory_mb=512,
                  input_capabilities=None, viewport=None, display=None,
                  session_stats_provider=None,
                  allow_visual_mesh_approximation=False):
         if type(background_budget_ms) is not int or not 1 <= background_budget_ms <= 50:
             raise ValueError('Background budget must be 1..50 ms')
+        if type(memory_mb) is not int or not 8 <= memory_mb <= 512:
+            raise ValueError('VM memory cap must be 8..512 MiB')
         if type(allow_visual_mesh_approximation) is not bool:
             raise ValueError('Visual mesh approximation opt-in must be a boolean')
         self.world_provider, self.user_id, self.job_id = world_provider, user_id, job_id
         self.background_budget_ms = background_budget_ms
+        self.memory_mb = memory_mb
         if session_stats_provider is not None and not callable(session_stats_provider):
             raise TypeError('Session statistics provider must be callable')
         self.session_stats_provider = session_stats_provider
@@ -578,7 +582,7 @@ class PersistentClientScriptRuntime:
             if not snapshot['local_player'] or not snapshot['services']:
                 raise ValueError('Local Player and services must be replicated before starting persistent scripts')
             try:
-                self.host = PersistentLuauHost(snapshot)
+                self.host = PersistentLuauHost(snapshot, memory_mb=self.memory_mb)
             except BaseException:
                 world._script_preparation_queue.close()
                 del world._script_preparation_queue

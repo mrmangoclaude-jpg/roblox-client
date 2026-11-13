@@ -6,7 +6,8 @@ from pathlib import Path
 import stat
 from platform_files import read_private
 
-ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(os.environ['ROVE_STATE_ROOT']).resolve() if os.environ.get('ROVE_STATE_ROOT') else REPO_ROOT
 ALLOWED_HOSTS = {"users.roblox.com", "games.roblox.com", "gamejoin.roblox.com", "apis.roblox.com",
                  "friends.roblox.com", "presence.roblox.com", "thumbnails.roblox.com",
                  "avatar.roblox.com", "inventory.roblox.com", "privatemessages.roblox.com",

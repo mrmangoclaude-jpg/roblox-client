@@ -20,7 +20,7 @@ from game_wire import CONTROL_CHANNEL, issued_early_auth, feature_configuration,
 from join_allocation import main as refresh_allocation, write_private
 from native_session import NativeSession
 from login_packets import ticket_packet, verification_packet, server_id_packet
-from roblox_session import ROOT, SessionError
+from roblox_session import REPO_ROOT, ROOT, SessionError
 from world_replication import World
 from world_schema import parse_schema
 from isr_replication import InstanceStateReceiver
@@ -81,7 +81,11 @@ def parse_args(argv=None):
                         help='Compatibility flag; authenticated sessions always use persistent Luau')
     parser.add_argument('--early-script', action='append', default=[],
                         help='Start a persistent source file once the own Player is replicated')
+    parser.add_argument('--memory-mb', type=int, default=512,
+                        help='Persistent Luau VM memory cap in MiB (8..512, default 512)')
     args = parser.parse_args(argv)
+    if not 8 <= args.memory_mb <= 512:
+        parser.error('--memory-mb must be between 8 and 512')
     if args.ticket:
         args.chat_console = True
         args.persistent_scripts = True
@@ -168,7 +172,7 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
         from physics_history import CurrentRecord
         from physics_root_record import RootRecordEnvelope, encode_instance_reference, encode_client_current_body
         from physics_header import LAYOUT_SEQUENCE_THEN_TAG
-    walk_source = (read_source(ROOT/'runtime/scripts/walk_for_minute.luau')
+    walk_source = (read_source(REPO_ROOT/'runtime/scripts/walk_for_minute.luau')
                    if args.experimental_physics_walk or getattr(args, 'walk_for_minute', False) else None)
     sources = [(path, read_source(path)) for path in args.script]
     early_sources = [(path, read_source(path)) for path in args.early_script]
@@ -220,6 +224,7 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
     runtime_type = PersistentClientScriptRuntime if args.persistent_scripts else ClientScriptRuntime
     if args.persistent_scripts:
         script_runtime = runtime_type(lambda: world, join['UserId'], join['GameId'],
+            memory_mb=args.memory_mb,
             session_stats_provider=(clock.runtime_statistics if clock is not None else None),
             allow_visual_mesh_approximation=args.visual_mesh_collisions)
     else:
@@ -786,6 +791,8 @@ def main(*, ping_stats_provider=None, ping_status_provider=None, report_name='ga
     # Keep CLI validation ahead of filesystem/network side effects. The lease
     # then covers allocation refresh, socket setup, the full session, and cleanup.
     args = parse_args()
+    (ROOT / 'secrets').mkdir(parents=True, exist_ok=True)
+    (ROOT / 'outputs/gamejoin').mkdir(parents=True, exist_ok=True)
     # Isolated validation runs still use the same account. Their output root
     # must not give them a separate lock from the ordinary terminal client.
     with session_logging(ROOT,level=args.log_level,duration_s=args.duration,
