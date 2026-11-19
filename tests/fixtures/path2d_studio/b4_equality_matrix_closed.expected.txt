@@ -1,0 +1,31 @@
+eq 0 args	ok:true
+eq 1 arg	ok:true
+eq 3 args	ok:true
+eq diff	ok:false
+eq alias	ok:true
+rawequal fresh	ok:false
+ne	ok:false
+rawequal g a	ok:false
+g == a	ok:true
+a mutate -> a.Position	ok:{0, 0}, {0, 40}
+a mutate -> g.Position	ok:{0, 0}, {0, 0}
+a mutate -> path point	ok:{0, 0}, {0, 0}
+a mutate -> g == a now	ok:false
+a mutate -> path == a now	ok:false
+g mutate -> path point	ok:{0, 0}, {0, 0}
+reset+length	ok:107.70329284667969 {0, 0}, {0, 40}
+matrix nil	ok:GetCP=ok GetCPs=ok Update=E[Attempting to use Path2D with invalid ] Remove=E[Spline removing control point at index] Insert=E[Attempting to use Path2D with invalid ] Len=E[Attempting to use Path2D with invalid ] Pos=E[Attempting to use Path2D with invalid ] Tan=E[Attempting to use Path2D with invalid ] PosArc=E[Attempting to use Path2D with invalid ] BR=E[Attempting to use Path2D with invalid ]
+matrix Folder	ok:GetCP=ok GetCPs=ok Update=E[Attempting to use Path2D with invalid ] Remove=E[Spline removing control point at index] Insert=E[Attempting to use Path2D with invalid ] Len=E[Attempting to use Path2D with invalid ] Pos=E[Attempting to use Path2D with invalid ] Tan=E[Attempting to use Path2D with invalid ] PosArc=E[Attempting to use Path2D with invalid ] BR=E[Attempting to use Path2D with invalid ]
+matrix Frame	ok:GetCP=ok GetCPs=ok Update=E[Spline updating control point at index] Remove=E[Spline removing control point at index] Insert=ok Len=ok Pos=ok Tan=ok PosArc=ok BR=ok
+matrix ScreenGui	ok:GetCP=ok GetCPs=ok Update=E[Spline updating control point at index] Remove=E[Spline removing control point at index] Insert=ok Len=ok Pos=ok Tan=ok PosArc=ok BR=ok
+matrix TextLabel	ok:GetCP=ok GetCPs=ok Update=E[Spline updating control point at index] Remove=E[Spline removing control point at index] Insert=ok Len=ok Pos=ok Tan=ok PosArc=ok BR=ok
+closed triangle	ok:1200 pos1={0, 0}, {0, 0} pos0.9={0.225000158, 0}, {0.240000129, 0} br=-1, -1, 301, 401
+open triangle	ok:700
+GetCP(0.4)	err:Path2D:GetControlPoint() at index 0 access out of bounds
+GetCP(0.5)	ok:{0, 10}, {0, 0}
+GetCP(1.4)	ok:{0, 10}, {0, 0}
+GetCP(1.5)	ok:{0, 20}, {0, 0}
+GetCP(2.5)	ok:{0, 30}, {0, 0}
+GetCP(3.4)	ok:{0, 30}, {0, 0}
+GetCP(3.5)	err:Path2D:GetControlPoint() at index 4 access out of bounds
+GetCP(-0.5)	err:Path2D:GetControlPoint() at index -1 access out of bounds

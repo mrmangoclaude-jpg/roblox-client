@@ -1,15 +1,21 @@
-"""Path2D control points and curve queries.
+"""Path2D control points and curve queries, checked against Roblox Studio.
 
-The golden test replays a six-point path (158x267) shaped like the one a protected script measures: its
-GetLength, 420.553436279, is Studio's own answer, and the remaining lines pin the float32 curve model.
+tests/fixtures/path2d_studio holds batteries that were run in Studio, with Studio's answers beside them: argument
+conversion and error messages, equality and mutation of control points, the control-point list versus the internal
+spline, parent requirements, closed paths and index rounding. The golden test replays a six-point path (158x267)
+shaped like the one a protected script measures; its GetLength, 420.553436279, is Studio's own answer, and the
+remaining lines pin the float32 curve model.
 """
 import json
+import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 import test_cframe_transforms as transforms
+
+STUDIO = Path(__file__).resolve().parents[2] / 'tests/fixtures/path2d_studio'
 
 GOLDEN_SOURCE = '''
 local out = {}
@@ -87,9 +93,14 @@ TAN 0.25 15.421875 89.56640625
 TANA 0.25 4.9393463134765625 105.40457916259766'''.strip()
 
 
-class Path2DTests(unittest.TestCase):
-    run_script = transforms.CFrameTransformTests.run_script
+def normalize(line):
+    """Drop the script position Studio and Rove put before an error, and the tab layout."""
+    line = line.replace(chr(9), ' ')
+    line = re.sub(r'^(.*?)(err:)[\w\-. ]+:\d+: ', r'\1\2', line)
+    return re.sub(r' +', ' ', line).strip()
 
+
+class Path2DTests(unittest.TestCase):
     def run_text(self, source):
         texts = []
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,93 +118,15 @@ class Path2DTests(unittest.TestCase):
                     texts.append(result['values'][0])
         return texts
 
-    def test_control_point_datatype(self):
-        self.run_script('''
-local cp = Path2DControlPoint.new(UDim2.new(0.5,10,0.25,-4), UDim2.fromOffset(1,2), UDim2.fromScale(0.1,0.2))
-assert(typeof(cp) == "Path2DControlPoint")
-assert(cp.Position == UDim2.new(0.5,10,0.25,-4))
-assert(cp.LeftTangent == UDim2.fromOffset(1,2) and cp.RightTangent == UDim2.fromScale(0.1,0.2))
-local blank = Path2DControlPoint.new()
-assert(blank.Position == UDim2.new() and blank.LeftTangent == UDim2.new() and blank.RightTangent == UDim2.new())
-assert(Path2DControlPoint.new(UDim2.new(1,0,1,0)) == Path2DControlPoint.new(UDim2.new(1,0,1,0)))
-assert(cp ~= blank)
-local ok, err = pcall(Path2DControlPoint.new, 5)
-assert(not ok and tostring(err):find("UDim2 expected"), err)
-assert(not pcall(Path2DControlPoint.new, UDim2.new(), "x"))
-assert(not pcall(function() cp.Position = UDim2.new() end))
-assert(not pcall(function() return cp.Nope end))
-assert(tostring(cp):find("^Path2DControlPoint"))
-''')
-
-    def test_control_point_editing_and_limits(self):
-        self.run_script('''
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(400, 100)
-local path = Instance.new("Path2D")
-path.Parent = frame
-assert(path:GetMaxControlPoints() == 100 and path:GetSegmentCount() == 0 and #path:GetControlPoints() == 0)
-assert(typeof(path.ControlPointChanged) == "RBXScriptSignal")
-local a = Path2DControlPoint.new(UDim2.fromOffset(0, 0))
-local b = Path2DControlPoint.new(UDim2.fromOffset(400, 0))
-path:SetControlPoints({a, b})
-assert(#path:GetControlPoints() == 2 and path:GetSegmentCount() == 1)
-path:InsertControlPoint(2, Path2DControlPoint.new(UDim2.fromOffset(200, 50)))
-assert(#path:GetControlPoints() == 3 and path:GetSegmentCount() == 2)
-path:UpdateControlPoint(2, Path2DControlPoint.new(UDim2.fromOffset(200, 0)))
-assert(path:GetControlPoint(2).Position == UDim2.fromOffset(200, 0))
-path:RemoveControlPoint(2)
-assert(#path:GetControlPoints() == 2 and path:GetControlPoint(2) == b)
-assert(not pcall(path.InsertControlPoint, path, 9, a))
-assert(not pcall(path.RemoveControlPoint, path, 0))
-assert(not pcall(path.UpdateControlPoint, path, 3, a))
-assert(not pcall(path.GetControlPoint, path, 3))
-assert(not pcall(path.SetControlPoints, path, {1, 2}))
-local many = {}
-for i = 1, 100 do many[i] = a end
-path:SetControlPoints(many)
-assert(#path:GetControlPoints() == 100)
-many[101] = a
-assert(not pcall(path.SetControlPoints, path, many))
-assert(not pcall(path.InsertControlPoint, path, 1, a))
-''')
-
-    def test_line_curve_queries_and_closed_paths(self):
-        self.run_script('''
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(400, 100)
-local path = Instance.new("Path2D")
-path.Parent = frame
-assert(not pcall(path.GetPositionOnCurve, path, 0.5))
-path:SetControlPoints({Path2DControlPoint.new(UDim2.fromOffset(0, 0)), Path2DControlPoint.new(UDim2.fromOffset(400, 0))})
-assert(path:GetLength() == 400)
-assert(path:GetTangentOnCurve(0.5) == Vector2.new(400, 0))
-assert(path:GetTangentOnCurveArcLength(0.5) == Vector2.new(400, 0))
-assert(path:GetPositionOnCurve(0.25) == UDim2.fromScale(0.25, 0))
-assert(path:GetPositionOnCurveArcLength(0.5) == UDim2.fromScale(0.5, 0))
-assert(path:GetPositionOnCurve(-3) == UDim2.fromScale(0, 0) and path:GetPositionOnCurve(7) == UDim2.fromScale(1, 0))
-assert(not pcall(path.GetPositionOnCurve, path, 0/0))
-frame.Size = UDim2.fromOffset(400, 500)
-path:SetControlPoints({Path2DControlPoint.new(UDim2.fromOffset(0, 0)), Path2DControlPoint.new(UDim2.fromOffset(300, 0)),
-    Path2DControlPoint.new(UDim2.fromOffset(300, 400))})
-assert(path:GetSegmentCount() == 2 and path:GetLength() == 700)
-path.Closed = true
-assert(path:GetSegmentCount() == 3 and path:GetLength() == 1200)
-''')
-
-    def test_bounding_rect_pads_by_thickness(self):
-        self.run_script('''
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(400, 100)
-local path = Instance.new("Path2D")
-path.Parent = frame
-path:SetControlPoints({Path2DControlPoint.new(UDim2.fromOffset(0, 0)), Path2DControlPoint.new(UDim2.fromOffset(400, 0))})
-for _, case in {{0, 0}, {0.5, 0.75}, {1, 1}, {2, 1.5}, {4, 2.5}, {10, 5.5}} do
-    path.Thickness = case[1]
-    local rect = path:GetBoundingRect()
-    local pad = case[2]
-    assert(rect.Min == Vector2.new(-pad, -pad) and rect.Max == Vector2.new(400 + pad, pad), tostring(rect))
-end
-''')
+    def test_studio_batteries_match_line_for_line(self):
+        batteries = sorted(STUDIO.glob('*.luau'))
+        self.assertGreaterEqual(len(batteries), 6)
+        for script in batteries:
+            expected = [normalize(line) for line in
+                        (STUDIO / (script.stem + '.expected.txt')).read_text().strip().splitlines()]
+            for text in self.run_text(script.read_text()):
+                with self.subTest(battery=script.stem):
+                    self.assertEqual([normalize(line) for line in text.strip().splitlines()], expected)
 
     def test_six_point_path_matches_the_recorded_engine_answers(self):
         for text in self.run_text(GOLDEN_SOURCE):

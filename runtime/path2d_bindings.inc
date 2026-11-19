@@ -1,9 +1,9 @@
-// Path2DControlPoint values and the Path2D instance curve API (included into world_bindings.cpp).
+// Path2DControlPoint values and the Path2D curve API (included into world_bindings.cpp).
 //
-// Luraph-protected scripts hash Path2D results into their decryption keys, so the curve math follows
-// the engine's float32 evaluation order exactly: power-basis coefficients, adaptive-bisection length,
-// RK4 arc length. Every intermediate is rounded to float32 where the engine rounds it; the rounding
-// is expressed through p2d_f32() so it cannot be fused or reassociated away.
+// Behavior is checked against Roblox Studio: error texts, argument conversion, the control-point list versus the
+// internal spline, parent requirements. Luraph-protected scripts hash Path2D results into their decryption keys, so
+// the curve math follows the engine's float32 evaluation order exactly: power-basis coefficients, adaptive-bisection
+// length, RK4 arc length. Every intermediate is rounded to float32 where the engine rounds it, through p2d_f32().
 
 struct Path2DControlPointValue {
     double px; int32_t pxo; double py; int32_t pyo;
@@ -13,6 +13,11 @@ struct Path2DControlPointValue {
 constexpr const char* kPath2DControlPointMeta="HeadlessRuntime.Path2DControlPoint";
 constexpr size_t kPath2DMaxControlPoints=100;
 
+// Engine-bound methods raise plain messages without a source position.
+[[noreturn]] void p2d_raise(lua_State* L,const std::string& message) {
+    lua_pushlstring(L,message.data(),message.size());
+    lua_error(L);
+}
 bool path2d_control_points_equal(const Path2DControlPointValue& a,const Path2DControlPointValue& b) {
     return a.px==b.px&&a.pxo==b.pxo&&a.py==b.py&&a.pyo==b.pyo&&a.ltx==b.ltx&&a.ltxo==b.ltxo
         &&a.lty==b.lty&&a.ltyo==b.ltyo&&a.rtx==b.rtx&&a.rtxo==b.rtxo&&a.rty==b.rty&&a.rtyo==b.rtyo;
@@ -21,29 +26,47 @@ void push_path2d_control_point(lua_State* L,const Path2DControlPointValue& value
     auto* out=static_cast<Path2DControlPointValue*>(lua_newuserdatatagged(L,sizeof(Path2DControlPointValue),0));
     *out=value;luaL_getmetatable(L,kPath2DControlPointMeta);lua_setmetatable(L,-2);
 }
-const Path2DControlPointValue* path2d_control_point_arg(lua_State* L,int index) {
+Path2DControlPointValue* path2d_control_point_userdata(lua_State* L,int index) {
     if(!has_meta(L,index,kPath2DControlPointMeta))luaL_typeerror(L,index,"Path2DControlPoint");
-    return static_cast<const Path2DControlPointValue*>(lua_touserdata(L,index));
+    return static_cast<Path2DControlPointValue*>(lua_touserdata(L,index));
 }
 
+// The constructor takes no arguments, a position, or position and both tangents; any other count is rejected.
 int path2d_control_point_new(lua_State* L) {
+    const int count=lua_gettop(L);
+    if(count!=0&&count!=1&&count!=3)p2d_raise(L,"Trying to create a Path2DControlPoint with wrong number of arguments");
     Path2DControlPointValue value{};
     auto read_udim2_argument=[&](int index,double& sx,int32_t& ox,double& sy,int32_t& oy) {
-        if(lua_isnone(L,index))return;
         if(!read_udim2_raw(L,index,sx,ox,sy,oy))luaL_typeerror(L,index,"UDim2");
     };
-    read_udim2_argument(1,value.px,value.pxo,value.py,value.pyo);
-    read_udim2_argument(2,value.ltx,value.ltxo,value.lty,value.ltyo);
-    read_udim2_argument(3,value.rtx,value.rtxo,value.rty,value.rtyo);
+    if(count>=1)read_udim2_argument(1,value.px,value.pxo,value.py,value.pyo);
+    if(count==3) {
+        read_udim2_argument(2,value.ltx,value.ltxo,value.lty,value.ltyo);
+        read_udim2_argument(3,value.rtx,value.rtxo,value.rty,value.rtyo);
+    }
     push_path2d_control_point(L,value);return 1;
 }
 int path2d_control_point_index(lua_State* L) {
-    const auto* value=path2d_control_point_arg(L,1);
+    const auto* value=path2d_control_point_userdata(L,1);
     std::string key=luaL_checkstring(L,2);
     if(key=="Position"){push_udim2_raw(L,value->px,value->pxo,value->py,value->pyo);return 1;}
     if(key=="LeftTangent"){push_udim2_raw(L,value->ltx,value->ltxo,value->lty,value->ltyo);return 1;}
     if(key=="RightTangent"){push_udim2_raw(L,value->rtx,value->rtxo,value->rty,value->rtyo);return 1;}
-    luaL_error(L,"%s is not a valid member of Path2DControlPoint",key.c_str());return 0;
+    p2d_raise(L,"'"+key+"' is not a valid member of Path2DControlPoint");
+}
+// The point object itself is mutable; the Path2D keeps its own copy of every point it is given.
+int path2d_control_point_newindex(lua_State* L) {
+    auto* value=path2d_control_point_userdata(L,1);
+    std::string key=luaL_checkstring(L,2);
+    if(key=="Position"||key=="LeftTangent"||key=="RightTangent") {
+        double sx=0,sy=0;int32_t ox=0,oy=0;
+        if(!read_udim2_raw(L,3,sx,ox,sy,oy))luaL_typeerror(L,3,"UDim2");
+        if(key=="Position"){value->px=sx;value->pxo=ox;value->py=sy;value->pyo=oy;}
+        else if(key=="LeftTangent"){value->ltx=sx;value->ltxo=ox;value->lty=sy;value->ltyo=oy;}
+        else{value->rtx=sx;value->rtxo=ox;value->rty=sy;value->rtyo=oy;}
+        return 0;
+    }
+    p2d_raise(L,key+" is not a valid member of Path2DControlPoint");
 }
 int path2d_control_point_eq(lua_State* L) {
     const bool both=has_meta(L,1,kPath2DControlPointMeta)&&has_meta(L,2,kPath2DControlPointMeta);
@@ -51,9 +74,8 @@ int path2d_control_point_eq(lua_State* L) {
                                                         *static_cast<Path2DControlPointValue*>(lua_touserdata(L,2))));
     return 1;
 }
-int path2d_control_point_readonly(lua_State* L) {luaL_error(L,"Path2DControlPoint values are immutable");return 0;}
 int path2d_control_point_tostring(lua_State* L) {
-    const auto* value=path2d_control_point_arg(L,1);
+    const auto* value=path2d_control_point_userdata(L,1);
     auto udim2_text=[&](double sx,int32_t ox,double sy,int32_t oy) {
         push_udim2_raw(L,sx,ox,sy,oy);
         luaL_callmeta(L,-1,"__tostring");
@@ -66,19 +88,25 @@ int path2d_control_point_tostring(lua_State* L) {
     lua_pushlstring(L,text.data(),text.size());return 1;
 }
 
-// Control points live beside the world rather than in Node properties: Path2D exposes them only through methods.
-using Path2DPoints=std::unordered_map<std::string,std::vector<Path2DControlPointValue>>;
-std::unordered_map<const World*,Path2DPoints>& path2d_store() {
-    thread_local std::unordered_map<const World*,Path2DPoints> store;
+// Path2D keeps two structures. points is the control-point list (SetControlPoints replaces it, Insert/Update/Remove
+// edit it). spline is the size of the engine's internal spline: only a successful Insert grows it and Remove shrinks
+// it, and Update/Remove need an existing spline slot. List edits are applied before the spline operation can fail.
+struct Path2DState {
+    std::vector<Path2DControlPointValue> points;
+    int spline=0;
+};
+using Path2DStates=std::unordered_map<std::string,Path2DState>;
+std::unordered_map<const World*,Path2DStates>& path2d_store() {
+    thread_local std::unordered_map<const World*,Path2DStates> store;
     return store;
 }
-std::vector<Path2DControlPointValue>& path2d_points_for(const World& w,const std::string& id) {return path2d_store()[&w][id];}
+Path2DState& path2d_state_for(const World& w,const std::string& id) {return path2d_store()[&w][id];}
 const std::vector<Path2DControlPointValue>& path2d_points_const(const World& w,const std::string& id) {
     static const std::vector<Path2DControlPointValue> empty;
     auto world=path2d_store().find(&w);
     if(world==path2d_store().end())return empty;
     auto node=world->second.find(id);
-    return node==world->second.end()?empty:node->second;
+    return node==world->second.end()?empty:node->second.points;
 }
 Handle* checked_path2d(lua_State* L) {
     Handle* h=checked_handle(L,1);
@@ -90,9 +118,15 @@ bool path2d_is_closed(World& w,Node& n) {
     const auto* closed=property_value(w,n,"Closed");
     return closed&&closed->is_boolean()&&closed->get<bool>();
 }
+// A closed path adds the closing segment only from three points up.
 size_t path2d_segment_count(const std::vector<Path2DControlPointValue>& points,bool closed) {
     if(points.size()<2)return 0;
-    return closed?points.size():points.size()-1;
+    return closed&&points.size()>=3?points.size():points.size()-1;
+}
+// Curve queries and Insert/Update need the Path2D to sit directly in a GUI container.
+bool path2d_parent_valid(World& w,Node& n) {
+    Node* parent=find_node(w,parent_id(w,n));
+    return parent&&!parent->destroyed&&class_is_a(w,parent->class_name,"GuiBase2d");
 }
 
 // The pixel size control points resolve against: the nearest GuiObject/ScreenGui ancestor. A mounted tree
@@ -293,22 +327,67 @@ void p2d_locate_arc(std::vector<Path2DBezier>& segments,double t,size_t& segment
     segment=0;u=0;
 }
 
-// Shared setup for the four curve queries: validates t, resolves the canvas and builds the segments.
+// Argument conversion the way engine-bound methods report it: "Argument N missing or nil" and "Unable to cast X to Y".
+const char* p2d_cast_type(lua_State* L,int index) {
+    switch(lua_type(L,index)) {
+        case LUA_TNUMBER:return "double";
+        case LUA_TBOOLEAN:return "bool";
+        case LUA_TSTRING:return "string";
+        default:return luaL_typename(L,index);
+    }
+}
+void p2d_require_argument(lua_State* L,int index,int number) {
+    if(lua_isnoneornil(L,index))p2d_raise(L,"Argument "+std::to_string(number)+" missing or nil");
+}
+double p2d_number_argument(lua_State* L,int index,int number,const char* target) {
+    p2d_require_argument(L,index,number);
+    if(!lua_isnumber(L,index))p2d_raise(L,std::string("Unable to cast ")+p2d_cast_type(L,index)+" to "+target);
+    return lua_tonumber(L,index);
+}
+// A fractional index rounds half away from zero.
+int p2d_index_argument(lua_State* L,int index,int number) {
+    const double value=p2d_number_argument(L,index,number,"int");
+    if(std::isnan(value))return 0;
+    return static_cast<int>(std::clamp(std::round(value),-2147483648.0,2147483647.0));
+}
+Path2DControlPointValue p2d_point_argument(lua_State* L,int index,int number) {
+    p2d_require_argument(L,index,number);
+    if(!has_meta(L,index,kPath2DControlPointMeta))
+        p2d_raise(L,std::string("Unable to cast ")+p2d_cast_type(L,index)+" to Path2DControlPoint");
+    return *static_cast<const Path2DControlPointValue*>(lua_touserdata(L,index));
+}
+std::string p2d_bounds_message(const char* method,int index) {
+    return std::string("Path2D:")+method+"() at index "+std::to_string(index)+" access out of bounds";
+}
+void p2d_require_parent(lua_State* L,World& w,Node& n) {
+    if(!path2d_parent_valid(w,n))p2d_raise(L,"Attempting to use Path2D with invalid parent");
+}
+
+// A successful curve query rebuilds the internal spline from the control-point list.
+void path2d_sync_spline(World& w,Node& n) {
+    auto& state=path2d_state_for(w,n.id);
+    state.spline=static_cast<int>(state.points.size());
+}
+
+// Shared setup for the curve queries: converts t, rejects an empty path, requires a GUI parent, builds the segments.
 struct Path2DCurve {
     std::vector<Path2DBezier> segments;
     double width=0,height=0;
 };
-Path2DCurve path2d_curve(lua_State* L,Handle* h,double* t) {
+Path2DCurve path2d_curve(lua_State* L,Handle* h,const char* method,double* t) {
     if(t) {
-        *t=luaL_checknumber(L,2);
-        if(!std::isfinite(*t))luaL_argerror(L,2,"t must be finite");
-        *t=std::clamp(*t,0.0,1.0);
+        double value=p2d_number_argument(L,2,1,"float");
+        if(std::isnan(value))value=0;
+        *t=std::clamp(value,0.0,1.0);
     }
-    const auto& points=path2d_points_const(*h->world,h->node->id);
-    const size_t count=path2d_segment_count(points,path2d_is_closed(*h->world,*h->node));
-    if(count==0)luaL_error(L,"Path2D has fewer than 2 control points");
+    World& w=*h->world;Node& n=*h->node;
+    const auto& points=path2d_points_const(w,n.id);
+    const size_t count=path2d_segment_count(points,path2d_is_closed(w,n));
+    if(count==0)p2d_raise(L,std::string("Path2D:")+method+"() attempting to query with zero segments");
+    p2d_require_parent(L,w,n);
+    path2d_sync_spline(w,n);
     Path2DCurve curve;
-    path2d_canvas_size(*h->world,*h->node,curve.width,curve.height);
+    path2d_canvas_size(w,n,curve.width,curve.height);
     curve.segments=p2d_segments(points,count,curve.width,curve.height);
     return curve;
 }
@@ -322,9 +401,9 @@ int push_path2d_position(lua_State* L,const Path2DCurve& curve,size_t segment,do
 
 int path2d_get_control_point(lua_State* L) {
     Handle* h=checked_path2d(L);
-    const lua_Integer index=luaL_checkinteger(L,2);
+    const int index=p2d_index_argument(L,2,1);
     const auto& points=path2d_points_const(*h->world,h->node->id);
-    if(index<1||static_cast<size_t>(index)>points.size()){luaL_error(L,"Control point index %d out of range",static_cast<int>(index));return 0;}
+    if(index<1||static_cast<size_t>(index)>points.size())p2d_raise(L,p2d_bounds_message("GetControlPoint",index));
     push_path2d_control_point(L,points[static_cast<size_t>(index)-1]);return 1;
 }
 int path2d_get_control_points(lua_State* L) {
@@ -336,54 +415,65 @@ int path2d_get_control_points(lua_State* L) {
 }
 int path2d_set_control_points(lua_State* L) {
     Handle* h=checked_path2d(L);
-    luaL_checktype(L,2,LUA_TTABLE);
-    const int count=lua_objlen(L,2);
-    if(count<0||static_cast<size_t>(count)>kPath2DMaxControlPoints){luaL_error(L,"Path2D control point limit (%d) exceeded",static_cast<int>(kPath2DMaxControlPoints));return 0;}
-    std::vector<Path2DControlPointValue> next;next.reserve(static_cast<size_t>(count));
-    for(int i=1;i<=count;++i) {
+    p2d_require_argument(L,2,1);
+    if(lua_type(L,2)!=LUA_TTABLE)p2d_raise(L,std::string("Unable to cast ")+p2d_cast_type(L,2)+" to Array");
+    std::vector<Path2DControlPointValue> next;
+    for(int i=1;;++i) {
         lua_rawgeti(L,2,i);
-        if(!has_meta(L,-1,kPath2DControlPointMeta)){lua_pop(L,1);luaL_argerror(L,2,"array of Path2DControlPoint expected");return 0;}
+        if(lua_isnil(L,-1)){lua_pop(L,1);break;}
+        if(static_cast<size_t>(i)>kPath2DMaxControlPoints){lua_pop(L,1);p2d_raise(L,"Path2D:SetControlPoints() only supports 100 control points.");}
+        if(!has_meta(L,-1,kPath2DControlPointMeta)){lua_pop(L,1);p2d_raise(L,"Variant cast failed");}
         next.push_back(*static_cast<Path2DControlPointValue*>(lua_touserdata(L,-1)));
         lua_pop(L,1);
     }
-    path2d_points_for(*h->world,h->node->id)=std::move(next);
+    path2d_state_for(*h->world,h->node->id).points=std::move(next);
     emit(*h->world,*h->node,"ControlPointChanged",Json::array());
     return 0;
 }
 int path2d_insert_control_point(lua_State* L) {
     Handle* h=checked_path2d(L);
-    const int index=luaL_checkinteger(L,2);
-    const auto* point=path2d_control_point_arg(L,3);
-    auto& points=path2d_points_for(*h->world,h->node->id);
-    if(points.size()>=kPath2DMaxControlPoints){luaL_error(L,"Path2D control point limit (%d) exceeded",static_cast<int>(kPath2DMaxControlPoints));return 0;}
-    if(index<1||static_cast<size_t>(index)>points.size()+1){luaL_argerror(L,2,"Invalid control point index");return 0;}
-    points.insert(points.begin()+(index-1),*point);
-    emit(*h->world,*h->node,"ControlPointChanged",Json::array({index}));
+    const int index=p2d_index_argument(L,2,1);
+    const auto point=p2d_point_argument(L,3,2);
+    World& w=*h->world;Node& n=*h->node;
+    auto& state=path2d_state_for(w,n.id);
+    if(state.points.size()>=kPath2DMaxControlPoints)p2d_raise(L,"Path2D:InsertControlPoint() only supports 100 control points.");
+    if(index<1||static_cast<size_t>(index)>state.points.size()+1)p2d_raise(L,p2d_bounds_message("InsertControlPoint",index));
+    p2d_require_parent(L,w,n);
+    state.points.insert(state.points.begin()+(index-1),point);
+    emit(w,n,"ControlPointChanged",Json::array({index}));
+    if(index-1>state.spline)p2d_raise(L,"Spline inserting control point at index "+std::to_string(index-1)+" access out of bounds");
+    ++state.spline;
     return 0;
 }
 int path2d_update_control_point(lua_State* L) {
     Handle* h=checked_path2d(L);
-    const int index=luaL_checkinteger(L,2);
-    const auto* point=path2d_control_point_arg(L,3);
-    auto& points=path2d_points_for(*h->world,h->node->id);
-    if(index<1||static_cast<size_t>(index)>points.size()){luaL_argerror(L,2,"Invalid control point index");return 0;}
-    points[static_cast<size_t>(index-1)]=*point;
-    emit(*h->world,*h->node,"ControlPointChanged",Json::array({index}));
+    const int index=p2d_index_argument(L,2,1);
+    const auto point=p2d_point_argument(L,3,2);
+    World& w=*h->world;Node& n=*h->node;
+    auto& state=path2d_state_for(w,n.id);
+    if(index<1||static_cast<size_t>(index)>state.points.size())p2d_raise(L,p2d_bounds_message("UpdateControlPoint",index));
+    p2d_require_parent(L,w,n);
+    state.points[static_cast<size_t>(index-1)]=point;
+    emit(w,n,"ControlPointChanged",Json::array({index}));
+    if(index-1>=state.spline)p2d_raise(L,"Spline updating control point at index "+std::to_string(index-1)+" access out of bounds");
     return 0;
 }
 int path2d_remove_control_point(lua_State* L) {
     Handle* h=checked_path2d(L);
-    const int index=luaL_checkinteger(L,2);
-    auto& points=path2d_points_for(*h->world,h->node->id);
-    if(index<1||static_cast<size_t>(index)>points.size()){luaL_argerror(L,2,"Invalid control point index");return 0;}
-    points.erase(points.begin()+(index-1));
-    emit(*h->world,*h->node,"ControlPointChanged",Json::array({index}));
+    const int index=p2d_index_argument(L,2,1);
+    World& w=*h->world;Node& n=*h->node;
+    auto& state=path2d_state_for(w,n.id);
+    if(index<1||static_cast<size_t>(index)>state.points.size())p2d_raise(L,p2d_bounds_message("RemoveControlPoint",index));
+    state.points.erase(state.points.begin()+(index-1));
+    emit(w,n,"ControlPointChanged",Json::array({index}));
+    if(index-1>=state.spline)p2d_raise(L,"Spline removing control point at index "+std::to_string(index-1)+" access out of bounds");
+    --state.spline;
     return 0;
 }
+// Scripts running without the RobloxScript capability (game scripts) cannot use the segment count.
 int path2d_get_segment_count(lua_State* L) {
-    Handle* h=checked_path2d(L);
-    const auto& points=path2d_points_const(*h->world,h->node->id);
-    lua_pushinteger(L,static_cast<lua_Integer>(path2d_segment_count(points,path2d_is_closed(*h->world,*h->node))));return 1;
+    checked_path2d(L);
+    p2d_raise(L,"The current thread cannot call 'GetSegmentCount' (lacking capability RobloxScript)");
 }
 int path2d_get_max_control_points(lua_State* L) {
     checked_path2d(L);
@@ -391,12 +481,15 @@ int path2d_get_max_control_points(lua_State* L) {
 }
 int path2d_get_length(lua_State* L) {
     Handle* h=checked_path2d(L);
-    const auto& points=path2d_points_const(*h->world,h->node->id);
-    const size_t count=path2d_segment_count(points,path2d_is_closed(*h->world,*h->node));
+    World& w=*h->world;Node& n=*h->node;
+    const auto& points=path2d_points_const(w,n.id);
+    const size_t count=path2d_segment_count(points,path2d_is_closed(w,n));
     double length=0;
     if(count>0) {
+        p2d_require_parent(L,w,n);
+        path2d_sync_spline(w,n);
         double width=0,height=0;
-        path2d_canvas_size(*h->world,*h->node,width,height);
+        path2d_canvas_size(w,n,width,height);
         auto segments=p2d_segments(points,count,width,height);
         length=p2d_total_length(segments);
     }
@@ -404,38 +497,46 @@ int path2d_get_length(lua_State* L) {
 }
 int path2d_get_position_on_curve(lua_State* L) {
     Handle* h=checked_path2d(L);
-    double t=0;auto curve=path2d_curve(L,h,&t);
+    double t=0;auto curve=path2d_curve(L,h,"GetPositionOnCurve",&t);
     size_t segment=0;double u=0;p2d_locate(curve.segments,t,segment,u);
     return push_path2d_position(L,curve,segment,u);
 }
 int path2d_get_position_on_curve_arc_length(lua_State* L) {
     Handle* h=checked_path2d(L);
-    double t=0;auto curve=path2d_curve(L,h,&t);
+    double t=0;auto curve=path2d_curve(L,h,"GetPositionOnCurveArcLength",&t);
     size_t segment=0;double u=0;p2d_locate_arc(curve.segments,t,segment,u);
     return push_path2d_position(L,curve,segment,u);
 }
 int path2d_get_tangent_on_curve(lua_State* L) {
     Handle* h=checked_path2d(L);
-    double t=0;auto curve=path2d_curve(L,h,&t);
+    double t=0;auto curve=path2d_curve(L,h,"GetTangentOnCurve",&t);
     size_t segment=0;double u=0;p2d_locate(curve.segments,t,segment,u);
     double tx=0,ty=0;p2d_tangent(curve.segments[segment],u,tx,ty);
     return push_vector2(L,tx,ty);
 }
 int path2d_get_tangent_on_curve_arc_length(lua_State* L) {
     Handle* h=checked_path2d(L);
-    double t=0;auto curve=path2d_curve(L,h,&t);
+    double t=0;auto curve=path2d_curve(L,h,"GetTangentOnCurveArcLength",&t);
     size_t segment=0;double u=0;p2d_locate_arc(curve.segments,t,segment,u);
     double tx=0,ty=0;p2d_tangent(curve.segments[segment],u,tx,ty);
     return push_vector2(L,tx,ty);
 }
-// The control points and the curve's axis extrema, padded by half the stroke thickness plus half a pixel.
+// The control points and the curve's axis extrema, padded by half the stroke thickness plus half a pixel. A path
+// without a segment reports the widest representable rectangle.
 int path2d_get_bounding_rect(lua_State* L) {
     Handle* h=checked_path2d(L);
-    const auto& points=path2d_points_const(*h->world,h->node->id);
-    double width=0,height=0;
-    path2d_canvas_size(*h->world,*h->node,width,height);
-    double min_x=0,min_y=0,max_x=0,max_y=0;
-    if(!points.empty()) {
+    World& w=*h->world;Node& n=*h->node;
+    const auto& points=path2d_points_const(w,n.id);
+    const size_t count=path2d_segment_count(points,path2d_is_closed(w,n));
+    double min_x,min_y,max_x,max_y;
+    if(count==0) {
+        const double widest=static_cast<double>(std::numeric_limits<float>::max());
+        min_x=min_y=-widest;max_x=max_y=widest;
+    } else {
+        p2d_require_parent(L,w,n);
+        path2d_sync_spline(w,n);
+        double width=0,height=0;
+        path2d_canvas_size(w,n,width,height);
         min_x=max_x=points[0].px*width+static_cast<double>(points[0].pxo);
         min_y=max_y=points[0].py*height+static_cast<double>(points[0].pyo);
         auto expand=[&](double x,double y) {
@@ -445,7 +546,6 @@ int path2d_get_bounding_rect(lua_State* L) {
             if(y>max_y)max_y=y;
         };
         for(const auto& point:points)expand(point.px*width+static_cast<double>(point.pxo),point.py*height+static_cast<double>(point.pyo));
-        const size_t count=path2d_segment_count(points,path2d_is_closed(*h->world,*h->node));
         const auto segments=p2d_segments(points,count,width,height);
         for(const auto& segment:segments) {
             auto check_axis=[&](float c1,float c2,float c3) {
@@ -473,18 +573,18 @@ int path2d_get_bounding_rect(lua_State* L) {
             check_axis(segment.c1x,segment.c2x,segment.c3x);
             check_axis(segment.c1y,segment.c2y,segment.c3y);
         }
+        double thickness=1.0;
+        if(const auto* value=property_value(w,n,"Thickness");value&&value->is_number())thickness=value->get<double>();
+        const double padding=thickness>0.0?0.5*thickness+0.5:0.0;
+        min_x-=padding;min_y-=padding;max_x+=padding;max_y+=padding;
     }
-    double thickness=1.0;
-    if(const auto* value=property_value(*h->world,*h->node,"Thickness");value&&value->is_number())thickness=value->get<double>();
-    const double padding=thickness>0.0?0.5*thickness+0.5:0.0;
     auto f32=[](double v){return static_cast<double>(static_cast<float>(v));};
-    min_x=f32(min_x-padding);min_y=f32(min_y-padding);max_x=f32(max_x+padding);max_y=f32(max_y+padding);
-    push_authored_value(L,Json{{"$rect",Json::array({Json{{"$vector2",Json::array({min_x,min_y})}},Json{{"$vector2",Json::array({max_x,max_y})}}})}});
+    push_authored_value(L,Json{{"$rect",Json::array({Json{{"$vector2",Json::array({f32(min_x),f32(min_y)})}},Json{{"$vector2",Json::array({f32(max_x),f32(max_y)})}}})}});
     return 1;
 }
 
 // Member lookup for Path2D instances; returns false for members this class does not add.
-bool path2d_index(lua_State* L,World& w,Node& n,const std::string& key) {
+bool path2d_index(lua_State* L,const std::string& key) {
     struct Method {const char* name;lua_CFunction function;};
     static const Method methods[]={
         {"GetControlPoint",path2d_get_control_point},{"GetControlPoints",path2d_get_control_points},
@@ -498,39 +598,19 @@ bool path2d_index(lua_State* L,World& w,Node& n,const std::string& key) {
     for(const auto& method:methods) {
         if(key==method.name){lua_pushcfunction(L,method.function,method.name);return true;}
     }
-    if(key=="SelectedControlPointData") {
-        const auto& points=path2d_points_const(w,n.id);
-        int selected=0;
-        if(const auto* value=property_value(w,n,"SelectedControlPoint");value&&value->is_number_integer())selected=value->get<int>();
-        Path2DControlPointValue point{};
-        if(selected>=1&&static_cast<size_t>(selected)<=points.size())point=points[static_cast<size_t>(selected-1)];
-        push_path2d_control_point(L,point);return true;
-    }
+    if(key=="SelectedControlPoint"||key=="SelectedControlPointData")
+        p2d_raise(L,"The current thread cannot read '"+key+"' (lacking capability RobloxScript)");
     return false;
-}
-// Assignment of Path2D.SelectedControlPointData rewrites the selected control point.
-bool path2d_newindex(lua_State* L,Handle* h,const std::string& key) {
-    if(key!="SelectedControlPointData")return false;
-    World& w=*h->world;Node& n=*h->node;
-    if(n.destroyed){luaL_error(L,"Path2D receiver is destroyed");return true;}
-    const auto* point=path2d_control_point_arg(L,3);
-    auto& points=path2d_points_for(w,n.id);
-    int selected=0;
-    if(const auto* value=property_value(w,n,"SelectedControlPoint");value&&value->is_number_integer())selected=value->get<int>();
-    if(selected>=1&&static_cast<size_t>(selected)<=points.size()) {
-        points[static_cast<size_t>(selected-1)]=*point;
-        emit(w,n,"ControlPointChanged",Json::array({selected}));
-    }
-    return true;
 }
 void install_path2d_bindings(lua_State* L) {
     luaL_newmetatable(L,kPath2DControlPointMeta);
     lua_pushcfunction(L,path2d_control_point_index,"__index");lua_setfield(L,-2,"__index");
+    // No debug name: the engine reports this error as "invalid argument #3 (...)" without naming the function.
+    lua_pushcfunction(L,path2d_control_point_newindex,nullptr);lua_setfield(L,-2,"__newindex");
     lua_pushcfunction(L,path2d_control_point_eq,"__eq");lua_setfield(L,-2,"__eq");
-    lua_pushcfunction(L,path2d_control_point_readonly,"__newindex");lua_setfield(L,-2,"__newindex");
     lua_pushcfunction(L,path2d_control_point_tostring,"__tostring");lua_setfield(L,-2,"__tostring");
     lua_pushliteral(L,"Path2DControlPoint");lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"Path2DControlPoint");lua_setfield(L,-2,"__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L,1);
     lua_createtable(L,0,1);
     lua_pushcfunction(L,path2d_control_point_new,"new");lua_setfield(L,-2,"new");

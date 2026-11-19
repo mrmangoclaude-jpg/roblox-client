@@ -1,0 +1,35 @@
+V2 extra	ok:1, 2
+V2 str	ok:1, 2
+V2 nil1	ok:0, 1
+V2 nan	ok:true
+V2 inf	ok:INF, 1
+V2 tbl	ok:0, 0
+V2 bool	ok:0, 0
+V2 one	ok:5, 0
+CP num	err:AssistantCommand:15: invalid argument #1 to 'new' (UDim2 expected, got number)
+CP nil	err:AssistantCommand:16: invalid argument #1 to 'new' (UDim2 expected, got nil)
+CP str	err:AssistantCommand:17: invalid argument #1 to 'new' (UDim2 expected, got string)
+CP 2nd bad	err:Trying to create a Path2DControlPoint with wrong number of arguments
+CP extra	err:Trying to create a Path2DControlPoint with wrong number of arguments
+CP tostring	ok:Path2DControlPoint { Position = {0.5, 10}, {0.25, -4}, LeftTangent = {0, 1}, {0, 2}, RightTangent = {0.100000001, 0}, {0.200000003, 0} }
+CP typeof	ok:Path2DControlPoint
+CP getmt	ok:The metatable is locked
+CP bad member	err:'Foo' is not a valid member of Path2DControlPoint
+CP set	ok:nil
+CP eq	ok:false
+P2D defaults	ok:true,1,1,false,0, 0, 0
+P2D max	ok:100
+P2D segcount empty	err:The current thread cannot call 'GetSegmentCount' (lacking capability RobloxScript)
+P2D len empty	ok:0
+P2D pos empty	err:Path2D:GetPositionOnCurve() attempting to query with zero segments
+P2D getcp 1	err:Path2D:GetControlPoint() at index 1 access out of bounds
+P2D insert idx5	err:Path2D:InsertControlPoint() at index 5 access out of bounds
+P2D insert idx0	err:Path2D:InsertControlPoint() at index 0 access out of bounds
+P2D insert ok	err:Attempting to use Path2D with invalid parent
+P2D update bad	err:Path2D:UpdateControlPoint() at index 3 access out of bounds
+P2D remove bad	err:Path2D:RemoveControlPoint() at index 3 access out of bounds
+P2D set {1}	err:Variant cast failed
+P2D set 5	err:Unable to cast double to Array
+P2D set none	err:Argument 1 missing or nil
+P2D getcp 1.5	err:Path2D:GetControlPoint() at index 2 access out of bounds
+P2D unparented len	err:Attempting to use Path2D with invalid parent

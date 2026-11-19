@@ -1,0 +1,43 @@
+CP args 0	ok:Path2DControlPoint { Position = {0, 0}, {0, 0}, LeftTangent = {0, 0}, {0, 0}, RightTangent = {0, 0}, {0, 0} }
+CP args 1	ok:Path2DControlPoint { Position = {0.5, 10}, {0.25, -4}, LeftTangent = {0, 0}, {0, 0}, RightTangent = {0, 0}, {0, 0} }
+CP args 2	err:Trying to create a Path2DControlPoint with wrong number of arguments
+CP args 3	ok:Path2DControlPoint { Position = {0.5, 10}, {0.25, -4}, LeftTangent = {0.5, 10}, {0.25, -4}, RightTangent = {0.5, 10}, {0.25, -4} }
+CP args 4	err:Trying to create a Path2DControlPoint with wrong number of arguments
+CP args 1 then nil	err:AssistantCommand:13: invalid argument #2 to 'new' (UDim2 expected, got nil)
+CP args 3 nil mid	err:AssistantCommand:14: invalid argument #2 to 'new' (UDim2 expected, got nil)
+CP set then read	ok:{0, 0}, {0, 0}
+CP set Foo	err:Foo is not a valid member of Path2DControlPoint
+CP same obj eq	ok:true
+UDim2 getmt	ok:The metatable is locked
+V2 getmt	ok:The metatable is locked
+V2 badstr	ok:0, 0
+V2 nil	ok:0, 0
+UDim2 tostring	ok:{0.100000001, 3}, {0.200000003, 4}
+parent nil	ok:set ok, n=2
+parent Frame	ok:set ok, n=2
+parent ScreenGui	ok:set ok, n=2
+parent Folder	ok:set ok, n=2
+parent TextLabel	ok:set ok, n=2
+parent ImageLabel	ok:set ok, n=2
+P2D empty bounding	ok:-3.40282347e+38, -3.40282347e+38, 3.40282347e+38, 3.40282347e+38
+P2D empty segs	ok:0
+P2D getcp 1.5	ok:Path2DControlPoint { Position = {0, 100}, {0, 0}, LeftTangent = {0, 0}, {0, 0}, RightTangent = {0, 0}, {0, 0} }
+P2D getcp 0	err:Path2D:GetControlPoint() at index 0 access out of bounds
+P2D getcp str	err:Unable to cast string to int
+P2D pos nan	ok:{0, 0}, {0, 0}
+P2D pos str	err:Unable to cast string to float
+P2D pos nil	err:Argument 1 missing or nil
+P2D pos 5	ok:{1, 0}, {0, 0}
+P2D tan -1	ok:100, 0
+P2D insert 1.5	ok:3
+P2D insert badcp	err:Unable to cast double to Path2DControlPoint
+P2D insert nocp	err:Argument 2 missing or nil
+P2D update str	err:Unable to cast string to int
+P2D set nonCP tbl	err:Variant cast failed
+P2D set mixed holes	ok:nil
+P2D set 101	err:Path2D:SetControlPoints() only supports 100 control points.
+P2D set 100	ok:100
+P2D insert at 100	err:Path2D:InsertControlPoint() only supports 100 control points.
+P2D segcount cap	err:The current thread cannot call 'GetSegmentCount' (lacking capability RobloxScript)
+P2D selected prop	err:The current thread cannot read 'SelectedControlPoint' (lacking capability RobloxScript)
+P2D selectedData	err:The current thread cannot read 'SelectedControlPointData' (lacking capability RobloxScript)

@@ -1,0 +1,25 @@
+get same obj twice	ok:true
+get == original a	ok:true
+mutate a after set	ok:{0, 0}, {0, 0}
+mutate returned point	ok:{0, 100}, {0, 0}
+array element identity	ok:true
+length after mutation	ok:100
+set Position 5	err:AssistantCommand:17: invalid argument #3 (UDim2 expected, got number)
+set Position nil	err:AssistantCommand:18: invalid argument #3 (UDim2 expected, got nil)
+set Position str	err:AssistantCommand:19: invalid argument #3 (UDim2 expected, got string)
+set LeftTangent ok	ok:{0, 3}, {0, 4}
+set RightTangent ok	ok:{0.5, 1}, {0.25, 2}
+scale set parent nil	ok:ok n=2
+scale set parent Frame	ok:ok n=2
+scale set parent ScreenGui	ok:ok n=2
+scale set parent Folder	ok:ok n=2
+insert offset nil parent	err:Attempting to use Path2D with invalid parent
+insert scale nil parent	err:Attempting to use Path2D with invalid parent
+insert scale Folder parent	err:Attempting to use Path2D with invalid parent
+insert scale Frame parent	ok:ok n=1
+offset nil-parent curve	err:Attempting to use Path2D with invalid parent
+offset Folder-parent curve	err:Attempting to use Path2D with invalid parent
+scale curve nil parent via Frame later	ok:{0.0250000004, 0}, {0.0500000007, 0}
+closed 2 points segs/len	ok:100
+empty bounding thickness 0	ok:-3.40282347e+38, -3.40282347e+38, 3.40282347e+38, 3.40282347e+38
+single point bounding	ok:-3.40282347e+38, -3.40282347e+38, 3.40282347e+38, 3.40282347e+38 len=0

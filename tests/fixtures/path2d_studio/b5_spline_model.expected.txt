@@ -1,0 +1,23 @@
+A n after set	ok:6
+A Update 1	err:Spline updating control point at index 0 access out of bounds
+A n/pos1 after Update	ok:6 {0, 99}, {0, 99}
+A Insert 1	ok:nil
+A n/pos1 after Insert	ok:7 {0, 77}, {0, 77}
+A Remove 1	ok:nil
+A n/pos1 after Remove	ok:6 {0, 99}, {0, 99}
+A len after all	ok:163.72557067871094
+B Update 2	err:Spline updating control point at index 1 access out of bounds
+B n/pos2 after Update	ok:3 {0, 99}, {0, 99}
+B Remove 2	err:Spline removing control point at index 1 access out of bounds
+B n after Remove	ok:2
+B Insert 4 (n=3)	err:Path2D:InsertControlPoint() at index 4 access out of bounds
+B n after Insert4	ok:2
+C ins1	ok:1
+C ins2 at 2	ok:2
+C ins3 at 1	ok:3 {0, 5}, {0, 5}
+C update 2	ok:{0, 15}, {0, 15}
+C remove 1	ok:2 {0, 15}, {0, 15}
+C remove last	ok:0
+C len	ok:0
+D set after insert -> update 1	ok:{0, 9}, {0, 9}
+D remove 4	err:Spline removing control point at index 3 access out of bounds

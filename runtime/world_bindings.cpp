@@ -1320,7 +1320,7 @@ int instance_index(lua_State* L) {
     }
     if(textbox_focus_index(L,w,n,key))return 1;
     if(n.class_name=="Workspace"&&key=="GetServerTimeNow"){lua_pushcfunction(L,workspace_get_server_time_now,"GetServerTimeNow");return 1;}
-    if(n.class_name=="Path2D"&&path2d_index(L,w,n,key))return 1;
+    if(n.class_name=="Path2D"&&path2d_index(L,key))return 1;
     if(n.class_name=="TextService"&&(key=="GetFamilyInfoAsync"||key=="GetTextBoundsAsync")) {
         lua_pushboolean(L,key=="GetTextBoundsAsync");lua_pushcclosurek(L,text_service_request,key.c_str(),1,text_service_continue);return 1;
     }
@@ -2101,7 +2101,6 @@ int instance_handle_tostring(lua_State* L) {
 }
 int instance_newindex(lua_State* L){
     Handle*h=checked_handle(L,1);World&w=*h->world;Node&n=*h->node;std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);Json value;
-    if(n.class_name=="Path2D"&&path2d_newindex(L,h,key))return 0;
     if(n.class_name=="Player") {
         if(key=="GameplayPaused"&&!SourceScheduler::has_capability(L,"RobloxScript"))return luaL_error(L,"GameplayPaused: lacking capability RobloxScript"),0;
         if((key=="Name"||key=="UserId")&&!SourceScheduler::has_capability(L,"WritePlayer"))return luaL_error(L,"Player identity: lacking capability WritePlayer"),0;
@@ -2318,6 +2317,7 @@ int instance_new(lua_State*L){
     }
     std::string id=node.id;
     if(cls=="VectorForce"){node.properties["RelativeTo"]=0;node.origins["RelativeTo"]="class_default";}
+    if(cls=="Path2D"){node.properties["Color3"]=Json{{"$color3",{0,0,0}}};node.origins["Color3"]="class_default";}
     if(cls=="LinearVelocity") {
         Json defaults={{"RelativeTo",2},{"VelocityConstraintMode",2},{"ForceLimitMode",0},
             {"PlaneVelocity",{{"$vector2",{0,0}}}},{"MaxPlanarAxesForce",{{"$vector2",{1000,1000}}}}};

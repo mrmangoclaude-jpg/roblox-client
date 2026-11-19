@@ -1,0 +1,15 @@
+Frame Update 1	err:Spline updating control point at index 0 access out of bounds
+Frame Update 2	err:Spline updating control point at index 1 access out of bounds
+Frame Update 3	err:Spline updating control point at index 2 access out of bounds
+Frame Update 9	err:Path2D:UpdateControlPoint() at index 9 access out of bounds
+Frame Remove 3	err:Spline removing control point at index 2 access out of bounds
+Frame Remove 1 (2 left)	err:Spline removing control point at index 0 access out of bounds
+Frame Remove 1 (1 left)	err:Spline removing control point at index 0 access out of bounds
+Frame2 Remove 3 of 3	err:Spline removing control point at index 2 access out of bounds
+nil Update 1	err:Attempting to use Path2D with invalid parent
+nil Remove 3	err:Spline removing control point at index 2 access out of bounds
+nil Remove 1	err:Spline removing control point at index 0 access out of bounds
+Frame Insert 4	err:Spline inserting control point at index 3 access out of bounds
+Frame Insert 5 (n=4)	err:Spline inserting control point at index 4 access out of bounds
+Frame Insert 7 (n=5)	err:Path2D:InsertControlPoint() at index 7 access out of bounds
+Frame Insert -1	err:Path2D:InsertControlPoint() at index -1 access out of bounds
