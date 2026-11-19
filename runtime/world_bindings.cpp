@@ -636,6 +636,18 @@ bool class_is_a(const World& world, const std::string& actual, const std::string
     world.class_ancestors.emplace(actual,std::move(seen));
     return result;
 }
+// True when the reflected class (or an ancestor) declares the property, even if the server never sent a value for it.
+bool class_declares_property(const World& world,const std::string& cls,const std::string& name) {
+    std::string cursor=cls;
+    for(int depth=0;depth<64&&!cursor.empty();++depth) {
+        auto known=world.class_property_types.find(cursor);
+        if(known!=world.class_property_types.end()&&known->contains(name))return true;
+        auto parent=world.class_parents.find(cursor);
+        if(parent==world.class_parents.end()||!parent->is_string())break;
+        cursor=parent->get<std::string>();
+    }
+    return false;
+}
 std::string character_motion_root_id(World&,Node&);
 #include "physics_force_bindings.inc"
 using Children = std::unordered_map<std::string,std::vector<std::string>>;
@@ -1970,7 +1982,7 @@ int property_changed_signal(lua_State* L) {
         if(name=="velocity")name="Velocity";
         if(name=="maxForce")name="MaxForce";
     }
-    if(name!="Name"&&name!="Parent"&&name!="ClassName"&&!(h->node->class_name=="Workspace"&&name=="CurrentCamera")&&!property_descriptor(*h->node,name)&&origin(*h->world,*h->node,name)=="unavailable"&&gui_property_type(*h->world,*h->node,name).empty()) {luaL_error(L,"unknown property for change signal");return 0;}
+    if(name!="Name"&&name!="Parent"&&name!="ClassName"&&!(h->node->class_name=="Workspace"&&name=="CurrentCamera")&&!property_descriptor(*h->node,name)&&origin(*h->world,*h->node,name)=="unavailable"&&gui_property_type(*h->world,*h->node,name).empty()&&!class_declares_property(*h->world,h->node->class_name,name)) {luaL_error(L,"%s is not a valid property name.",name.c_str());return 0;}
     watch_display_property(*h->world,*h->node,name);
     watch_attachment_property(*h->world,*h->node,name);
     watch_joint_property(*h->world,*h->node,name);

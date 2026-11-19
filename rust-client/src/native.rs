@@ -61,10 +61,10 @@ impl Session {
         if status != 0 || output.is_null() {
             return Err("persistent native worker failed".into());
         }
-        let result = if length <= 1024 * 1024 {
+        let result = if length <= 8 * 1024 * 1024 {
             Ok(unsafe { slice::from_raw_parts(output.cast::<u8>(), length) }.to_vec())
         } else {
-            Err("persistent response exceeds 1 MiB".into())
+            Err("persistent response exceeds 8 MiB".into())
         };
         unsafe { local_luau_free(output) };
         result
@@ -114,10 +114,10 @@ pub fn run(
     }
     // SAFETY: successful native calls return a malloc allocation of exactly
     // length bytes. Copy it before returning it to the matching native free.
-    let data = if length <= 1024 * 1024 {
+    let data = if length <= 8 * 1024 * 1024 {
         Ok(unsafe { slice::from_raw_parts(output.cast::<u8>(), length) }.to_vec())
     } else {
-        Err("native result exceeds 1 MiB".into())
+        Err("native result exceeds 8 MiB".into())
     };
     unsafe { local_luau_free(output) };
     data

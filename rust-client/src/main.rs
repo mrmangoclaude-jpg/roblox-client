@@ -27,7 +27,7 @@ use std::{
 
 const MAX_SOURCE: usize = 100 * 1024 * 1024;
 const MAX_SNAPSHOT: usize = 8 * 1024 * 1024;
-const MAX_FRAME: usize = 1024 * 1024;
+const MAX_FRAME: usize = 8 * 1024 * 1024;
 const USAGE: &str = "headless-luau --source FILE [--world-snapshot FILE] [--timeout-ms 1..2000] [--memory-mb 8..512] [-- NUMBER ...]\nheadless-luau submit --script FILE [--socket PATH] [--timeout-ms 1..2000]";
 
 #[derive(Debug)]
@@ -150,7 +150,7 @@ fn read_file(path: &PathBuf, limit: usize) -> Result<Vec<u8>, String> {
 
 fn validate_result(data: &[u8], successful_exit: bool) -> Result<Value, String> {
     if data.len() > MAX_FRAME {
-        return Err("response exceeds 1 MiB".into());
+        return Err("response exceeds 8 MiB".into());
     }
     let result: Value = serde_json::from_slice(data).map_err(|_| "worker returned invalid JSON")?;
     if !result.is_object() || !result["ok"].is_boolean() || !result["values"].is_array() {
@@ -194,7 +194,7 @@ fn supervise(options: &Options, original_arguments: &[String]) -> Result<Value, 
             .map_err(|e| e.to_string())
             .and_then(|_| {
                 if data.len() > MAX_FRAME {
-                    Err("worker output exceeds 1 MiB".into())
+                    Err("worker output exceeds 8 MiB".into())
                 } else {
                     Ok(data)
                 }
@@ -283,7 +283,7 @@ fn console_request(socket: &PathBuf, request: &Value) -> Result<Value, String> {
             return Err("console closed without a newline-terminated result".into());
         }
         if response.len() + count > MAX_FRAME {
-            return Err("console response exceeds 1 MiB".into());
+            return Err("console response exceeds 8 MiB".into());
         }
         response.extend_from_slice(&buffer[..count]);
         if let Some(end) = response.iter().position(|v| *v == b'\n') {

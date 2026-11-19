@@ -127,10 +127,13 @@ static const ExportEnumEntry kMeshTypeItems[] = {
     {"Head",0},{"Torso",1},{"Wedge",2},{"Sphere",3},{"Cylinder",4},{"FileMesh",5},
     {"Brick",6},{"Prism",7},{"Pyramid",8},{"ParallelRamp",9},{"RightAngleRamp",10},{"CornerWedge",11},
 };
+// Every other enum in Studio's catalog (names, items, values); the ones above are hand-written because the runtime gives them behaviour.
+#include "studio_enum_items.inc"
 constexpr int kExportEnumStride=512;
 static_assert(std::size(kInputKeyCodeItems)<kExportEnumStride,"enum registry stride must fit KeyCode");
 static const ExportEnumSpec kUsiExportEnums[] = {
 #include "player_enum_specs.inc"
+#include "studio_enum_specs.inc"
     {"SecurityCapability", kUsiSecurityCapabilityItems, std::size(kUsiSecurityCapabilityItems)},
     {"Material", kUsiMaterialItems, std::size(kUsiMaterialItems)},
     {"CollisionFidelity", kUsiCollisionFidelityItems, std::size(kUsiCollisionFidelityItems)},

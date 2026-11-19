@@ -11,6 +11,8 @@ import time
 from platform_process import group_options, stop_group
 
 from local_runtime import RUST_HOST, MAX_SOURCE_BYTES
+# Script results carry every local instance a run created; protected games create a few thousand, so allow 8 MiB per frame.
+RESPONSE_LIMIT = 8 * 1024 * 1024
 from world_snapshot import make_world_snapshot, make_world_delta
 from script_catalog import script_catalog, CodePreparationQueue
 from session_integrity import observe_runtime_thread_report, observe_runtime_protected_report
@@ -52,9 +54,9 @@ class PersistentLuauHost:
     def _read(self):
         try:
             while True:
-                line = self.process.stdout.readline(1024 * 1024 + 2)
+                line = self.process.stdout.readline(RESPONSE_LIMIT + 2)
                 if not line: raise RuntimeError('Persistent worker closed its result pipe')
-                if len(line) > 1024 * 1024 + 1 or not line.endswith(b'\n'):
+                if len(line) > RESPONSE_LIMIT + 1 or not line.endswith(b'\n'):
                     raise RuntimeError('Invalid persistent result frame')
                 self.responses.put(json.loads(line))
         except Exception as error:
