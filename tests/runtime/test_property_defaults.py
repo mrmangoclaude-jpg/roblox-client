@@ -133,7 +133,8 @@ for _,method in ipairs({p.IsPropertyModified,p.ResetPropertyToDefault})do
  end
  assert(not pcall(method,{},"Name"))
  assert(not pcall(method,p,{}))
- assert(not pcall(method,p,"Name",true))
+ -- Studio ignores surplus arguments to IsPropertyModified
+ if method==p.ResetPropertyToDefault then assert(not pcall(method,p,"Name",true)) else assert(pcall(method,p,"Name",true)) end
 end
 assert(not pcall(p.ResetPropertyToDefault,p,"ClassName"))
 assert(not pcall(p.ResetPropertyToDefault,p,"Mass"))
