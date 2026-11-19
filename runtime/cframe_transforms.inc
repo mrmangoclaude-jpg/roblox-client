@@ -70,7 +70,18 @@ int push_frame_composition(lua_State* L, const FrameVector& p,
     return push_frame_value(L, position, frame_product(r, other.r));
 }
 
+// Operand checks for the operator metamethods. Roblox words a wrong operand as "invalid argument #2 (Vector3 expected, got number)".
+bool is_cframe_operand(lua_State* L, int index) {
+    if (lua_type(L, index) != LUA_TUSERDATA || !lua_getmetatable(L, index)) return false;
+    luaL_getmetatable(L, kCFrameMeta);
+    const bool same = lua_rawequal(L, -1, -2) != 0;
+    lua_pop(L, 2);
+    return same;
+}
+
 int cframe_multiply(lua_State* L) {
+    if (!is_cframe_operand(L, 1)) luaL_typeerror(L, 1, "CFrame");
+    if (!lua_isvector(L, 2) && !is_cframe_operand(L, 2)) luaL_typeerror(L, 2, "Vector3");
     auto* a = checked_cframe(L, 1);
     if (lua_isvector(L, 2)) {
         auto p = frame_rotate(a->r, checked_frame_vector(L, 2));
@@ -81,6 +92,8 @@ int cframe_multiply(lua_State* L) {
 }
 
 int cframe_translate(lua_State* L, double sign) {
+    if (!is_cframe_operand(L, 1)) luaL_typeerror(L, 1, "CFrame");
+    if (!lua_isvector(L, 2)) luaL_typeerror(L, 2, "Vector3");
     auto* a = checked_cframe(L, 1, false);
     auto offset = checked_frame_vector(L, 2);
     auto* value = new_cframe(L);
@@ -181,9 +194,11 @@ void frame_method(lua_State* L, const char* name, lua_CFunction function) {
 
 void install_frame_methods(lua_State* L) {
     install_frame_orientation_methods(L);
-    frame_method(L, "__mul", cframe_multiply);
-    frame_method(L, "__add", cframe_add);
-    frame_method(L, "__sub", cframe_subtract);
+    // Operator metamethods carry no function name, as in Roblox, so argument errors omit "to '__add'".
+    for (const auto& op : {std::pair<const char*, lua_CFunction>{"__mul", cframe_multiply}, {"__add", cframe_add}, {"__sub", cframe_subtract}}) {
+        lua_pushcfunction(L, op.second, nullptr);
+        lua_setfield(L, -2, op.first);
+    }
     frame_method(L, "Inverse", cframe_inverse);
     frame_method(L, "ToWorldSpace", cframe_world);
     frame_method(L, "ToObjectSpace", cframe_object);

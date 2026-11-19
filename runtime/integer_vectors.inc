@@ -61,20 +61,21 @@ int negate(lua_State* L) {
 int arithmetic(lua_State* L) {
     const int op=lua_tointeger(L,lua_upvalueindex(1));
     auto* a=read(L,1);auto* b=read(L,2);
-    if(!a&&op==2&&b){std::swap(a,b);}
-    if(!a||(b&&a->dimension!=b->dimension)||((op==0||op==1)&&!b)){
-        luaL_error(L,"integer vector arithmetic requires matching vector types");return 0;
-    }
-    Vector out=*a;
+    const Vector* vector=a?a:b;
+    const char* typeName=vector&&vector->dimension==2?"Vector2int16":"Vector3int16";
+    // Roblox reports a wrong operand as "invalid argument #2 (Vector3int16 expected, got number)"; only * and / take a number.
+    if(!vector){luaL_typeerror(L,1,typeName);return 0;}
+    if(a&&b&&a->dimension!=b->dimension){luaL_typeerror(L,2,typeName);return 0;}
+    if((op==0||op==1)&&!(a&&b)){luaL_typeerror(L,a?2:1,typeName);return 0;}
+    Vector out=*vector;
     double scalar=0;
-    if(!b){
-        const int scalarIndex=read(L,1)?2:1;
-        scalar=static_cast<float>(luaL_checknumber(L,scalarIndex));
-        if(op==2&&a->dimension==3)scalar=narrow(scalar);
+    if(!(a&&b)){
+        scalar=static_cast<float>(luaL_checknumber(L,a?2:1));
+        if(op==2&&vector->dimension==3)scalar=narrow(scalar);
     }
-    for(int i=0;i<a->dimension;++i){
-        const double left=a->values[i],right=b?b->values[i]:scalar;
-        if(op==3&&right==0&&a->dimension==2){luaL_error(L,"Vector2int16 division by zero");return 0;}
+    for(int i=0;i<vector->dimension;++i){
+        const double left=a?a->values[i]:scalar,right=b?b->values[i]:scalar;
+        if(op==3&&right==0&&vector->dimension==2){luaL_error(L,"Vector2int16 division by zero");return 0;}
         out.values[i]=narrow(op==0?left+right:op==1?left-right:op==2?left*right:left/right);
     }
     push(L,out);return 1;
@@ -118,7 +119,7 @@ void install(lua_State* L) {
             lua_pushcfunction(L,pair.second,pair.first);lua_setfield(L,-2,pair.first);
         }
         int op=0;for(const char* field:{"__add","__sub","__mul","__div"}){
-            lua_pushinteger(L,op++);lua_pushcclosure(L,arithmetic,field,1);lua_setfield(L,-2,field);
+            lua_pushinteger(L,op++);lua_pushcclosure(L,arithmetic,nullptr,1);lua_setfield(L,-2,field);
         }
         lua_pushstring(L,name);lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
         lua_newtable(L);lua_pushinteger(L,dimension);lua_pushcclosure(L,construct,"new",1);lua_setfield(L,-2,"new");

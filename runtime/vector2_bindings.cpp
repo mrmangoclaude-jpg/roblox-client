@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <utility>
 
 namespace {
 constexpr const char* kMeta = "HeadlessRuntime.Vector2";
@@ -17,12 +18,18 @@ struct Value { double x, y; };
 Value* check(lua_State* L, int index) {
     return static_cast<Value*>(luaL_checkudata(L, index, kMeta));
 }
+// Operand of an arithmetic metamethod: Roblox reports a wrong operand as "invalid argument #2 (Vector2 expected, got number)".
+Value* operand(lua_State* L, int index);
 bool is_vector(lua_State* L, int index) {
     if (!lua_isuserdata(L, index) || !lua_getmetatable(L, index)) return false;
     luaL_getmetatable(L, kMeta);
     bool result = lua_rawequal(L, -1, -2) != 0;
     lua_pop(L, 2);
     return result;
+}
+Value* operand(lua_State* L, int index) {
+    if (!is_vector(L, index)) luaL_typeerror(L, index, "Vector2");
+    return static_cast<Value*>(lua_touserdata(L, index));
 }
 double finite_number(lua_State* L, int index, const char* label) {
     double value = luaL_checknumber(L, index);
@@ -105,17 +112,31 @@ int equal(lua_State* L) {
     lua_pushboolean(L, a->x == b->x && a->y == b->y);
     return 1;
 }
-int add(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,static_cast<float>(a->x)+static_cast<float>(b->x),static_cast<float>(a->y)+static_cast<float>(b->y)); }
-int subtract(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,static_cast<float>(a->x)-static_cast<float>(b->x),static_cast<float>(a->y)-static_cast<float>(b->y)); }
+int add(lua_State* L) { Value* a=operand(L,1); Value* b=operand(L,2); return push_value(L,static_cast<float>(a->x)+static_cast<float>(b->x),static_cast<float>(a->y)+static_cast<float>(b->y)); }
+int subtract(lua_State* L) { Value* a=operand(L,1); Value* b=operand(L,2); return push_value(L,static_cast<float>(a->x)-static_cast<float>(b->x),static_cast<float>(a->y)-static_cast<float>(b->y)); }
 int multiply(lua_State* L) {
     if (is_vector(L,1) && is_vector(L,2)) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,static_cast<float>(a->x)*static_cast<float>(b->x),static_cast<float>(a->y)*static_cast<float>(b->y)); }
     if (is_vector(L,1)) { Value* a=check(L,1); float n=static_cast<float>(finite_number(L,2,"multiplier")); return push_value(L,static_cast<float>(a->x)*n,static_cast<float>(a->y)*n); }
     Value* b=check(L,2); float n=static_cast<float>(finite_number(L,1,"multiplier")); return push_value(L,n*static_cast<float>(b->x),n*static_cast<float>(b->y));
 }
 int divide(lua_State* L) {
+    if (!is_vector(L,1)) { // number / Vector2 divides the number by each component, with plain float semantics
+        Value* b=operand(L,2); float n=static_cast<float>(luaL_checknumber(L,1));
+        return push_raw(L,n/static_cast<float>(b->x),n/static_cast<float>(b->y));
+    }
     Value* a=check(L,1);
     if (is_vector(L,2)) { Value* b=check(L,2); float bx=static_cast<float>(b->x),by=static_cast<float>(b->y); if(bx==0||by==0){luaL_error(L,"Vector2 divisor components must be nonzero");return 0;}return push_value(L,static_cast<float>(a->x)/bx,static_cast<float>(a->y)/by); }
     float n=static_cast<float>(finite_number(L,2,"divisor")); if(n==0){luaL_error(L,"Vector2 divisor must be nonzero");return 0;}return push_value(L,static_cast<float>(a->x)/n,static_cast<float>(a->y)/n);
+}
+// Floor division, component-wise: Vector2 // Vector2, Vector2 // number and number // Vector2.
+int integer_divide(lua_State* L) {
+    float ax,ay,bx,by;
+    const bool left=is_vector(L,1),right=is_vector(L,2);
+    if (left) { Value* a=operand(L,1); ax=static_cast<float>(a->x); ay=static_cast<float>(a->y); }
+    else ax=ay=static_cast<float>(luaL_checknumber(L,1));
+    if (right) { Value* b=operand(L,2); bx=static_cast<float>(b->x); by=static_cast<float>(b->y); }
+    else bx=by=static_cast<float>(luaL_checknumber(L,2));
+    return push_raw(L,std::floor(ax/bx),std::floor(ay/by));
 }
 int negate(lua_State* L) { Value* a=check(L,1); return push_value(L,-static_cast<float>(a->x),-static_cast<float>(a->y)); }
 int dot(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); lua_pushnumber(L,static_cast<double>(static_cast<float>(a->x)*static_cast<float>(b->x)+static_cast<float>(a->y)*static_cast<float>(b->y))); return 1; }
@@ -163,8 +184,10 @@ void install_vector2_bindings(lua_State* L) {
     luaL_newmetatable(L, kMeta);
     method(L,"__index",index); method(L,"__newindex",readonly);
     method(L,"__tostring",tostring_vector); method(L,"__eq",equal);
-    method(L,"__add",add); method(L,"__sub",subtract); method(L,"__mul",multiply);
-    method(L,"__div",divide); method(L,"__unm",negate);
+    // Operator metamethods carry no function name, as in Roblox, so argument errors omit "to '__add'".
+    for (const auto& op : {std::pair<const char*,lua_CFunction>{"__add",add},{"__sub",subtract},{"__mul",multiply},{"__div",divide},{"__idiv",integer_divide},{"__unm",negate}}) {
+        lua_pushcfunction(L, op.second, nullptr); lua_setfield(L, -2, op.first);
+    }
     method(L,"Dot",dot); method(L,"Cross",cross); method(L,"Lerp",lerp);
     method(L,"FuzzyEq",fuzzy_eq);method(L,"Angle",angle);
     method(L,"Abs",absolute); method(L,"Floor",floor_values); method(L,"Ceil",ceil_values);

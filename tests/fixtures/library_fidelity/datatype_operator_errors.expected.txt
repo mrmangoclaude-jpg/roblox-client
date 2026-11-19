@@ -1,0 +1,28 @@
+v2 + 2 -> boolean:false | "invalid argument #2 (Vector2 expected, got number)"
+2 + v2 -> boolean:false | "invalid argument #1 (Vector2 expected, got number)"
+v2 - 2 -> boolean:false | "invalid argument #2 (Vector2 expected, got number)"
+2 - v2 -> boolean:false | "invalid argument #1 (Vector2 expected, got number)"
+2 / v2 -> boolean:true | Vector2:0.285714298, -0.222222224
+v2 // v2 -> boolean:true | Vector2:1, 1
+v2 // 2 -> boolean:true | Vector2:3, -5
+2 // v2 -> boolean:true | Vector2:0, -1
+v3i + 2 -> boolean:false | "invalid argument #2 (Vector3int16 expected, got number)"
+2 - v3i -> boolean:false | "invalid argument #1 (Vector3int16 expected, got number)"
+2 / v3i -> boolean:true | Vector3int16:0, 0, 0
+v2i + 2 -> boolean:false | "invalid argument #2 (Vector2int16 expected, got number)"
+2 / v2i -> boolean:true | Vector2int16:0, 0
+cf + cf -> boolean:false | "invalid argument #2 (Vector3 expected, got CFrame)"
+cf + 2 -> boolean:false | "invalid argument #2 (Vector3 expected, got number)"
+2 + cf -> boolean:false | "invalid argument #1 (CFrame expected, got number)"
+cf - cf -> boolean:false | "invalid argument #2 (Vector3 expected, got CFrame)"
+cf - 2 -> boolean:false | "invalid argument #2 (Vector3 expected, got number)"
+cf * 2 -> boolean:false | "invalid argument #2 (Vector3 expected, got number)"
+2 * cf -> boolean:false | "invalid argument #1 (CFrame expected, got number)"
+cf + v3 -> boolean:true | CFrame:2, 3, 4, 1, 0, 0, 0, 1, 0, 0, 0, 1
+-ud -> boolean:true | UDim:-0.5, -3
+ud + 2 -> boolean:false | "invalid argument #2 (UDim expected, got number)"
+2 + ud -> boolean:false | "invalid argument #1 (UDim expected, got number)"
+ud - 2 -> boolean:false | "invalid argument #2 (UDim expected, got number)"
+-ud2 -> boolean:true | UDim2:{-0.5, -3}, {-0.25, -4}
+ud2 + 2 -> boolean:false | "invalid argument #2 (UDim2 expected, got number)"
+2 - ud2 -> boolean:false | "invalid argument #1 (UDim2 expected, got number)"

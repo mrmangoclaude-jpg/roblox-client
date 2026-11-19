@@ -1,0 +1,47 @@
+local out = {}
+local function clean(text)
+	text = string.gsub(text, "[%w_%.%-]+:%d+: ", "")
+	text = string.gsub(text, "0x%x+", "0xADDR")
+	return text
+end
+local function show(v)
+	if type(v) == "string" then return string.format("%q", clean(v)) end
+	local ok, text = pcall(tostring, v)
+	return typeof(v) .. ":" .. (ok and clean(text) or "?")
+end
+local function T(label, f)
+	local r = table.pack(pcall(f))
+	local parts = {}
+	for i = 1, r.n do parts[i] = show(r[i]) end
+	table.insert(out, label .. " -> " .. table.concat(parts, " | "))
+end
+local v2, v3i, v2i, cf, ud, ud2 = Vector2.new(7, -9), Vector3int16.new(7, -9, 4), Vector2int16.new(7, -9), CFrame.new(1, 2, 3), UDim.new(0.5, 3), UDim2.new(0.5, 3, 0.25, 4)
+T("v2 + 2", function() return v2 + 2 end)
+T("2 + v2", function() return 2 + v2 end)
+T("v2 - 2", function() return v2 - 2 end)
+T("2 - v2", function() return 2 - v2 end)
+T("2 / v2", function() return 2 / v2 end)
+T("v2 // v2", function() return v2 // v2 end)
+T("v2 // 2", function() return v2 // 2 end)
+T("2 // v2", function() return 2 // v2 end)
+T("v3i + 2", function() return v3i + 2 end)
+T("2 - v3i", function() return 2 - v3i end)
+T("2 / v3i", function() return 2 / v3i end)
+T("v2i + 2", function() return v2i + 2 end)
+T("2 / v2i", function() return 2 / v2i end)
+T("cf + cf", function() return cf + cf end)
+T("cf + 2", function() return cf + 2 end)
+T("2 + cf", function() return 2 + cf end)
+T("cf - cf", function() return cf - cf end)
+T("cf - 2", function() return cf - 2 end)
+T("cf * 2", function() return cf * 2 end)
+T("2 * cf", function() return 2 * cf end)
+T("cf + v3", function() return cf + Vector3.new(1, 1, 1) end)
+T("-ud", function() return -ud end)
+T("ud + 2", function() return ud + 2 end)
+T("2 + ud", function() return 2 + ud end)
+T("ud - 2", function() return ud - 2 end)
+T("-ud2", function() return -ud2 end)
+T("ud2 + 2", function() return ud2 + 2 end)
+T("2 - ud2", function() return 2 - ud2 end)
+return table.concat(out, "\n")

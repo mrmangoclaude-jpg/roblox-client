@@ -71,14 +71,14 @@ int udim_index(lua_State* L) {
     return 1;
 }
 int udim_add(lua_State* L) {
-    UDimValue a,b;if(!read_udim(L,1,&a)||!read_udim(L,2,&b)){luaL_error(L,"UDim addition requires two UDim values");return 0;}
+    UDimValue a,b;if(!read_udim(L,1,&a))luaL_typeerror(L,1,"UDim");if(!read_udim(L,2,&b))luaL_typeerror(L,2,"UDim");
     int64_t offset=static_cast<int64_t>(a.offset)+b.offset;
     double scale=a.scale+b.scale;
     if(offset<std::numeric_limits<int32_t>::min()||offset>std::numeric_limits<int32_t>::max()||!std::isfinite(scale)){luaL_error(L,"UDim sum is out of range");return 0;}
     push_udim(L,{scale,static_cast<int32_t>(offset)});return 1;
 }
 int udim_sub(lua_State* L) {
-    UDimValue a,b;if(!read_udim(L,1,&a)||!read_udim(L,2,&b)){luaL_error(L,"UDim subtraction requires two UDim values");return 0;}
+    UDimValue a,b;if(!read_udim(L,1,&a))luaL_typeerror(L,1,"UDim");if(!read_udim(L,2,&b))luaL_typeerror(L,2,"UDim");
     int64_t offset=static_cast<int64_t>(a.offset)-b.offset;
     double scale=a.scale-b.scale;
     if(offset<std::numeric_limits<int32_t>::min()||offset>std::numeric_limits<int32_t>::max()||!std::isfinite(scale)){luaL_error(L,"UDim difference is out of range");return 0;}
@@ -120,14 +120,14 @@ int udim2_index(lua_State* L) {
     else lua_pushnil(L);return 1;
 }
 int udim2_add(lua_State* L) {
-    UDim2Value a,b;if(!read_udim2(L,1,&a)||!read_udim2(L,2,&b)){luaL_error(L,"UDim2 addition requires two UDim2 values");return 0;}
+    UDim2Value a,b;if(!read_udim2(L,1,&a))luaL_typeerror(L,1,"UDim2");if(!read_udim2(L,2,&b))luaL_typeerror(L,2,"UDim2");
     int64_t xo=static_cast<int64_t>(a.x.offset)+b.x.offset,yo=static_cast<int64_t>(a.y.offset)+b.y.offset;
     double xs=a.x.scale+b.x.scale,ys=a.y.scale+b.y.scale;
     if(xo<std::numeric_limits<int32_t>::min()||xo>std::numeric_limits<int32_t>::max()||yo<std::numeric_limits<int32_t>::min()||yo>std::numeric_limits<int32_t>::max()||!std::isfinite(xs)||!std::isfinite(ys)){luaL_error(L,"UDim2 sum is out of range");return 0;}
     push_udim2(L,{{xs,static_cast<int32_t>(xo)},{ys,static_cast<int32_t>(yo)}});return 1;
 }
 int udim2_sub(lua_State* L) {
-    UDim2Value a,b;if(!read_udim2(L,1,&a)||!read_udim2(L,2,&b)){luaL_error(L,"UDim2 subtraction requires two UDim2 values");return 0;}
+    UDim2Value a,b;if(!read_udim2(L,1,&a))luaL_typeerror(L,1,"UDim2");if(!read_udim2(L,2,&b))luaL_typeerror(L,2,"UDim2");
     int64_t xo=static_cast<int64_t>(a.x.offset)-b.x.offset,yo=static_cast<int64_t>(a.y.offset)-b.y.offset;
     double xs=a.x.scale-b.x.scale,ys=a.y.scale-b.y.scale;
     if(xo<std::numeric_limits<int32_t>::min()||xo>std::numeric_limits<int32_t>::max()||yo<std::numeric_limits<int32_t>::min()||yo>std::numeric_limits<int32_t>::max()||!std::isfinite(xs)||!std::isfinite(ys)){luaL_error(L,"UDim2 difference is out of range");return 0;}
@@ -153,7 +153,17 @@ int udim2_tostring(lua_State* L) {
     std::ostringstream out;out<<"{"<<std::setprecision(9)<<v->x.scale<<", "<<v->x.offset<<"}, {"<<v->y.scale<<", "<<v->y.offset<<"}";
     auto text=out.str();lua_pushlstring(L,text.data(),text.size());return 1;
 }
+int udim_negate(lua_State* L) {
+    UDimValue a;if(!read_udim(L,1,&a))luaL_typeerror(L,1,"UDim");
+    push_udim(L,{-a.scale,static_cast<int32_t>(-static_cast<int64_t>(a.offset))});return 1;
+}
+int udim2_negate(lua_State* L) {
+    UDim2Value a;if(!read_udim2(L,1,&a))luaL_typeerror(L,1,"UDim2");
+    push_udim2(L,{{-a.x.scale,static_cast<int32_t>(-static_cast<int64_t>(a.x.offset))},{-a.y.scale,static_cast<int32_t>(-static_cast<int64_t>(a.y.offset))}});return 1;
+}
 void set_metamethod(lua_State* L,const char* key,lua_CFunction function) {lua_pushcfunction(L,function,key);lua_setfield(L,-2,key);}
+// Operator metamethods carry no function name, so argument errors read "invalid argument #2 (UDim expected, got number)" as in Roblox.
+void set_operator(lua_State* L,const char* key,lua_CFunction function) {lua_pushcfunction(L,function,nullptr);lua_setfield(L,-2,key);}
 void make_library(lua_State* L,const char* name,lua_CFunction constructor,lua_CFunction from_scale=nullptr,lua_CFunction from_offset=nullptr) {
     lua_createtable(L,0,3);lua_pushcfunction(L,constructor,"new");lua_setfield(L,-2,"new");
     if(from_scale){lua_pushcfunction(L,from_scale,"fromScale");lua_setfield(L,-2,"fromScale");}
@@ -164,11 +174,11 @@ void make_library(lua_State* L,const char* name,lua_CFunction constructor,lua_CF
 
 void install_udim_bindings(lua_State* L) {
     luaL_newmetatable(L,kUDim);
-    set_metamethod(L,"__index",udim_index);set_metamethod(L,"__add",udim_add);set_metamethod(L,"__sub",udim_sub);
+    set_metamethod(L,"__index",udim_index);set_operator(L,"__add",udim_add);set_operator(L,"__sub",udim_sub);set_operator(L,"__unm",udim_negate);
     set_metamethod(L,"__eq",udim_equal);set_metamethod(L,"__tostring",udim_tostring);
     lua_pushliteral(L,"UDim");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kUDim2);
-    set_metamethod(L,"__index",udim2_index);set_metamethod(L,"__add",udim2_add);set_metamethod(L,"__sub",udim2_sub);
+    set_metamethod(L,"__index",udim2_index);set_operator(L,"__add",udim2_add);set_operator(L,"__sub",udim2_sub);set_operator(L,"__unm",udim2_negate);
     set_metamethod(L,"__eq",udim2_equal);set_metamethod(L,"__tostring",udim2_tostring);set_metamethod(L,"Lerp",udim2_lerp);
     lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     make_library(L,"UDim",udim_new);make_library(L,"UDim2",udim2_new,udim2_from_scale,udim2_from_offset);

@@ -56,6 +56,7 @@ struct Limits {
     size_t used = 0;
     Clock::time_point deadline;
     bool timed_out = false;
+    unsigned interrupts_until_clock_check = 0;
 };
 
 struct alignas(std::max_align_t) AllocationHeader { size_t size; };
@@ -86,6 +87,11 @@ void interrupt(lua_State* L, int gc) {
     auto* lim = static_cast<Limits*>(lua_callbacks(L)->userdata);
     if (!lim || gc >= 0) return;
     if (api_trace_interrupt_hook) api_trace_interrupt_hook(L);
+    // Interrupts fire at every call, return and loop back-edge, and reading the clock costs more than most of those
+    // instructions (it made call-heavy code over 20x slower than the engine). Check the deadline once per batch; a batch
+    // lasts microseconds, far below any time slice.
+    if (lim->interrupts_until_clock_check > 0) { --lim->interrupts_until_clock_check; return; }
+    lim->interrupts_until_clock_check = 255;
     if (Clock::now() >= lim->deadline) {
         lim->timed_out = true;
         if (api_trace_enabled()) api_trace_stack(L);
