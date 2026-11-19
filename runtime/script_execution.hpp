@@ -267,7 +267,30 @@ local function finishBroken(entry)
         end
     end
 end
+-- require("./sibling"), require("../uncle") and require("@self/child"): paths resolve against the calling script.
+local function resolvePath(path)
+    local caller
+    for level = 2, 6 do
+        local f = debug.info(level, "f")
+        if not f then break end
+        local ok, env = pcall(getfenv, f)
+        local s = ok and type(env) == "table" and rawget(env, "script")
+        if typeof(s) == "Instance" then caller = s break end
+    end
+    local node, first = nil, true
+    for part in string.gmatch(path, "[^/]+") do
+        if first then
+            first = false
+            if not caller then return nil end
+            if part == "." then node = caller.Parent elseif part == ".." then node = caller.Parent and caller.Parent.Parent
+            elseif part == "@self" then node = caller else return nil end
+        elseif part == ".." then node = node and node.Parent
+        elseif part ~= "." then node = node and node:FindFirstChild(part) end
+    end
+    return node
+end
 function require(module)
+    if type(module) == "string" then module = resolvePath(module) end
     if typeof(module) ~= "Instance" or not module:IsA("ModuleScript") then
         error("Attempted to call require with invalid argument(s).", 2)
     end

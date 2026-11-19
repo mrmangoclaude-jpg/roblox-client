@@ -122,6 +122,28 @@ for _=1,100 do if done then break end;task.wait(.005)end
 assert(done)
 ''')
 
+    def test_require_accepts_relative_string_paths(self):
+        self.execute('''
+local root=Instance.new("Folder");root.Name="Pkg"
+local sub=Instance.new("Folder");sub.Name="Sub";sub.Parent=root
+local function module(name,parent,source)
+ local m=Instance.new("ModuleScript");m.Name=name;m.Source=source;m.Parent=parent;return m
+end
+module("Sibling",sub,"return {tag='sibling'}")
+module("Uncle",root,"return {tag='uncle'}")
+local main=module("Main",sub,[[return {
+ sibling=require("./Sibling"), uncle=require("../Uncle"), nested=require("../Sub/Sibling"),
+ child=pcall(require,"@self/Missing"), absent=pcall(require,"./Absent"), alias=pcall(require,"@alias/x")}]])
+module("Leaf",main,"return {tag='leaf'}")
+local value=require(main)
+assert(value.sibling.tag=="sibling" and value.uncle.tag=="uncle" and value.nested==value.sibling)
+assert(not value.child and not value.absent and not value.alias)
+local selfy=module("Selfy",sub,"return require('@self/Leaf')")
+module("Leaf",selfy,"return {tag='selfleaf'}")
+assert(require(selfy).tag=="selfleaf")
+assert(not pcall(require,"./Sibling")) -- no calling module to resolve against here
+''')
+
     def test_new_functions_are_available_inside_modules(self):
         self.execute('''
 local module=Instance.new("ModuleScript")

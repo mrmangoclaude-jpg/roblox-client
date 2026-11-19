@@ -86,6 +86,16 @@ const Json* property_descriptor(const Node& node, const std::string& key) {
     if(node.class_name=="GetTextBoundsParams"&&key=="Font") {
         static const Json font{{"type","Font"},{"writable",true}};return &font;
     }
+    // Defaults the Studio measurement omits because they are enum/Color3 typed (the server never replicates a default).
+    if(node.class_name=="SurfaceGui"&&key=="Face") {
+        static const Json face{{"type","Enum"},{"writable",true},
+            {"value",Json{{"$enum",{{"type","NormalId"},{"value",5},{"name","Front"}}}}}};
+        return &face;
+    }
+    if(node.class_name=="SurfaceAppearance"&&key=="Color") {
+        static const Json color{{"type","Color3"},{"writable",true},{"value",Json{{"$color3",{1,1,1}}}}};
+        return &color;
+    }
     if(node.class_name=="TextLabel"||node.class_name=="TextButton"||node.class_name=="TextBox") {
         static const Json font{{"type","Font"},{"writable",true}},enumeration{{"type","Enum"},{"writable",true}};
         static const Json content{{"type","string"},{"writable",false}};
@@ -770,7 +780,7 @@ Node* ensure_client_service(World& world,const std::string& service);
 bool local_service_supported(const std::string& service) {
     if(service=="VirtualInputManager")return true;
     if(service=="VRService"||service=="SoundService")return true;
-    if(service=="PhysicsService"||service=="EncodingService")return true;
+    if(service=="PhysicsService"||service=="EncodingService"||service=="ReflectionService")return true;
     return service=="TextService"||service=="RunService"||service=="HttpService"||service=="ServerStorage"||service=="ServerScriptService"||service=="GuiService"||service=="UserInputService"||service=="ContextActionService"||service=="Lighting"||service=="CoreGui"||service=="Debris"||service=="CollectionService"||service=="TweenService"||service=="TestService"||service=="Stats";
 }
 int gui_ten_foot_interface(lua_State* L) {
@@ -823,6 +833,13 @@ bool encoding_service_index(lua_State* L,const std::string& key) {
     }
     return false;
 }
+int player_scripts_register_mode(lua_State* L) {
+    checked_handle(L,1);
+    if(lua_isnoneornil(L,2))return luaL_error(L,"Argument 1 missing or nil"),0;
+    if(lua_type(L,2)!=LUA_TUSERDATA)luaL_typeerror(L,2,"EnumItem");
+    return 0;
+}
+int player_scripts_clear_modes(lua_State* L){checked_handle(L,1);return 0;}
 int get_service(lua_State* L) {
     Handle* h=checked_handle(L,1);
     if(h->node->id==kSettingsId) {
@@ -1372,6 +1389,14 @@ int instance_index_raw(lua_State* L) {
         catch(const std::exception& e){luaL_error(L,"display layout unavailable: %s",e.what());return 0;}
     }
     if(n.class_name=="GuiService"&&key=="GetGuiInset"){lua_pushcfunction(L,gui_get_inset,"GetGuiInset");return 1;}
+    // The core PlayerScriptsLoader tells PlayerScripts which control/camera modes it supports. A headless client
+    // has no input modules to configure, so these accept the call (after the usual receiver/argument checks) and do nothing.
+    if(n.class_name=="PlayerScripts"&&(key=="RegisterTouchCameraMovementMode"||key=="RegisterComputerCameraMovementMode"||key=="RegisterTouchMovementMode"||key=="RegisterComputerMovementMode")){
+        lua_pushcfunction(L,player_scripts_register_mode,key.c_str());return 1;
+    }
+    if(n.class_name=="PlayerScripts"&&(key=="ClearTouchCameraMovementModes"||key=="ClearComputerCameraMovementModes"||key=="ClearTouchMovementModes"||key=="ClearComputerMovementModes")){
+        lua_pushcfunction(L,player_scripts_clear_modes,key.c_str());return 1;
+    }
     if((n.class_name=="UIListLayout"||n.class_name=="UIGridLayout")&&key=="ApplyLayout") {
         lua_pushcfunction(L,gui_apply_layout,"ApplyLayout");return 1;
     }
