@@ -1,0 +1,31 @@
+profilebegin() -> false | "debug.profilebegin(string) parameter must be string, got an unexpected type. Not opening profile block."
+profilebegin(1) -> true
+profilebegin(true) -> false | "invalid argument #1 to 'profilebegin' (string expected, got boolean)"
+profilebegin({}) -> false | "invalid argument #1 to 'profilebegin' (string expected, got table)"
+profilebegin('a') -> true
+profileend() -> true
+profileend() again -> true
+setmemorycategory('a') -> true
+setmemorycategory('b') returns previous -> true | "a"
+getmemorycategory -> true | "b"
+setmemorycategory(1) -> true | "b"
+getmemorycategory number tag -> true | "1"
+setmemorycategory() -> false | "missing argument #1 to 'setmemorycategory' (string expected)"
+setmemorycategory(nil) -> false | "invalid argument #1 to 'setmemorycategory' (string expected, got nil)"
+resetmemorycategory -> true
+getmemorycategory after reset -> true | "1"
+synchronize() -> false | "task.synchronize() may only be called from a script that is a descendant of an Actor"
+desynchronize() -> false | "task.desynchronize() may only be called from a script that is a descendant of an Actor"
+fromExisting() -> false | "missing argument #1 to 'fromExisting' (Instance expected)"
+fromExisting(1) -> false | "invalid argument #1 to 'fromExisting' (Instance expected, got number)"
+fromExisting(nil) -> false | "invalid argument #1 to 'fromExisting' (Instance expected, got nil)"
+fromExisting('Part') -> false | "invalid argument #1 to 'fromExisting' (Instance expected, got string)"
+fromExisting(workspace) -> false | "Unable to create an Instance of type \"Workspace\""
+fromExisting(game) -> false | "Unable to create an Instance of type \"DataModel\""
+fromExisting(Players) -> false | "Unable to create an Instance of type \"Players\""
+copy keeps properties, drops children and parent -> true | "Orig|true|1, 2, 3|5|children=0|parent=nil|tag=true|same=false"
+Archivable false still copies -> true | "Origfalse"
+Clone with Archivable false is nil -> true | "nil"
+extra args ignored -> true | "Orig"
+script class -> true | "ScriptS"
+debug.info on the new members -> true | "[C],[C],[C],[C],[C]"

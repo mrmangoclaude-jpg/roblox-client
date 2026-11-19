@@ -161,6 +161,10 @@ void SourceScheduler::resume(Task& task,lua_State* from) {
         errors_.push_back(message?std::string(message,n):"background task failed");
     }
 }
+// Parallel Luau only exists inside an Actor, and nothing here runs in one: Roblox raises these for every other script.
+static int task_synchronize_unavailable(lua_State* L){return luaL_error(L,"task.synchronize() may only be called from a script that is a descendant of an Actor"),0;}
+static int task_desynchronize_unavailable(lua_State* L){return luaL_error(L,"task.desynchronize() may only be called from a script that is a descendant of an Actor"),0;}
+
 void SourceScheduler::install(lua_State* L) {
     auto* callbacks=lua_callbacks(L);
     if(callbacks->userthread&&callbacks->userthread!=thread_lifecycle)
@@ -178,6 +182,8 @@ void SourceScheduler::install(lua_State* L) {
         lua_pushlightuserdata(L,this);lua_pushinteger(L,i);
         lua_pushcclosurek(L,task_api,names[i],2,nullptr);lua_setfield(L,-2,names[i]);
     }
+    lua_pushcfunction(L,task_synchronize_unavailable,"synchronize");lua_setfield(L,-2,"synchronize");
+    lua_pushcfunction(L,task_desynchronize_unavailable,"desynchronize");lua_setfield(L,-2,"desynchronize");
     lua_getfield(L,-1,"wait");lua_setfield(L,LUA_REGISTRYINDEX,"Headless.SchedulerWait");
     lua_setreadonly(L,-1,true);lua_setglobal(L,"task");
     lua_pushlightuserdata(L,this);lua_pushcclosurek(L,legacy_wait_api,"wait",1,legacy_wait_continue);lua_setglobal(L,"wait");
@@ -210,10 +216,14 @@ int SourceScheduler::time_api(lua_State* L) {
 int SourceScheduler::legacy_schedule_api(lua_State* L) {
     auto& self=*static_cast<SourceScheduler*>(lua_touserdata(L,lua_upvalueindex(1)));
     const bool delayed=lua_toboolean(L,lua_upvalueindex(2));
-    const double duration=delayed?luaL_checknumber(L,1):0;
+    if(delayed&&lua_gettop(L)<2)return luaL_error(L,"delay function requires 2 arguments"),0;
+    if(!delayed&&lua_gettop(L)<1)return luaL_error(L,"Spawn function requires 1 argument"),0;
     const int function_index=delayed?2:1;
-    luaL_checktype(L,function_index,LUA_TFUNCTION);
-    if(!std::isfinite(duration)||duration>86400)return luaL_error(L,"invalid legacy delay duration"),0;
+    // Roblox accepts anything here and simply schedules nothing when the callback is not a function.
+    if(!lua_isfunction(L,function_index))return 0;
+    double duration=delayed&&lua_isnumber(L,1)?lua_tonumber(L,1):0;
+    if(std::isnan(duration))duration=0;
+    if(std::isinf(duration)||duration>86400)return luaL_error(L,"invalid legacy delay duration"),0;
     try {
         lua_State* child=lua_newthread(L);
         lua_pushvalue(L,function_index);lua_xmove(L,child,1);
@@ -239,8 +249,9 @@ int SourceScheduler::legacy_wait_continue(lua_State* L,int) {
 int SourceScheduler::legacy_wait_api(lua_State* L) {
     auto& self=*static_cast<SourceScheduler*>(lua_touserdata(L,lua_upvalueindex(1)));
     if(api_trace_enabled())api_trace(L,"wait","wait");
-    double duration=luaL_optnumber(L,1,.03);
-    if(!std::isfinite(duration)||duration>86400){luaL_error(L,"invalid wait duration");return 0;}
+    double duration=lua_isnumber(L,1)?lua_tonumber(L,1):.03;
+    if(std::isnan(duration))duration=.03;
+    if(std::isinf(duration)||duration>86400){luaL_error(L,"invalid wait duration");return 0;}
     if(!lua_isyieldable(L)){luaL_error(L,"wait requires a yieldable thread");return 0;}
     try {
         auto& task=self.track(L);task.started=Clock::now();
@@ -250,7 +261,8 @@ int SourceScheduler::legacy_wait_api(lua_State* L) {
     lua_settop(L,0);return lua_yield(L,0);
 }
 int SourceScheduler::task_api(lua_State* L) {
-    try{return task_api_inner(L);}catch(const std::exception& e){luaL_error(L,"task operation failed: %s",e.what());return 0;}
+    // Argument errors raised by Luau itself must reach the script unchanged, as in Roblox: only our own limit failures are wrapped.
+    try{return task_api_inner(L);}catch(const std::runtime_error& e){luaL_error(L,"task operation failed: %s",e.what());return 0;}
 }
 int SourceScheduler::task_api_inner(lua_State* L) {
     auto& self=*static_cast<SourceScheduler*>(lua_touserdata(L,lua_upvalueindex(1)));
@@ -258,7 +270,7 @@ int SourceScheduler::task_api_inner(lua_State* L) {
     if(operation==3) {
         if(api_trace_enabled())api_trace(L,"wait","task.wait");
         double duration=luaL_optnumber(L,1,0);
-        if(!std::isfinite(duration)||duration>86400){luaL_error(L,"invalid task.wait duration");return 0;}
+        if(std::isinf(duration)||duration>86400){luaL_error(L,"invalid task.wait duration");return 0;}
         if(!lua_isyieldable(L)){luaL_error(L,"task.wait requires a yieldable thread");return 0;}
         auto& task=self.track(L);task.started=Clock::now();
         task.due=task.started+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(std::max(0.001,duration)));
@@ -282,8 +294,9 @@ int SourceScheduler::task_api_inner(lua_State* L) {
     int function_index=operation==2?2:1;
     int type=lua_type(L,function_index);
     if(type!=LUA_TFUNCTION&&type!=LUA_TTHREAD){luaL_argerror(L,function_index,"function or thread expected");return 0;}
-    double duration=operation==2?luaL_checknumber(L,1):0;
-    if(!std::isfinite(duration)||duration>86400){luaL_error(L,"invalid task.delay duration");return 0;}
+    double duration=operation==2?(lua_isnoneornil(L,1)?0:luaL_checknumber(L,1)):0;
+    if(std::isnan(duration))duration=0;
+    if(std::isinf(duration)||duration>86400){luaL_error(L,"invalid task.delay duration");return 0;}
     int count=lua_gettop(L)-function_index;
     lua_State* child=nullptr;
     if(type==LUA_TFUNCTION) {

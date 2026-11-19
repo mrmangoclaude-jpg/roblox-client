@@ -16,6 +16,29 @@ FILE* trace_file() {
 
 bool api_trace_enabled() { return trace_file() != nullptr; }
 
+void (*api_trace_interrupt_hook)(lua_State*) = nullptr;
+
+void api_trace_stack(lua_State* L) {
+    FILE* file = trace_file();
+    static size_t samples = 0;
+    if (!file || samples >= 3000) return;
+    {
+        lua_Debug top{};
+        if (lua_getinfo(L, 0, "s", &top) && top.short_src && std::strncmp(top.short_src, "script-runtime", 14) == 0) return;
+    }
+    ++samples;
+    std::string line;
+    for (int level = 0; level < 7; ++level) {
+        lua_Debug ar{};
+        if (!lua_getinfo(L, level, "snl", &ar)) break;
+        if (!line.empty()) line += " < ";
+        line += std::string(ar.short_src ? ar.short_src : "?") + ":" + std::to_string(ar.currentline);
+        if (ar.name) line += std::string("(") + ar.name + ")";
+    }
+    std::fprintf(file, "stack %s\n", line.c_str());
+    std::fflush(file);
+}
+
 void api_trace(lua_State* L, const char* kind, const std::string& what) {
     FILE* file = trace_file();
     static size_t lines = 0;

@@ -941,6 +941,8 @@ int get_teleport_setting(lua_State* L) {
     lua_pushvalue(L,2);lua_rawget(L,-2);lua_remove(L,-2);return 1;
 }
 int clone_instance(lua_State* L);
+// Set by Instance.fromExisting: copy only the instance itself, and ignore Archivable.
+static bool clone_root_only=false,clone_ignore_archivable=false;
 bool client_service_index(lua_State* L,World& world,Node& node,const std::string& key);
 int destroy_instance(lua_State* L);
 int clear_children(lua_State* L);
@@ -1606,14 +1608,14 @@ thread_local bool cloning_client_template=false;
 int clone_instance(lua_State* L) {
     Handle* h=checked_handle(L,1);World& w=*h->world;
     try {
-        if(!archivable(w,*h->node)){lua_pushnil(L);return 1;}
+        if(!clone_ignore_archivable&&!archivable(w,*h->node)){lua_pushnil(L);return 1;}
         const auto& children=children_index(w);
         std::deque<std::string> pending{h->node->id};std::vector<std::string> selected;
         while(!pending.empty()) {
             auto id=pending.front();pending.pop_front();const auto& node=w.nodes.at(id);
-            if(!archivable(w,node))continue;
+            if(!clone_ignore_archivable&&!archivable(w,node))continue;
             selected.push_back(id);
-            auto child=children.find(id);if(child!=children.end())for(auto& value:child->second)pending.push_back(value);
+            auto child=children.find(id);if(!clone_root_only&&child!=children.end())for(auto& value:child->second)pending.push_back(value);
         }
         if(selected.size()>kMaxNodes+1000-w.nodes.size())throw std::runtime_error("local instance limit exceeded");
         std::unordered_map<std::string,std::string> ids;
@@ -2293,6 +2295,17 @@ int instance_newindex(lua_State* L){
 }
 #include "smooth_damp.inc"
 #include "tween_playback.inc"
+int instance_from_existing(lua_State* L) {
+    if(lua_type(L,1)!=LUA_TUSERDATA||!has_meta(L,1,kInstanceMeta))luaL_typeerror(L,1,"Instance");
+    const Handle* source=checked_handle(L,1);
+    const auto& classes=constructors();
+    const auto found=classes.find(source->node->class_name);
+    if(found==classes.end()||!found->value("creatable",false))
+        return luaL_error(L,"Unable to create an Instance of type \"%s\"",source->node->class_name.c_str()),0;
+    struct Scope{Scope(){clone_root_only=clone_ignore_archivable=true;}~Scope(){clone_root_only=clone_ignore_archivable=false;}} scope;
+    lua_settop(L,1);
+    return clone_instance(L);
+}
 int instance_new(lua_State*L){
     auto*w=static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1)));
     if(lua_gettop(L)<1||lua_gettop(L)>2){luaL_error(L,"Instance.new expects a class name and optional Parent");return 0;}
@@ -2766,7 +2779,7 @@ void install(lua_State*L,World&w){
     lua_createtable(L,0,0);
     lua_createtable(L,0,2);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,client_index,"client.__index",1,nullptr);lua_setfield(L,-2,"__index");lua_pushliteral(L,"world snapshot client");lua_setfield(L,-2,"__metatable");
     lua_setmetatable(L,-2);lua_setglobal(L,"client");
-    lua_createtable(L,0,1);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_new,"Instance.new",1,nullptr);lua_setfield(L,-2,"new");lua_setreadonly(L,-1,1);lua_setglobal(L,"Instance");
+    lua_createtable(L,0,1);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_new,"Instance.new",1,nullptr);lua_setfield(L,-2,"new");lua_pushcfunction(L,instance_from_existing,"fromExisting");lua_setfield(L,-2,"fromExisting");lua_setreadonly(L,-1,1);lua_setglobal(L,"Instance");
     lua_newtable(L);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_handle_new,"InstanceHandle.new",1,nullptr);lua_setfield(L,-2,"new");lua_setreadonly(L,-1,true);lua_setglobal(L,"InstanceHandle");
     install_instance_compat(L,w);
     install_instance_extended(L,w);

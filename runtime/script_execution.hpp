@@ -1,4 +1,5 @@
 #pragma once
+#include "api_trace.hpp"
 #include "world_bindings.hpp"
 #include "source_scheduler.hpp"
 #include "closure_bindings.hpp"
@@ -136,11 +137,35 @@ local scan, compile, spawn, stop, ended, identify, playerScripts, codeReady, ini
 local executor = getfenv()
 -- Copy the engine root once and make it the actual fallback for authored and
 -- game scopes. Removing a global must not reveal it again through a fallback.
+-- The fallback is the stock Roblox environment: executor functions (getgc, hookfunction, request, the executor
+-- debug members, ...) belong to the authored scope only. A game's own scripts never see them in Roblox, and
+-- protected scripts fingerprint exactly that (library key sets, global names).
+local pristine = {}
+for key,value in getmetatable(executor).__index do pristine[key]=value end
+for key,value in executor do if pristine[key]==nil then pristine[key]=value end end
+local stock = {}
+for name in string.gmatch("assert collectgarbage error gcinfo getfenv getmetatable ipairs loadstring newproxy next pairs pcall print "
+    .. "printidentity rawequal rawget rawlen rawset require select setfenv setmetatable settings stats tonumber tostring type typeof "
+    .. "unpack version xpcall bit32 buffer coroutine debug math os string table task utf8 vector delay elapsedTime game shared "
+    .. "spawn tick time wait warn workspace script plugin _G _VERSION", "%S+") do stock[name] = true end
+local notStock = {Drawing=true, WebSocket=true}
 local base = {}
-for key,value in getmetatable(executor).__index do base[key]=value end
-for key,value in executor do if base[key]==nil then base[key]=value end end
+for key,value in pristine do
+    if type(key)=="string" and (stock[key] or (string.match(key, "^%u") and not notStock[key])) then base[key]=value end
+end
+if type(pristine.debug)=="table" then
+    local stockDebug = {}
+    for _, name in {"info","traceback","profilebegin","profileend","setmemorycategory","resetmemorycategory","getmemorycategory"} do
+        stockDebug[name] = pristine.debug[name]
+    end
+    base.debug = table.freeze(stockDebug)
+end
 base._G={};base.shared=shared
-setmetatable(executor,{__index=base})
+-- The executor scope keeps everything the engine root provides, as a copy that later removals cannot reveal.
+local full = {}
+for key,value in pristine do full[key]=value end
+full._G=base._G;full.shared=shared
+setmetatable(executor,{__index=full})
 getrenv = newcclosure(function() return base end, "getrenv")
 local modules, scripts = {}, {}
 local copied = setmetatable({}, {__mode="k"})
@@ -254,7 +279,7 @@ function require(module)
     if entry.state == "failed" then error(entry.error, 2) end
     return entry.value
 end
-base.require=require
+base.require=require;full.require=require
 executor.require=nil
 function getscriptclosure(instance)
     local fn,message=compile(instance,environmentFor(instance));assert(fn,message);return fn
@@ -402,6 +427,9 @@ return {reconcile=reconcile, status=status}
     }
     void set_initial_ready(bool value){initial_ready=value;}
     Json reconcile() {
+        const auto traced_start=std::chrono::steady_clock::now();
+        struct ReconcileTimer{lua_State* L;std::chrono::steady_clock::time_point start;~ReconcileTimer(){
+            if(api_trace_enabled())api_trace(L,"reconcile_ms",std::to_string(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count()));}} reconcile_timer{environment,traced_start};
         push_method(environment,"reconcile");
         if(lua_pcall(environment,0,1,0)!=0){std::string error=lua_tostring(environment,-1);lua_pop(environment,1);throw std::runtime_error(error);}
         Json result=world_bindings::capture_value(environment,world,-1);lua_pop(environment,1);return result;

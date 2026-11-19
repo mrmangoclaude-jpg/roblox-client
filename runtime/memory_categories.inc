@@ -2,6 +2,31 @@
 // Registry storage belongs to this VM; no process-global category state.
 namespace {
 char memory_category_registry_key;
+char memory_category_current_key;
+// The active tag of each thread, kept in a weak-keyed registry table. A thread that never set one reports the
+// chunk name of its caller, which is what Roblox shows for a script.
+void memory_category_push_current(lua_State* L) {
+    lua_pushlightuserdata(L,&memory_category_current_key);lua_rawget(L,LUA_REGISTRYINDEX);
+    if(lua_istable(L,-1)) {
+        lua_pushthread(L);lua_rawget(L,-2);
+        if(lua_isstring(L,-1)){lua_remove(L,-2);return;}
+        lua_pop(L,1);
+    }
+    lua_pop(L,1);
+    lua_Debug frame{};
+    if(lua_getinfo(L,1,"s",&frame)&&frame.source)lua_pushstring(L,frame.source);else lua_pushstring(L,"=");
+}
+// Stores the value at `index` as the running thread's tag.
+void memory_category_store_current(lua_State* L,int index) {
+    index=lua_absindex(L,index);
+    lua_pushlightuserdata(L,&memory_category_current_key);lua_rawget(L,LUA_REGISTRYINDEX);
+    if(lua_isnil(L,-1)) {
+        lua_pop(L,1);lua_newtable(L);
+        lua_newtable(L);lua_pushstring(L,"k");lua_setfield(L,-2,"__mode");lua_setmetatable(L,-2);
+        lua_pushlightuserdata(L,&memory_category_current_key);lua_pushvalue(L,-2);lua_rawset(L,LUA_REGISTRYINDEX);
+    }
+    lua_pushthread(L);lua_pushvalue(L,index);lua_rawset(L,-3);lua_pop(L,1);
+}
 int memory_category_set(lua_State* L) {
     size_t length=0;luaL_checklstring(L,1,&length);
     if(length>256)return luaL_error(L,"memory category name exceeds 256 bytes"),0;
@@ -21,11 +46,30 @@ int memory_category_set(lua_State* L) {
         lua_pushvalue(L,1);lua_rawseti(L,categories,category);
     }
     if(category<1||category>=LUA_MEMORY_CATEGORIES)return luaL_error(L,"invalid VM memory category"),0;
-    lua_setmemcat(L,category);return 0;
+    memory_category_push_current(L);
+    lua_setmemcat(L,category);
+    memory_category_store_current(L,1);
+    return 1;
 }
-int memory_category_reset(lua_State* L){lua_setmemcat(L,0);return 0;}
+int memory_category_reset(lua_State* L){
+    lua_setmemcat(L,0);
+    lua_pushstring(L,"1");memory_category_store_current(L,lua_gettop(L));lua_pop(L,1);
+    return 0;
+}
+int memory_category_get(lua_State* L){memory_category_push_current(L);return 1;}
+// The label is ignored. A missing or nil label raises Roblox's own message; other wrong types get the usual type error.
+int profile_begin(lua_State* L) {
+    if(lua_isnoneornil(L,1))
+        luaL_error(L,"debug.profilebegin(string) parameter must be string, got an unexpected type. Not opening profile block.");
+    luaL_checkstring(L,1);
+    return 0;
+}
+int profile_end(lua_State*){return 0;}
 void install_memory_category_bindings(lua_State* L) {
-    lua_pushcfunction(L,memory_category_set,"debug.setmemorycategory");lua_setfield(L,-2,"setmemorycategory");
-    lua_pushcfunction(L,memory_category_reset,"debug.resetmemorycategory");lua_setfield(L,-2,"resetmemorycategory");
+    lua_pushcfunction(L,profile_begin,"profilebegin");lua_setfield(L,-2,"profilebegin");
+    lua_pushcfunction(L,profile_end,"profileend");lua_setfield(L,-2,"profileend");
+    lua_pushcfunction(L,memory_category_get,"getmemorycategory");lua_setfield(L,-2,"getmemorycategory");
+    lua_pushcfunction(L,memory_category_set,"setmemorycategory");lua_setfield(L,-2,"setmemorycategory");
+    lua_pushcfunction(L,memory_category_reset,"resetmemorycategory");lua_setfield(L,-2,"resetmemorycategory");
 }
 }

@@ -1,0 +1,21 @@
+nfc() -> false | "missing argument #1 to 'nfcnormalize' (string expected)"
+nfc(1) -> true | "1"
+nfc(nil) -> false | "invalid argument #1 to 'nfcnormalize' (string expected, got nil)"
+nfc({}) -> false | "invalid argument #1 to 'nfcnormalize' (string expected, got table)"
+nfc('') -> true | ""
+nfc('é') bytes -> true | 2
+nfd('é') bytes -> true | 3
+nfc hangul -> true | true
+nfd hangul -> true | 9
+nfc bad utf8 -> false | "String contains invalid UTF-8"
+nfd bad utf8 -> false | "String contains invalid UTF-8"
+nfd() -> false | "missing argument #1 to 'nfdnormalize' (string expected)"
+nfc(12) -> true | "12"
+nfc extra -> true | "a"
+graphemes() -> false | "missing argument #1 to 'graphemes' (string expected)"
+graphemes(1) type -> true | "function"
+graphemes type -> true | "function"
+graphemes list -> true | "1-1,2-4,5-5"
+graphemes bad -> true | "1-1,2-2,3-3"
+graphemes i,j -> true | "2-2,3-3,4-4"
+graphemes crlf -> true | "1-1,2-3,4-4"

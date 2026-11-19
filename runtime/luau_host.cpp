@@ -1,3 +1,5 @@
+#include "api_trace.hpp"
+#include "utf8_extras.hpp"
 #include <Luau/Compiler.h>
 #include <Luau/Bytecode.h>
 #include <lua.h>
@@ -83,8 +85,10 @@ void* capped_alloc(void* ud, void* ptr, size_t /*osize*/, size_t nsize) {
 void interrupt(lua_State* L, int gc) {
     auto* lim = static_cast<Limits*>(lua_callbacks(L)->userdata);
     if (!lim || gc >= 0) return;
+    if (api_trace_interrupt_hook) api_trace_interrupt_hook(L);
     if (Clock::now() >= lim->deadline) {
         lim->timed_out = true;
+        if (api_trace_enabled()) api_trace_stack(L);
         if (lua_isyieldable(L)) lua_break(L);
     }
 }
@@ -178,6 +182,7 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
     cb->interrupt = interrupt;
     install_protected_error_trace(L);
     luaL_openlibs(L);
+    lua_getglobal(L,"utf8");install_utf8_extras(L);lua_pop(L,1);
     // This is a general Luau VM surface. It deliberately has no file, module,
     // process, network, or client-engine bindings.
     for (const char* name : {"require", "loadstring", "dofile", "loadfile", "io", "debug"})
@@ -408,6 +413,7 @@ public:
             auto* callbacks=lua_callbacks(main);callbacks->userdata=&limits;callbacks->interrupt=interrupt;
             install_protected_error_trace(main);
             luaL_openlibs(main);
+            lua_getglobal(main,"utf8");install_utf8_extras(main);lua_pop(main,1);
             for(const char* name:{"require","loadstring","dofile","loadfile","io","debug"})remove_global(main,name);
             lua_getglobal(main,"os");if(lua_istable(main,-1)){lua_pushnil(main);lua_setfield(main,-2,"exit");}lua_pop(main,1);
             install_random_compat(main);install_authored_bindings(main);world_bindings::install(main,*world);luaL_sandbox(main);
