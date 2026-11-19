@@ -4,22 +4,8 @@
 bool part_mass_key(const std::string& key) {
     return key=="Mass"||key=="CenterOfMass"||key=="AssemblyMass"||key=="AssemblyCenterOfMass";
 }
-// The server only replicates properties that differ from their defaults, so a BasePart that does not carry one of
-// these has the class default. Part's constructor table is the measured source for the simple BasePart values.
-bool basepart_simple_default_key(const std::string& key) {
-    static const char* const keys[]={"Color","Transparency","Reflectance","Anchored","CanCollide","CanTouch","CanQuery","CastShadow",
-        "Massless","Locked","CollisionGroup","CollisionGroupId","LocalTransparencyModifier","EnableFluidForces","AudioCanCollide","RootPriority","MaterialVariant"};
-    for(const char* candidate:keys)if(key==candidate)return true;
-    return false;
-}
 const Json* part_mass_default(World& w,const Node& n,const std::string& key) {
-    const bool simple=basepart_simple_default_key(key);
-    if((key!="Material"&&key!="Shape"&&!simple)||!pivot_part(w,n))return nullptr;
-    if(simple) {
-        const auto part=constructors().find("Part");
-        if(part==constructors().end()||!part->contains("properties")||!part->at("properties").contains(key))return nullptr;
-        return &part->at("properties").at(key).at("value");
-    }
+    if(n.server_owned||(key!="Material"&&key!="Shape")||!pivot_part(w,n))return nullptr;
     static const Json plastic=256,block=1;
     if(key=="Material")return &plastic;
     return class_is_a(w,n.class_name,"Part")?&block:nullptr;
