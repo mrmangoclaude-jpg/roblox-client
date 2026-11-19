@@ -50,9 +50,9 @@ int color_new(lua_State* L) {
         luaL_error(L, "Color3.new accepts up to red, green, and blue");
         return 0;
     }
-    const double r = count >= 1 ? finite_number(L, 1, "red") : 0.0;
-    const double g = count >= 2 ? finite_number(L, 2, "green") : 0.0;
-    const double b = count >= 3 ? finite_number(L, 3, "blue") : 0.0;
+    const double r = lua_isnoneornil(L, 1) ? 0.0 : finite_number(L, 1, "red");
+    const double g = lua_isnoneornil(L, 2) ? 0.0 : finite_number(L, 2, "green");
+    const double b = lua_isnoneornil(L, 3) ? 0.0 : finite_number(L, 3, "blue");
     return push_color_value(L, r, g, b);
 }
 
@@ -150,23 +150,28 @@ int color_lerp(lua_State* L) {
 
 int color_to_hsv(lua_State* L) {
     const auto* color = check_color(L, 1);
-    const double maximum = std::max({color->r, color->g, color->b});
-    const double minimum = std::min({color->r, color->g, color->b});
-    const double delta = maximum - minimum;
-    double hue = 0.0;
-    if (delta != 0.0) {
-        if (maximum == color->r) hue = std::fmod((color->g - color->b) / delta, 6.0);
-        else if (maximum == color->g) hue = (color->b - color->r) / delta + 2.0;
-        else hue = (color->r - color->g) / delta + 4.0;
-        hue /= 6.0;
-        if (hue < 0.0) hue += 1.0;
+    // Roblox stores Color3 channels as float32 and runs the whole conversion in
+    // float32; computing in double then rounding diverges in the last ULP.
+    const float r = static_cast<float>(color->r);
+    const float g = static_cast<float>(color->g);
+    const float b = static_cast<float>(color->b);
+    const float maximum = std::max({r, g, b});
+    const float minimum = std::min({r, g, b});
+    const float delta = maximum - minimum;
+    float hue = 0.0f;
+    if (delta != 0.0f) {
+        if (maximum == r) hue = std::fmod((g - b) / delta, 6.0f);
+        else if (maximum == g) hue = (b - r) / delta + 2.0f;
+        else hue = (r - g) / delta + 4.0f;
+        hue /= 6.0f;
+        if (hue < 0.0f) hue += 1.0f;
         // Roblox represents fully saturated red as hue 1 in ToHSV.
-        if (hue == 0.0) hue = 1.0;
+        if (hue == 0.0f) hue = 1.0f;
     }
-    const double saturation = maximum == 0.0 ? 0.0 : delta / maximum;
-    lua_pushnumber(L, hue);
-    lua_pushnumber(L, saturation);
-    lua_pushnumber(L, maximum);
+    const float saturation = maximum == 0.0f ? 0.0f : delta / maximum;
+    lua_pushnumber(L, static_cast<double>(hue));
+    lua_pushnumber(L, static_cast<double>(saturation));
+    lua_pushnumber(L, static_cast<double>(maximum));
     return 3;
 }
 
@@ -250,6 +255,7 @@ void install_color3_bindings(lua_State* L) {
     set_function(L, "fromRGB", color_from_rgb);
     set_function(L, "fromHSV", color_from_hsv);
     set_function(L, "fromHex", color_from_hex);
+    set_function(L, "toHSV", color_to_hsv);
     lua_setreadonly(L, -1, true);
     lua_setglobal(L, "Color3");
 }

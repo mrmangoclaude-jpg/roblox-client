@@ -30,6 +30,8 @@ double finite_number(lua_State* L, int index, const char* label) {
     return value;
 }
 int push_raw(lua_State* L, double x, double y) {
+    x = static_cast<double>(static_cast<float>(x));
+    y = static_cast<double>(static_cast<float>(y));
     auto* value = static_cast<Value*>(lua_newuserdatatagged(L, sizeof(Value), 0));
     new (value) Value{x, y};
     luaL_getmetatable(L, kMeta);
@@ -51,7 +53,7 @@ int construct(lua_State* L) {
     // Infinity represents an unbounded UISizeConstraint maximum. Keep the
     // existing NaN-input guard; property consumers validate allowed signs.
     // Authored serialization preserves infinity using explicit $number tags.
-    double x=lua_isnone(L,1)?0:luaL_checknumber(L,1),y=lua_isnone(L,2)?0:luaL_checknumber(L,2);
+    double x=luaL_optnumber(L,1,0),y=luaL_optnumber(L,2,0);
     if(std::isnan(x)||std::isnan(y)){luaL_error(L,"Vector2 components must not be NaN");return 0;}
     return push_raw(L,x,y);
 }
@@ -60,14 +62,15 @@ int index(lua_State* L) {
     const char* key = luaL_checkstring(L, 2);
     if (std::strcmp(key, "X") == 0) lua_pushnumber(L, value->x);
     else if (std::strcmp(key, "Y") == 0) lua_pushnumber(L, value->y);
-    else if (std::strcmp(key, "Magnitude") == 0) lua_pushnumber(L, std::hypot(value->x, value->y));
+    else if (std::strcmp(key, "Magnitude") == 0) lua_pushnumber(L, static_cast<double>(std::sqrt(static_cast<float>(value->x)*static_cast<float>(value->x) + static_cast<float>(value->y)*static_cast<float>(value->y))));
     else if (std::strcmp(key, "Unit") == 0) {
-        double magnitude = std::hypot(value->x, value->y);
-        if (magnitude == 0) {
+        float fx = static_cast<float>(value->x), fy = static_cast<float>(value->y);
+        float magnitude = std::sqrt(fx*fx + fy*fy);
+        if (magnitude == 0.0f) {
             const double nan=std::numeric_limits<double>::quiet_NaN();
             return push_raw(L,nan,nan);
         }
-        return push_value(L, value->x / magnitude, value->y / magnitude);
+        return push_value(L, fx / magnitude, fy / magnitude);
     } else {
         luaL_getmetatable(L, kMeta);
         lua_pushvalue(L, 2);
@@ -82,8 +85,16 @@ int readonly(lua_State* L) {
 }
 int tostring_vector(lua_State* L) {
     Value* v = check(L, 1);
+    char xb[32], yb[32];
+    auto fmt = [](double d, char* out, size_t n) {
+        if (std::isnan(d)) std::snprintf(out, n, "NAN");
+        else if (std::isinf(d)) std::snprintf(out, n, d < 0 ? "-INF" : "INF");
+        else std::snprintf(out, n, "%.9g", d);
+    };
+    fmt(v->x, xb, sizeof(xb));
+    fmt(v->y, yb, sizeof(yb));
     char text[128];
-    int size = std::snprintf(text, sizeof(text), "%.17g, %.17g", v->x, v->y);
+    int size = std::snprintf(text, sizeof(text), "%s, %s", xb, yb);
     lua_pushlstring(L, text, static_cast<size_t>(size));
     return 1;
 }
@@ -93,22 +104,22 @@ int equal(lua_State* L) {
     lua_pushboolean(L, a->x == b->x && a->y == b->y);
     return 1;
 }
-int add(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,a->x+b->x,a->y+b->y); }
-int subtract(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,a->x-b->x,a->y-b->y); }
+int add(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,static_cast<float>(a->x)+static_cast<float>(b->x),static_cast<float>(a->y)+static_cast<float>(b->y)); }
+int subtract(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,static_cast<float>(a->x)-static_cast<float>(b->x),static_cast<float>(a->y)-static_cast<float>(b->y)); }
 int multiply(lua_State* L) {
-    if (is_vector(L,1) && is_vector(L,2)) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,a->x*b->x,a->y*b->y); }
-    if (is_vector(L,1)) { Value* a=check(L,1); double n=finite_number(L,2,"multiplier"); return push_value(L,a->x*n,a->y*n); }
-    Value* b=check(L,2); double n=finite_number(L,1,"multiplier"); return push_value(L,n*b->x,n*b->y);
+    if (is_vector(L,1) && is_vector(L,2)) { Value* a=check(L,1); Value* b=check(L,2); return push_value(L,static_cast<float>(a->x)*static_cast<float>(b->x),static_cast<float>(a->y)*static_cast<float>(b->y)); }
+    if (is_vector(L,1)) { Value* a=check(L,1); float n=static_cast<float>(finite_number(L,2,"multiplier")); return push_value(L,static_cast<float>(a->x)*n,static_cast<float>(a->y)*n); }
+    Value* b=check(L,2); float n=static_cast<float>(finite_number(L,1,"multiplier")); return push_value(L,n*static_cast<float>(b->x),n*static_cast<float>(b->y));
 }
 int divide(lua_State* L) {
     Value* a=check(L,1);
-    if (is_vector(L,2)) { Value* b=check(L,2); if(b->x==0||b->y==0){luaL_error(L,"Vector2 divisor components must be nonzero");return 0;}return push_value(L,a->x/b->x,a->y/b->y); }
-    double n=finite_number(L,2,"divisor"); if(n==0){luaL_error(L,"Vector2 divisor must be nonzero");return 0;}return push_value(L,a->x/n,a->y/n);
+    if (is_vector(L,2)) { Value* b=check(L,2); float bx=static_cast<float>(b->x),by=static_cast<float>(b->y); if(bx==0||by==0){luaL_error(L,"Vector2 divisor components must be nonzero");return 0;}return push_value(L,static_cast<float>(a->x)/bx,static_cast<float>(a->y)/by); }
+    float n=static_cast<float>(finite_number(L,2,"divisor")); if(n==0){luaL_error(L,"Vector2 divisor must be nonzero");return 0;}return push_value(L,static_cast<float>(a->x)/n,static_cast<float>(a->y)/n);
 }
-int negate(lua_State* L) { Value* a=check(L,1); return push_value(L,-a->x,-a->y); }
-int dot(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); lua_pushnumber(L,a->x*b->x+a->y*b->y); return 1; }
-int cross(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); lua_pushnumber(L,a->x*b->y-a->y*b->x); return 1; }
-int lerp(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); double t=finite_number(L,3,"alpha"); return push_value(L,a->x+(b->x-a->x)*t,a->y+(b->y-a->y)*t); }
+int negate(lua_State* L) { Value* a=check(L,1); return push_value(L,-static_cast<float>(a->x),-static_cast<float>(a->y)); }
+int dot(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); lua_pushnumber(L,static_cast<double>(static_cast<float>(a->x)*static_cast<float>(b->x)+static_cast<float>(a->y)*static_cast<float>(b->y))); return 1; }
+int cross(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); lua_pushnumber(L,static_cast<double>(static_cast<float>(a->x)*static_cast<float>(b->y)-static_cast<float>(a->y)*static_cast<float>(b->x))); return 1; }
+int lerp(lua_State* L) { Value* a=check(L,1); Value* b=check(L,2); double t=finite_number(L,3,"alpha"); float ax=static_cast<float>(a->x),ay=static_cast<float>(a->y),bx=static_cast<float>(b->x),by=static_cast<float>(b->y),tf=static_cast<float>(t); return push_value(L,ax+(bx-ax)*tf,ay+(by-ay)*tf); }
 int fuzzy_eq(lua_State* L) {
     Value* a=check(L,1);Value* b=check(L,2);
     double epsilon=luaL_optnumber(L,3,1e-5);
@@ -121,7 +132,7 @@ int angle(lua_State* L) {
     Value* a=check(L,1);Value* b=check(L,2);
     bool signed_angle=false;
     if(!lua_isnoneornil(L,3)){luaL_checktype(L,3,LUA_TBOOLEAN);signed_angle=lua_toboolean(L,3);}
-    const double radians=std::atan2(a->x*b->y-a->y*b->x,a->x*b->x+a->y*b->y);
+    const double radians=static_cast<double>(std::atan2f(static_cast<float>(a->x)*static_cast<float>(b->y)-static_cast<float>(a->y)*static_cast<float>(b->x),static_cast<float>(a->x)*static_cast<float>(b->x)+static_cast<float>(a->y)*static_cast<float>(b->y)));
     lua_pushnumber(L,static_cast<float>(signed_angle?radians:std::fabs(radians)));
     return 1;
 }
@@ -158,14 +169,14 @@ void install_vector2_bindings(lua_State* L) {
     method(L,"Abs",absolute); method(L,"Floor",floor_values); method(L,"Ceil",ceil_values);
     method(L,"Sign",sign_values); method(L,"Min",min_values); method(L,"Max",max_values);
     lua_pushliteral(L,"Vector2"); lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"immutable Vector2"); lua_setfield(L,-2,"__metatable");
+    lua_pushliteral(L,"The metatable is locked"); lua_setfield(L,-2,"__metatable");
     lua_pop(L,1);
 
     lua_createtable(L,0,12);
     method(L,"new",construct);
     constant(L,"zero",0,0); constant(L,"one",1,1);
     constant(L,"xAxis",1,0); constant(L,"yAxis",0,1);
-    method(L,"Min",min_values); method(L,"Max",max_values);
+    method(L,"min",min_values); method(L,"max",max_values);
     lua_setreadonly(L,-1,true); lua_setglobal(L,"Vector2");
 }
 

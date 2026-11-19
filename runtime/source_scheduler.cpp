@@ -277,10 +277,10 @@ int SourceScheduler::task_api_inner(lua_State* L) {
         lua_resetthread(target);return 0;
     }
     int function_index=operation==2?2:1;
+    int type=lua_type(L,function_index);
+    if(type!=LUA_TFUNCTION&&type!=LUA_TTHREAD){luaL_argerror(L,function_index,"function or thread expected");return 0;}
     double duration=operation==2?luaL_checknumber(L,1):0;
     if(!std::isfinite(duration)||duration>86400){luaL_error(L,"invalid task.delay duration");return 0;}
-    int type=lua_type(L,function_index);
-    if(type!=LUA_TFUNCTION&&type!=LUA_TTHREAD){luaL_error(L,"task expects a function or thread");return 0;}
     int count=lua_gettop(L)-function_index;
     lua_State* child=nullptr;
     if(type==LUA_TFUNCTION) {

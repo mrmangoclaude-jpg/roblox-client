@@ -46,8 +46,22 @@ int tween_info_index(lua_State* L) {
 }
 
 int tween_info_tostring(lua_State* L) {
-    checked_tween_info(L, 1);
-    lua_pushliteral(L, "TweenInfo");
+    auto* value = checked_tween_info(L, 1);
+    // Studio renders the full descriptor, with numbers via the VM's own
+    // shortest-round-trip formatter and capitalized Reverses.
+    auto numstr = [&](double n) -> std::string {
+        lua_pushnumber(L, n);
+        size_t len = 0; const char* s = luaL_tolstring(L, -1, &len);
+        std::string r(s, len); lua_pop(L, 2); return r;
+    };
+    std::string time = numstr(value->time), delay = numstr(value->delay_time);
+    lua_pushinteger(L, value->repeat_count);
+    size_t rl = 0; const char* rs = luaL_tolstring(L, -1, &rl);
+    std::string repeat(rs, rl); lua_pop(L, 2);
+    lua_pushfstring(L, "Time:%s DelayTime:%s RepeatCount:%s Reverses:%s EasingDirection:%s EasingStyle:%s",
+                    time.c_str(), delay.c_str(), repeat.c_str(), value->reverses ? "True" : "False",
+                    kGeometryEnums[kGeometryEasingDirection].names[value->direction],
+                    kGeometryEnums[kGeometryTweenStyle].names[value->style]);
     return 1;
 }
 

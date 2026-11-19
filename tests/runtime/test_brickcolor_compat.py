@@ -81,16 +81,30 @@ math=oldmath;Random=oldrandom
 
     def test_palette_validation_and_immutable_values(self):
         self.execute('''
-for _,value in ipairs({-1,128,1.5,math.huge,-math.huge,0/0,"1",true,{},Color3.new()})do
+for _,value in ipairs({-1,128,129,200,math.huge,-math.huge,0/0,true,{},Color3.new()})do
  assert(not pcall(BrickColor.palette,value))
 end
 assert(not pcall(BrickColor.palette))
 assert(not pcall(BrickColor.random,1))
+-- Roblox rounds the palette index half away from zero and coerces numeric strings.
+assert(BrickColor.palette(0.5)==BrickColor.palette(1))
+assert(BrickColor.palette(1.5)==BrickColor.palette(2))
+assert(BrickColor.palette("1")==BrickColor.palette(1))
 local color=BrickColor.Red()
 assert(not pcall(function()color.Number=23 end))
 assert(not pcall(function()BrickColor.palette=function()end end))
-assert(not pcall(BrickColor.new,0/0))
-assert(not pcall(BrickColor.new,math.huge))
+-- Non-finite BrickColor.new falls back to Medium stone grey instead of erroring.
+assert(BrickColor.new(0/0)==BrickColor.Gray())
+assert(BrickColor.new(math.huge)==BrickColor.Gray())
+''')
+
+    def test_new_floors_numeric_palette_id(self):
+        self.execute('''
+assert(BrickColor.new(1.5)==BrickColor.new(1))
+assert(BrickColor.new(2.7)==BrickColor.new(2))
+assert(BrickColor.new(0.5)==BrickColor.Gray())
+assert(BrickColor.new(0)==BrickColor.Gray())
+assert(BrickColor.new(194).Number==194)
 ''')
 
     def test_palette_colors_survive_attributes_clone_and_bindable_transport(self):

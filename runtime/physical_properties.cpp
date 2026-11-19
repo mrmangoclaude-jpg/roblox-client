@@ -48,10 +48,83 @@ void push_value(lua_State* L, const PhysicalPropertiesValue& fields) {
     lua_setmetatable(L, -2);
 }
 
+struct MaterialDefault {
+    const char* name;
+    float density, friction, elasticity, friction_weight, elasticity_weight, acoustic_absorption;
+};
+constexpr MaterialDefault kMaterialDefaults[] = {
+    {"Plastic", 0.7f, 0.3f, 0.5f, 1, 1, 0.3f},
+    {"SmoothPlastic", 0.7f, 0.2f, 0.5f, 1, 1, 0.2f},
+    {"Neon", 0.7f, 0.3f, 0.2f, 1, 1, 0.3f},
+    {"Wood", 0.35f, 0.48f, 0.2f, 1, 1, 0.25f},
+    {"WoodPlanks", 0.35f, 0.48f, 0.2f, 1, 1, 0.25f},
+    {"Marble", 2.563f, 0.2f, 0.17f, 1, 1, 0.01f},
+    {"Basalt", 2.691f, 0.7f, 0.15f, 0.3f, 1, 0.2f},
+    {"Slate", 2.691f, 0.4f, 0.2f, 1, 1, 0.03f},
+    {"CrackedLava", 2.691f, 0.65f, 0.15f, 1, 1, 0.35f},
+    {"Concrete", 2.403f, 0.7f, 0.2f, 0.3f, 1, 0.05f},
+    {"Limestone", 2.691f, 0.5f, 0.15f, 1, 1, 0.15f},
+    {"Granite", 2.691f, 0.4f, 0.2f, 1, 1, 0.2f},
+    {"Pavement", 2.691f, 0.5f, 0.17f, 0.3f, 1, 0.6f},
+    {"Brick", 1.922f, 0.8f, 0.15f, 0.3f, 1, 0.35f},
+    {"Pebble", 2.403f, 0.4f, 0.17f, 1, 1.5f, 0.4f},
+    {"Cobblestone", 2.691f, 0.5f, 0.17f, 1, 1, 0.45f},
+    {"Rock", 2.691f, 0.5f, 0.17f, 1, 1, 0.15f},
+    {"Sandstone", 2.691f, 0.5f, 0.15f, 5, 1, 0.2f},
+    {"CorrodedMetal", 7.85f, 0.7f, 0.2f, 1, 1, 0.15f},
+    {"DiamondPlate", 7.85f, 0.35f, 0.25f, 1, 1, 0.05f},
+    {"Foil", 2.7f, 0.4f, 0.25f, 1, 1, 0.1f},
+    {"Metal", 7.85f, 0.4f, 0.25f, 1, 1, 0.1f},
+    {"Grass", 0.9f, 0.4f, 0.1f, 1, 1.5f, 0.7f},
+    {"LeafyGrass", 0.9f, 0.4f, 0.1f, 2, 2, 0.75f},
+    {"Sand", 1.602f, 0.5f, 0.05f, 5, 2.5f, 0.55f},
+    {"Fabric", 0.7f, 0.35f, 0.05f, 1, 1, 0.65f},
+    {"Snow", 0.9f, 0.3f, 0.03f, 3, 4, 0.8f},
+    {"Mud", 0.9f, 0.3f, 0.07f, 3, 4, 0.65f},
+    {"Ground", 0.9f, 0.45f, 0.1f, 1, 1, 0.6f},
+    {"Asphalt", 2.36f, 0.8f, 0.2f, 0.3f, 1, 0.4f},
+    {"Salt", 2.165f, 0.5f, 0.05f, 1, 1, 0.15f},
+    {"Ice", 0.919f, 0.02f, 0.15f, 3, 1, 0.2f},
+    {"Glacier", 0.919f, 0.05f, 0.15f, 2, 1, 0.7f},
+    {"Glass", 2.403f, 0.25f, 0.2f, 1, 1, 0.1f},
+    {"ForceField", 2.403f, 0.25f, 0.2f, 1, 1, 0},
+    {"Air", 0.01f, 0.01f, 0.01f, 1, 1, 0.01f},
+    {"Water", 1, 0.005f, 0.01f, 1, 1, 0.01f},
+    {"Cardboard", 0.7f, 0.5f, 0.05f, 1, 2, 0.55f},
+    {"Carpet", 1.1f, 0.4f, 0.25f, 1, 2, 0.65f},
+    {"CeramicTiles", 2.4f, 0.51f, 0.2f, 1, 1, 0.04f},
+    {"ClayRoofTiles", 2, 0.51f, 0.2f, 1, 1, 0.3f},
+    {"RoofShingles", 2.36f, 0.8f, 0.2f, 0.3f, 1, 0.3f},
+    {"Leather", 0.86f, 0.35f, 0.25f, 1, 1, 0.65f},
+    {"Plaster", 0.75f, 0.6f, 0.2f, 0.3f, 1, 0.3f},
+    {"Rubber", 1.3f, 1.5f, 0.95f, 3, 2, 0.5f},
+};
+
 int physical_properties_new(lua_State* L) {
     const int count = lua_gettop(L);
+    if (count == 1) {
+        if (!lua_isuserdata(L, 1))
+            luaL_error(L, "PhysicalProperties.new with 1 argument expects Enum.Material inputs");
+        lua_getfield(L, 1, "Name");
+        const char* name = lua_tostring(L, -1);
+        const MaterialDefault* found = nullptr;
+        if (name)
+            for (const auto& m : kMaterialDefaults)
+                if (std::strcmp(m.name, name) == 0) { found = &m; break; }
+        lua_pop(L, 1);
+        if (!found)
+            luaL_error(L, "PhysicalProperties.new with 1 argument expects Enum.Material inputs");
+        push_value(L, PhysicalPropertiesValue{found->density, found->friction, found->elasticity,
+            found->friction_weight, found->elasticity_weight, found->acoustic_absorption});
+        return 1;
+    }
     if (count != 3 && count != 5 && count != 6) {
-        luaL_error(L, "PhysicalProperties.new expects 3, 5, or 6 numbers");
+        luaL_error(L, "Invalid number of arguments: %d. Four ways to call PhysicalProperties.new:\n"
+            "\t\t\t\t\t1. new(material: Material)  -- returns default properties for the given material\n"
+            "\t\t\t\t\t2. new(density: number, friction: number, elasticity: number)\n"
+            "\t\t\t\t\t3. new(density: number, friction: number, elasticity: number, frictionWeight: number, elasticityWeight: number)\n"
+            "\t\t\t\t\t4. new(density: number, friction: number, elasticity: number, frictionWeight: number, elasticityWeight: number, acousticAbsorption: number)\n",
+            count);
         return 0;
     }
     PhysicalPropertiesValue value{};
@@ -62,11 +135,19 @@ int physical_properties_new(lua_State* L) {
         ? checked_clamped_number(L, 4, "FrictionWeight", 0.0, 100.0) : 1.0f;
     value.elasticity_weight = count >= 5
         ? checked_clamped_number(L, 5, "ElasticityWeight", 0.0, 100.0) : 1.0f;
-    // Roblox's current docs omit the default acoustic value for the 3- and
-    // 5-argument overloads. Keep the standalone subset's documented neutral 0.
     value.acoustic_absorption = count == 6
-        ? checked_clamped_number(L, 6, "AcousticAbsorption", 0.0, 1.0) : 0.0f;
+        ? checked_clamped_number(L, 6, "AcousticAbsorption", 0.0, 1.0) : 1.0f;
     push_value(L, value);
+    return 1;
+}
+
+int physical_properties_tostring(lua_State* L) {
+    auto* value = checked(L, 1);
+    char text[160];
+    std::snprintf(text, sizeof(text), "%.9g, %.9g, %.9g, %.9g, %.9g, %.9g",
+        double(value->density), double(value->friction), double(value->elasticity),
+        double(value->friction_weight), double(value->elasticity_weight), double(value->acoustic_absorption));
+    lua_pushstring(L, text);
     return 1;
 }
 
@@ -120,6 +201,8 @@ void install_physical_properties(lua_State* L) {
     lua_setfield(L, -2, "__newindex");
     lua_pushcfunction(L, physical_properties_equal, "PhysicalProperties.__eq");
     lua_setfield(L, -2, "__eq");
+    lua_pushcfunction(L, physical_properties_tostring, "PhysicalProperties.__tostring");
+    lua_setfield(L, -2, "__tostring");
     lua_pushstring(L, "PhysicalProperties");
     lua_setfield(L, -2, "__type");
     lua_pushstring(L, "PhysicalProperties");

@@ -250,6 +250,28 @@ return ok
                          for field in stable_fields} for response in responses]
             self.assertEqual(normalized[0],normalized[1])
 
+    def test_cpp_host_vector2_and_cframe_round_to_float32(self):
+        # Engine datatypes store float32 components: 1.1/2.2/3.3 are not exact
+        # in float32, so a double-precision host would return them unchanged.
+        source='''
+local v=Vector2.new(1.1,2.2)
+assert(v.X~=1.1,"Vector2.X must round to float32")
+assert(v.Y~=2.2,"Vector2.Y must round to float32")
+local cf=CFrame.new(1.1,2.2,3.3)
+assert(cf.Position.X~=1.1,"CFrame position must round to float32")
+assert(Vector2.new(3,4).Magnitude==5)
+assert(Vector2.new(3,4).Unit==Vector2.new(0.6,0.8))
+assert(Vector2.new(3,4):Dot(Vector2.new(-2,5))==14)
+return "float32 parity ok"
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory);(path/'source.luau').write_text(source)
+            (path/'snapshot.json').write_text(json.dumps(snapshot()))
+            run=subprocess.run([str(HOST),'--source',str(path/'source.luau'),'--world-snapshot',str(path/'snapshot.json')],capture_output=True,timeout=7)
+            response=json.loads(run.stdout);self.assertTrue(response['ok'],response)
+            self.assertEqual(run.returncode,0)
+            self.assertEqual(response['values'],["float32 parity ok"])
+
     def test_luau_move_reaches_only_the_separate_local_preview(self):
         world,_=fixture();before=copy.deepcopy(world.instances)
         runtime=PersistentClientScriptRuntime(lambda:world,123);self.addCleanup(runtime.close)

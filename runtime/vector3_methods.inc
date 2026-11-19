@@ -66,7 +66,7 @@ void install_vector3_methods(lua_State* L) {
     lua_pushcclosure(L, vector3_index, "Vector3.__index", 3);
     lua_setfield(L, metatable, "__index");
     lua_pushliteral(L, "Vector3"); lua_setfield(L, metatable, "__type");
-    lua_pushliteral(L, "immutable Vector3"); lua_setfield(L, metatable, "__metatable");
+    lua_pushliteral(L, "The metatable is locked"); lua_setfield(L, metatable, "__metatable");
     lua_setreadonly(L, metatable, true);
     lua_pushvector(L, 0, 0, 0);
     lua_pushvalue(L, metatable);

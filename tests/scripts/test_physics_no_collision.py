@@ -43,6 +43,14 @@ class PairPredictionTests(unittest.TestCase):
             self.assertIsNone(result['predicted_position'])
             self.assertNotIn('Enabled',_node_snapshot(world,pair,world.instances[pair])['properties'])
 
+    def test_network_constructor_defaults_allow_fresh_complete_constraint_without_ordinary(self):
+        world,root,pair=ready_world();world.instances[pair]['properties'].pop('Enabled')
+        world.creation[pair]={'fresh':True,'complete':True,'ordinary':False}
+        engine=RuntimePhysicsPrediction(allow_network_constructor_defaults=True)
+        result=engine.advance(world,123,10.)
+        self.assertIsNotNone(result['predicted_position'])
+        self.assertNotIn((1,91),sources(engine))
+
     def test_fresh_constraint_keeps_explicit_disabled_and_null_endpoint(self):
         world,root,pair=ready_world(False)
         world.creation[pair]={'fresh':True,'complete':True,'ordinary':True}

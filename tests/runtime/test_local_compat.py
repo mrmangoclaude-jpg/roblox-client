@@ -14,6 +14,16 @@ class LocalCompatibilityTests(unittest.TestCase):
         with mock.patch.object(transforms,'HOSTS',[path]):
             return transforms.CFrameTransformTests.run_script(self,source,snapshot)
 
+    def test_string_metatable_is_locked_but_raw_access_exposes_it(self):
+        self.run_script('''
+assert(getmetatable("")=="The metatable is locked")
+assert(getmetatable("abc")=="The metatable is locked")
+local raw=getrawmetatable("")
+assert(type(raw)=="table" and raw.__index==string)
+assert(getmetatable(1)==nil and getmetatable(true)==nil)
+assert(getmetatable(print)==nil and getmetatable({})==nil)
+''')
+
     def test_file_binary_roundtrip_listing_and_recursive_deletion(self):
         self.run_script('''
 makefolder("a/b");writefile("a/b/data",string.char(0,255).."hi")

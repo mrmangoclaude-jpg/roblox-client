@@ -226,7 +226,8 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
         script_runtime = runtime_type(lambda: world, join['UserId'], join['GameId'],
             memory_mb=args.memory_mb,
             session_stats_provider=(clock.runtime_statistics if clock is not None else None),
-            allow_visual_mesh_approximation=args.visual_mesh_collisions)
+            allow_visual_mesh_approximation=args.visual_mesh_collisions,
+            place_id=join.get('PlaceId'), game_id=join.get('UniverseId'))
     else:
         script_runtime = runtime_type(lambda: world, join['UserId'], join['GameId'])
     script_results = []
@@ -412,7 +413,11 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
             bytecode_range = (13, 14) if args.luau_range else None
             if bytecode_range is not None and not int(client.report["server_capabilities"], 16) & 0x100000:
                 raise SessionError("Server does not support bytecode-range negotiation")
-            client.send(1, protocol_sync(join, allocation_body.get("joinTicket"), bytecode_range))
+            protocol_join = dict(join)
+            if not protocol_join.get("GameJoinContext"):
+                # Place servers like Steal a Brainrot kick with reason 267 if GameJoinContext is empty.
+                protocol_join["GameJoinContext"] = '{"JoinSource":0}'
+            client.send(1, protocol_sync(protocol_join, allocation_body.get("joinTicket"), bytecode_range))
             client.report["protocol_sync_sent"] = True
             client.report["bytecode_range"] = bytecode_range
             client.report["imported_script_execution_enabled"] = False
@@ -534,7 +539,9 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                 if evidence['player_spawned'] and 'spawn_verified_at_seconds' not in client.report:
                     client.report['spawn_verified_at_seconds'] = round(now - client.started, 3)
                 run_scripts(client, evidence)
-                if args.streaming_ready and evidence['spawn_region_received'] and not client.report.get('streaming_ready_sent'):
+                if (args.streaming_ready and evidence['player_spawned']
+                        and evidence['spawn_region_received']
+                        and not client.report.get('streaming_ready_sent')):
                     client.send(1, streaming_ready(world, join['UserId']))
                     client.report['streaming_ready_sent'] = True
                     client.report['streaming_ready_at_seconds'] = round(now - client.started, 3)
@@ -577,6 +584,11 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
             try:
                 with current().stage('game.luau_scheduler'):
                     response=script_runtime.poll_background()
+                    if (response is not None and not client.finished
+                            and script_runtime.world is not None
+                            and (script_runtime.world.revision > script_runtime.revision
+                                 or script_runtime._pending_script_catalog is not None)):
+                        script_runtime.poll_background()
                 if locomotion_animation is not None and locomotion_source_token is not None:
                     animation_result = script_runtime.take_background_source_result(
                         locomotion_source_token)

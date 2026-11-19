@@ -78,7 +78,7 @@ class ScriptExecution {
                 auto nibble=[](char c)->int{if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;return -1;};
                 for(size_t i=0;i<hex.size();i+=2){int a=nibble(hex[i]),b=nibble(hex[i+1]);if(a<0||b<0)throw std::runtime_error("invalid bytecode encoding");code.push_back(char(a*16+b));}
             }
-            auto name="="+world_bindings::instance_display_name(world,id);
+            auto name="="+world_bindings::instance_script_chunkname(world,id);
             if(world.load_script(L,name.c_str(),code,source)!=0){lua_pushnil(L);lua_insert(L,-2);lua_pushboolean(L,1);return 3;}
             lua_pushvalue(L,2);lua_setfenv(L,-2);return 1;
         }
@@ -141,7 +141,7 @@ for key,value in getmetatable(executor).__index do base[key]=value end
 for key,value in executor do if base[key]==nil then base[key]=value end end
 base._G={};base.shared=shared
 setmetatable(executor,{__index=base})
-function getrenv() return base end
+getrenv = newcclosure(function() return base end, "getrenv")
 local modules, scripts = {}, {}
 local copied = setmetatable({}, {__mode="k"})
 local bootstrapErrors = {}

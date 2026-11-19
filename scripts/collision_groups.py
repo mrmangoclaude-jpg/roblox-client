@@ -137,7 +137,9 @@ class CollisionContext:
                          if identifier(key) not in excluded and self.table.collidable(character_group,group))
 
 
-def context_from_world(world, geometry, character_key, root_key=None):
+def context_from_world(world, geometry, character_key, root_key=None, *,
+                       constraint_keys=None, physics_service_properties=None,
+                       allow_network_constructor_defaults=False):
     """Capture one character's rules, including nearest-WorldRoot isolation."""
     try:
         instances=world.instances;classes=world.schema['classes']
@@ -162,13 +164,16 @@ def context_from_world(world, geometry, character_key, root_key=None):
         if kind(root)=='WorldModel' and type(props.get('UseWorkspaceCollisionGroups',False)) is not bool:
             raise ValueError('invalid UseWorkspaceCollisionGroups')
         if kind(root)=='WorldModel' and props.get('UseWorkspaceCollisionGroups') is True:
-            workspaces=[k for k in instances if kind(k)=='Workspace']
+            ws_cids={i for i, cls in enumerate(classes) if cls['name']=='Workspace'}
+            workspaces=[k for k, node in instances.items() if isinstance(node, dict) and node.get('class') in ws_cids]
             if len(workspaces)!=1: raise ValueError('Workspace collision state is unavailable')
             table_root=workspaces[0];props=instances[table_root].get('properties',{})
-        legacy=None
-        if kind(table_root)=='Workspace':
-            services=[node.get('properties',{}) for key,node in instances.items() if kind(key)=='PhysicsService']
-            if len(services)==1: legacy=services[0]
+        legacy=physics_service_properties
+        if kind(table_root)=='Workspace' and legacy is None and 'CollisionGroupData' not in props and 'CollisionGroups' not in props:
+            ps_cids={i for i, cls in enumerate(classes) if cls['name']=='PhysicsService'}
+            if ps_cids:
+                services=[node.get('properties',{}) for node in instances.values() if isinstance(node, dict) and node.get('class') in ps_cids]
+                if len(services)==1: legacy=services[0]
         table=read_table(props,legacy)
         groups=[]
         for collider in geometry.colliders:
@@ -178,7 +183,10 @@ def context_from_world(world, geometry, character_key, root_key=None):
             # A CanCollide update can arrive before the geometry rebuild interval.
             if props.get('CanCollide') is False: continue
             groups.append((key,part_group(props)))
-        constraints=capture_nodes(world,(c.source for c in geometry.colliders),root_key) if root_key is not None else ()
+        constraints=(capture_nodes(world,(c.source for c in geometry.colliders),root_key,
+                                   constraint_keys=constraint_keys,
+                                   allow_network_constructor_defaults=allow_network_constructor_defaults)
+                     if root_key is not None else ())
         return CollisionContext(table,tuple(groups),root_id=identifier(root_key),constraint_nodes=constraints)
     except (ValueError,KeyError,IndexError,TypeError) as exc:
         return CollisionContext(error=str(exc))

@@ -165,11 +165,36 @@ class PersistentLuauHost:
 
 
 class PersistentClientScriptRuntime:
+    _SCRIPT_CHUNK_BYTES = 512 * 1024
+    _SCRIPT_CHUNK_MAX_ENTRIES = 1024
+    _OVERSIZED_WORLD_PRUNE_THRESHOLD = 25_000
+    _RS_KEEP_CLASSES = frozenset({
+        'LocalScript', 'Script', 'ModuleScript',
+        'RemoteEvent', 'RemoteFunction', 'UnreliableRemoteEvent',
+        'BindableEvent', 'BindableFunction',
+        'ScreenGui', 'BillboardGui', 'SurfaceGui',
+    })
+    _RS_PRUNE_LEAF_CLASSES = frozenset({
+        'Attachment', 'Bone', 'ParticleEmitter', 'Weld', 'Motor6D',
+        'WeldConstraint', 'SurfaceAppearance', 'Beam', 'PointLight',
+        'SpotLight', 'SurfaceLight', 'Trail', 'Decal', 'Texture',
+        'WrapTarget', 'Sparkles', 'Smoke', 'Fire', 'Highlight',
+    })
+    _RS_PRUNE_ASSET_CLASSES = frozenset({
+        'Part', 'MeshPart', 'WedgePart', 'CornerWedgePart',
+        'TrussPart', 'SpecialMesh',
+    })
+    _RS_PRUNE_TOP_FOLDERS = frozenset({
+        'Models', 'Vfx', 'TrickOrTreatMapTemplate',
+        'Animations', 'Bases', 'Sounds',
+    })
+
     def __init__(self, world_provider, user_id, job_id=None, *, background_budget_ms=50,
                  memory_mb=512,
                  input_capabilities=None, viewport=None, display=None,
                  session_stats_provider=None,
-                 allow_visual_mesh_approximation=False):
+                 allow_visual_mesh_approximation=False,
+                 place_id=None, game_id=None):
         if type(background_budget_ms) is not int or not 1 <= background_budget_ms <= 50:
             raise ValueError('Background budget must be 1..50 ms')
         if type(memory_mb) is not int or not 8 <= memory_mb <= 512:
@@ -177,6 +202,8 @@ class PersistentClientScriptRuntime:
         if type(allow_visual_mesh_approximation) is not bool:
             raise ValueError('Visual mesh approximation opt-in must be a boolean')
         self.world_provider, self.user_id, self.job_id = world_provider, user_id, job_id
+        self.place_id = place_id
+        self.game_id = game_id
         self.background_budget_ms = background_budget_ms
         self.memory_mb = memory_mb
         if session_stats_provider is not None and not callable(session_stats_provider):
@@ -232,6 +259,14 @@ class PersistentClientScriptRuntime:
         self._background_source_results = {}
         self._background_source_next_token = 1
         self._catalog_catchup_needed = False
+        self._vm_pruned_ids = set()
+        self._vm_rs_key = None
+        self._vm_protected_ancestors = None
+        self._vm_protected_count = 0
+        self._pending_script_catalog = None
+        self._script_entry_sizes = {}
+        self._last_catalog_queue_refresh = 0.0
+        self._coalesce_catalog_queue = False
 
     def _record(self, result):
         now=time.monotonic()
@@ -559,6 +594,115 @@ class PersistentClientScriptRuntime:
                 raise RuntimeError('Owned-part dynamics requires a worker with engine feedback version 1')
         return authored.engine_updates(world) if authored is not None else None
 
+    def _refresh_rs_prune_state(self, world):
+        if (self._vm_protected_ancestors is not None
+                and len(world.instances) - self._vm_protected_count < 5000):
+            return self._vm_rs_key, self._vm_protected_ancestors
+        classes = world.schema['classes']
+        instances = world.instances
+        rs_key = next((k for k in world.top_containers
+                       if k in instances and classes[instances[k]['class']]['name'] == 'ReplicatedStorage'), None)
+        protected = set()
+        if rs_key is not None:
+            keep = self._RS_KEEP_CLASSES
+            for key, inst in instances.items():
+                if classes[inst['class']]['name'] in keep:
+                    cur = key
+                    hops = 0
+                    while cur and cur not in protected and cur in instances and hops < 24:
+                        protected.add(cur)
+                        cur = instances[cur].get('parent')
+                        hops += 1
+        self._vm_rs_key = rs_key
+        self._vm_protected_ancestors = protected
+        self._vm_protected_count = len(instances)
+        return rs_key, protected
+
+    def _is_prunable_rs_node(self, world, id_str, class_name, parent_str, rs_key, protected):
+        if parent_str in self._vm_pruned_ids:
+            return True
+        if rs_key is None:
+            return False
+        if class_name not in self._RS_PRUNE_LEAF_CLASSES and class_name not in self._RS_PRUNE_ASSET_CLASSES:
+            return False
+        if not isinstance(id_str, str) or ':' not in id_str:
+            return False
+        try:
+            a, b = id_str.split(':', 1)
+            key = (int(a), int(b))
+        except ValueError:
+            return False
+        if key in protected:
+            return False
+        inst = world.instances.get(key)
+        if inst is None:
+            return False
+        cur = inst.get('parent')
+        segs = []
+        hops = 0
+        while cur and cur in world.instances and hops < 16:
+            if cur == rs_key:
+                break
+            pinst = world.instances[cur]
+            nm = pinst['properties'].get('Name', '')
+            if isinstance(nm, bytes):
+                nm = nm.decode('utf-8', 'replace')
+            segs.append(nm)
+            cur = pinst.get('parent')
+            hops += 1
+        else:
+            return False
+        if not segs:
+            return False
+        top = segs[-1]
+        is_events = (len(segs) >= 3 and top == 'Controllers'
+                     and segs[-2] == 'EventController' and segs[-3] == 'Events')
+        if class_name in self._RS_PRUNE_LEAF_CLASSES:
+            return top in self._RS_PRUNE_TOP_FOLDERS or is_events
+        return top in ('Models', 'Vfx', 'TrickOrTreatMapTemplate') or is_events
+
+    def _is_pruning_world(self, world):
+        return bool(self._vm_pruned_ids) or len(world.instances) > self._OVERSIZED_WORLD_PRUNE_THRESHOLD
+
+    def _script_entry_size(self, key, value):
+        cached = self._script_entry_sizes.get(key)
+        if cached is not None and cached[0] is value:
+            return cached[1]
+        # Avoid re-serializing unchanged entries across chunked delivery passes.
+        size = (
+            len(json.dumps(key, ensure_ascii=True).encode())
+            + len(json.dumps(value, ensure_ascii=True, allow_nan=False).encode())
+            + 4
+        )
+        self._script_entry_sizes[key] = (value, size)
+        return size
+
+    def _next_script_chunk(self, target_catalog):
+        diff = [(k, v) for k, v in target_catalog.items() if self.script_catalog.get(k) != v]
+        removed = [k for k in self.script_catalog if k not in target_catalog]
+        if removed:
+            for k in removed:
+                self._script_entry_sizes.pop(k, None)
+        if not diff and not removed:
+            return None, True, target_catalog
+        chunk = {}
+        used = 2
+        for k, v in diff:
+            sz = self._script_entry_size(k, v)
+            if chunk and (len(chunk) >= self._SCRIPT_CHUNK_MAX_ENTRIES or used + sz > self._SCRIPT_CHUNK_BYTES):
+                break
+            chunk[k] = v
+            used += sz
+        is_final = (len(chunk) == len(diff))
+        merged = dict(self.script_catalog)
+        merged.update(chunk)
+        if is_final:
+            for k in removed:
+                merged.pop(k, None)
+        if not chunk:
+            return None, True, merged
+        return chunk, is_final, merged
+
     def _ensure(self):
         if self.failure: raise RuntimeError(self.failure)
         world = self.world_provider()
@@ -567,8 +711,52 @@ class PersistentClientScriptRuntime:
             if not hasattr(world, '_script_preparation_queue'):
                 world._script_preparation_queue = CodePreparationQueue()
             initial_ready = 13 in world.tags
+            snap_kwargs = {}
+            if len(world.instances) >= 20000:
+                rs_key, protected = self._refresh_rs_prune_state(world)
+                classes = world.schema['classes']
+                excluded = set()
+                for k, inst in world.instances.items():
+                    cname = classes[inst['class']]['name']
+                    pkey = inst.get('parent')
+                    pstr = f'{pkey[0]}:{pkey[1]}' if isinstance(pkey, tuple) else None
+                    kstr = f'{k[0]}:{k[1]}'
+                    if self._is_prunable_rs_node(world, kstr, cname, pstr, rs_key, protected):
+                        excluded.add(k)
+                        self._vm_pruned_ids.add(kstr)
+                removed = True
+                while removed:
+                    removed = False
+                    for k, inst in world.instances.items():
+                        if k not in excluded:
+                            pk = inst.get('parent')
+                            if pk in excluded:
+                                excluded.add(k)
+                                self._vm_pruned_ids.add(f'{k[0]}:{k[1]}')
+                                removed = True
+                snap_kwargs['max_nodes'] = 100000
+                snap_kwargs['excluded_ids'] = excluded
             snapshot = make_world_snapshot(world, self.user_id, job_id=self.job_id,
-                                           include_script_sources=initial_ready)
+                                           include_script_sources=initial_ready,
+                                           **snap_kwargs)
+            if (self.place_id is not None or self.game_id is not None) and snapshot.get('nodes'):
+                root = snapshot['nodes'][0]
+                if root.get('id') == 'game':
+                    props = root.setdefault('properties', {})
+                    origins = root.setdefault('origins', {})
+                    if self.place_id is not None:
+                        props.setdefault('PlaceId', self.place_id)
+                        origins.setdefault('PlaceId', 'issued_session')
+                    if self.game_id is not None:
+                        props.setdefault('GameId', self.game_id)
+                        origins.setdefault('GameId', 'issued_session')
+            sources = snapshot.get('script_sources') or {}
+            deferred_catalog = None
+            if sources and (len(sources) > self._SCRIPT_CHUNK_MAX_ENTRIES
+                            or len(json.dumps(sources, ensure_ascii=True, allow_nan=False).encode()) > self._SCRIPT_CHUNK_BYTES):
+                deferred_catalog = sources
+                snapshot['script_sources'] = {}
+                snapshot['initial_replication_complete'] = False
             if os.environ.get('RCR_BUILTIN_PLAYER_SCRIPTS', '1') == '1':
                 from builtin_player_scripts import player_scripts
                 snapshot['builtin_player_scripts'] = player_scripts()
@@ -594,7 +782,10 @@ class PersistentClientScriptRuntime:
                 self._action_journal = world.actions
                 self._action_reader = self._action_journal.retain(self.revision)
             self.script_catalog = snapshot.get('script_sources', {})
+            self._pending_script_catalog = deferred_catalog
             self.initial_replication_complete = snapshot.get('initial_replication_complete', False)
+            if deferred_catalog is not None:
+                self._catalog_catchup_needed = True
             self.shared_entry_count = len(getattr(world, 'shared', {}))
             self._record(self.host.initial_result)
         elif world is not self.world:
@@ -658,7 +849,7 @@ class PersistentClientScriptRuntime:
     def _is_script_class(name):
         return name in ('Script', 'LocalScript', 'ModuleScript')
 
-    def _catalog_needs_refresh(self, world, delta, initial_ready):
+    def _catalog_needs_refresh(self, world, delta, initial_ready, *, coalesce_queue=False):
         if initial_ready != self.initial_replication_complete:
             return True
         if not initial_ready:
@@ -666,8 +857,18 @@ class PersistentClientScriptRuntime:
         if len(getattr(world, 'shared', {})) != self.shared_entry_count:
             return True
         queue = getattr(world, '_script_preparation_queue', None)
-        if queue and any(future.done() for _, future in queue.pending.values()):
-            return True
+        pending = getattr(queue, 'pending', None)
+        if pending:
+            done_count = sum(1 for _, future in pending.values() if future.done())
+            if done_count:
+                if (
+                    not coalesce_queue
+                    or done_count == len(pending)
+                    or len(pending) <= 8
+                    or done_count >= 32
+                    or (time.monotonic() - self._last_catalog_queue_refresh) >= 0.35
+                ):
+                    return True
         for action in delta.get('actions', ()):
             kind = action.get('kind')
             if kind == 'create':
@@ -687,23 +888,121 @@ class PersistentClientScriptRuntime:
             self._action_journal.acknowledge(self._action_reader, revision)
             self.stats['world_replay_retention'] = self._action_journal.retention_stats()
 
+    def _filter_oversized_actions(self, world, actions):
+        if not self._vm_pruned_ids and len(world.instances) <= self._OVERSIZED_WORLD_PRUNE_THRESHOLD:
+            return actions
+        rs_key, protected = self._refresh_rs_prune_state(world)
+        kept = []
+        for action in actions:
+            aid = action.get('id')
+            kind = action.get('kind')
+            if kind == 'create':
+                node = action.get('node', {})
+                if self._is_prunable_rs_node(
+                        world, aid, node.get('class_name'), node.get('parent'), rs_key, protected):
+                    self._vm_pruned_ids.add(aid)
+                    continue
+            elif aid in self._vm_pruned_ids:
+                continue
+            kept.append(action)
+        return kept
+
+    def _skip_prunable_record(self, world, record, rs_key, protected):
+        key = record.get('key')
+        if isinstance(key, tuple) and len(key) == 2:
+            aid = f'{key[0]}:{key[1]}'
+        else:
+            aid = str(key)
+        if record.get('kind') == 'create':
+            inst = record.get('instance') or {}
+            cidx = inst.get('class')
+            classes = world.schema['classes']
+            cname = classes[cidx]['name'] if isinstance(cidx, int) and 0 <= cidx < len(classes) else None
+            parent = inst.get('parent')
+            pstr = f'{parent[0]}:{parent[1]}' if isinstance(parent, tuple) and len(parent) == 2 else None
+            if cname and self._is_prunable_rs_node(world, aid, cname, pstr, rs_key, protected):
+                self._vm_pruned_ids.add(aid)
+                return True
+            return False
+        return aid in self._vm_pruned_ids
+
     def _world_update(self, world):
-        try:
-            delta = make_world_delta(world, self.revision, max_actions=2048, max_bytes=4*1024*1024)
-        except ValueError as error:
-            if 'exceeds the delta byte budget' not in str(error):
-                raise
-            delta = make_world_delta(world, self.revision, max_actions=1, max_bytes=None)
+        pruning = self._is_pruning_world(world)
+        if pruning:
+            rs_key, protected = self._refresh_rs_prune_state(world)
+            def skip_fn(record):
+                return self._skip_prunable_record(world, record, rs_key, protected)
+            sr = self.stats.get('script_runtime') or {}
+            scripts_active = (
+                self.initial_replication_complete
+                or sr.get('modules_loaded', 0) > 0
+                or sr.get('modules_loading', 0) > 0
+                or sr.get('running', 0) > 0
+            )
+            max_actions = 384 if scripts_active else 1536
+            max_bytes = 384 * 1024 if scripts_active else 1536 * 1024
+            try:
+                delta = make_world_delta(
+                    world, self.revision, max_actions=max_actions, max_bytes=max_bytes, skip_record=skip_fn)
+            except ValueError as error:
+                if 'exceeds the delta byte budget' not in str(error):
+                    raise
+                delta = make_world_delta(
+                    world, self.revision, max_actions=1, max_bytes=None, skip_record=skip_fn)
+        else:
+            try:
+                delta = make_world_delta(world, self.revision, max_actions=2048, max_bytes=4*1024*1024)
+            except ValueError as error:
+                if 'exceeds the delta byte budget' not in str(error):
+                    raise
+                delta = make_world_delta(world, self.revision, max_actions=1, max_bytes=None)
         statistics = self._session_statistics()
         if statistics != self._session_stats_sent:
             delta['session_stats'] = statistics
         caught_up = delta['sequence'] >= world.revision
         initial_ready = self.initial_replication_complete or (13 in world.tags and caught_up)
-        refresh = caught_up and (self._catalog_catchup_needed or
-                                self._catalog_needs_refresh(world, delta, initial_ready))
-        if not caught_up:
+        coalesce_queue = self._coalesce_catalog_queue
+        if self._pending_script_catalog is not None:
+            orig_init = self.initial_replication_complete
+            self.initial_replication_complete = initial_ready
+            try:
+                refresh = caught_up and self._catalog_needs_refresh(
+                    world, delta, initial_ready, coalesce_queue=coalesce_queue)
+            finally:
+                self.initial_replication_complete = orig_init
+        else:
+            refresh = caught_up and initial_ready and (
+                self._catalog_catchup_needed
+                or self._catalog_needs_refresh(
+                    world, delta, initial_ready, coalesce_queue=coalesce_queue))
+        if not caught_up and initial_ready:
             self._catalog_catchup_needed = True
         return delta, initial_ready, refresh, caught_up
+
+    def _prepare_script_catalog_delta(self, world, delta, initial_ready, refresh, has_pending_scripts):
+        """Attach at most one bounded script_sources chunk, deferring large world batches."""
+        defer_scripts = self._is_pruning_world(world) and len(delta['actions']) >= 64
+        if defer_scripts and (refresh or has_pending_scripts):
+            return (
+                self._pending_script_catalog,
+                False,
+                self.script_catalog,
+                self.initial_replication_complete,
+                refresh,
+            )
+        if refresh:
+            self._last_catalog_queue_refresh = time.monotonic()
+            target_catalog = script_catalog(world)
+            chunk, is_final, next_catalog = self._next_script_chunk(target_catalog)
+        elif has_pending_scripts:
+            target_catalog = self._pending_script_catalog
+            chunk, is_final, next_catalog = self._next_script_chunk(target_catalog)
+        else:
+            return None, True, self.script_catalog, initial_ready, False
+        effective_initial_ready = initial_ready if is_final else self.initial_replication_complete
+        if chunk is not None:
+            delta['script_sources'] = chunk
+        return target_catalog, is_final, next_catalog, effective_initial_ready, False
 
     def synchronize(self, *, timeout_ms=20):
         # Foreground scripts see all preceding receipts. Background polling
@@ -713,7 +1012,9 @@ class PersistentClientScriptRuntime:
             current = self._synchronize_once(timeout_ms=timeout_ms)
             if current is not None:
                 result = current
-            if self.world.revision <= self.revision:
+            if (self.world.revision <= self.revision
+                    and self._pending_script_catalog is None
+                    and not self._catalog_catchup_needed):
                 return result
 
     def _synchronize_once(self, *, timeout_ms=20):
@@ -723,7 +1024,13 @@ class PersistentClientScriptRuntime:
         animations = self.animation_assets.drain() if self.animation_assets else []
         engine_poses=self._take_engine_poses(world) if caught_up else None
         engine_owned_parts=self._take_engine_owned_parts(world) if caught_up else None
-        if not delta['actions'] and 'session_stats' not in delta and not refresh_catalog and not animations and engine_poses is None and engine_owned_parts is None and initial_ready == self.initial_replication_complete:
+        has_pending_scripts = self._pending_script_catalog is not None and caught_up
+        if (not delta['actions'] and 'session_stats' not in delta and not refresh_catalog
+                and not has_pending_scripts and not animations
+                and engine_poses is None and engine_owned_parts is None
+                and initial_ready == self.initial_replication_complete):
+            if delta['sequence'] > self.revision:
+                self._acknowledge_world(delta['sequence'])
             return None
         if engine_poses is not None:
             delta['engine_poses']=engine_poses
@@ -731,20 +1038,23 @@ class PersistentClientScriptRuntime:
             delta['engine_owned_part_updates']=engine_owned_parts
         if animations:
             delta['animation_responses'] = animations
-        catalog = script_catalog(world) if refresh_catalog else self.script_catalog
-        delta['initial_replication_complete'] = initial_ready
-        if catalog != self.script_catalog:
-            delta['script_sources'] = catalog
+        target_catalog, is_final, next_catalog, effective_initial_ready, defer_refresh = (
+            self._prepare_script_catalog_delta(
+                world, delta, initial_ready, refresh_catalog, has_pending_scripts))
+        delta['initial_replication_complete'] = effective_initial_ready
         result = self._record(self.host.call({'op': 'update', 'delta': delta,
                                               'timeout_ms': min(50, max(1, timeout_ms))}))
         if not result['ok']: raise RuntimeError(result.get('error', 'Persistent world update failed'))
         if 'session_stats' in delta:
             self._session_stats_sent = delta['session_stats']
         self._acknowledge_world(delta['sequence'])
-        if caught_up:
+        if defer_refresh:
+            self._catalog_catchup_needed = True
+        elif caught_up and is_final:
             self._catalog_catchup_needed = False
-        self.script_catalog = catalog
-        self.initial_replication_complete = initial_ready
+        self._pending_script_catalog = None if is_final else target_catalog
+        self.script_catalog = next_catalog
+        self.initial_replication_complete = effective_initial_ready
         self.shared_entry_count = len(getattr(world, 'shared', {}))
         return result
 
@@ -935,7 +1245,10 @@ class PersistentClientScriptRuntime:
             self.script_catalog = context['catalog']
             self.initial_replication_complete = context['initial_ready']
             self.shared_entry_count = context['shared_entry_count']
-            if context.get('catalog_caught_up', True):
+            self._pending_script_catalog = context.get('pending_script_catalog')
+            if context.get('defer_catalog_refresh'):
+                self._catalog_catchup_needed = True
+            elif context.get('catalog_caught_up', True):
                 self._catalog_catchup_needed = False
         return result
 
@@ -1008,7 +1321,7 @@ class PersistentClientScriptRuntime:
                 # Initialization happens once, before any asynchronous calls.
                 return self.poll()
             now = time.monotonic()
-            if completed is None and not ((self.world is not None and self.world.revision > self.revision) or self.remote_server_results or self._background_source_pending is not None) and now-self.last_poll < .05:
+            if completed is None and not ((self.world is not None and self.world.revision > self.revision) or self.remote_server_results or self._background_source_pending is not None or self._pending_script_catalog is not None or self._catalog_catchup_needed) and now-self.last_poll < .05:
                 return None
             self.last_poll = now
             budget = self._background_step_budget()
@@ -1064,12 +1377,18 @@ class PersistentClientScriptRuntime:
                                'watermark': pending['watermark'],
                                'character_key': pending['character_key']}
                 else:
-                    delta, initial_ready, refresh, caught_up = self._world_update(world)
+                    self._coalesce_catalog_queue = True
+                    try:
+                        delta, initial_ready, refresh, caught_up = self._world_update(world)
+                    finally:
+                        self._coalesce_catalog_queue = False
                     revision = delta['sequence']
                     animations = self.animation_assets.drain() if self.animation_assets else []
                     engine_poses=self._take_engine_poses(world) if caught_up else None
                     engine_owned_parts=self._take_engine_owned_parts(world) if caught_up else None
-                    needs_update = (bool(delta['actions']) or refresh or bool(animations)
+                    has_pending_scripts = self._pending_script_catalog is not None and caught_up
+                    needs_update = (bool(delta['actions']) or refresh or has_pending_scripts
+                                    or bool(animations)
                                     or 'session_stats' in delta
                                     or engine_poses is not None
                                     or engine_owned_parts is not None
@@ -1081,19 +1400,27 @@ class PersistentClientScriptRuntime:
                             delta['engine_owned_part_updates']=engine_owned_parts
                         if animations:
                             delta['animation_responses'] = animations
-                        catalog = script_catalog(world) if refresh else self.script_catalog
-                        delta['initial_replication_complete'] = initial_ready
-                        if catalog != self.script_catalog:
-                            delta['script_sources'] = catalog
+                        target_catalog, is_final, next_catalog, effective_initial_ready, defer_refresh = (
+                            self._prepare_script_catalog_delta(
+                                world, delta, initial_ready, refresh, has_pending_scripts))
+                        delta['initial_replication_complete'] = effective_initial_ready
+                        step_timeout = (min(10, budget)
+                                        if (not caught_up and not effective_initial_ready
+                                            and self._is_pruning_world(world))
+                                        else budget)
                         command = {'op': 'update', 'delta': delta,
-                                   'timeout_ms': budget}
+                                   'timeout_ms': step_timeout}
                         context = {'op': 'update', 'revision': revision,
-                                   'catalog': catalog, 'initial_ready': initial_ready,
-                                   'catalog_caught_up': caught_up,
+                                   'catalog': next_catalog, 'initial_ready': effective_initial_ready,
+                                   'catalog_caught_up': caught_up and is_final and not defer_refresh,
+                                   'defer_catalog_refresh': defer_refresh,
+                                   'pending_script_catalog': (None if is_final else target_catalog),
                                    'shared_entry_count': len(getattr(world, 'shared', {}))}
                         if 'session_stats' in delta:
                             context['session_stats'] = delta['session_stats']
                     else:
+                        if revision > self.revision:
+                            self._acknowledge_world(revision)
                         command = {'op': 'poll', 'timeout_ms': budget}
                         context = {'op': 'poll'}
             if self._background_lane is None:

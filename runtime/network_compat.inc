@@ -81,7 +81,8 @@ local function requestHeaders(headers,cookies)
  return merged
 end
 function request(options)
- assert(type(options)=="table","request options required")
+ if type(options)~="table" then error(string.format("invalid argument #1 to 'request' (table expected, got %s)",type(options)),0) end
+ if type(options.Url)~="string" then error("invalid argument #1 to 'request' (string expected for field 'Url')",0) end
  local method=options.Method or "GET"
  assert(type(method)=="string","HTTP method must be text")
  method=string.upper(method)

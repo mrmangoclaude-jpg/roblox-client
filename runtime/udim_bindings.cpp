@@ -40,11 +40,15 @@ bool read_udim2(lua_State* L,int index,UDim2Value* out) {
     *out=*value;return true;
 }
 void push_udim(lua_State* L,UDimValue value) {
+    // Roblox stores UDim scale as float32; round once on storage.
+    value.scale=static_cast<double>(static_cast<float>(value.scale));
     auto* out=static_cast<UDimValue*>(lua_newuserdatadtor(L,sizeof(UDimValue),nullptr));
     new(out) UDimValue(value);
     luaL_getmetatable(L,kUDim);lua_setmetatable(L,-2);
 }
 void push_udim2(lua_State* L,UDim2Value value) {
+    value.x.scale=static_cast<double>(static_cast<float>(value.x.scale));
+    value.y.scale=static_cast<double>(static_cast<float>(value.y.scale));
     auto* out=static_cast<UDim2Value*>(lua_newuserdatadtor(L,sizeof(UDim2Value),nullptr));
     new(out) UDim2Value(value);
     luaL_getmetatable(L,kUDim2);lua_setmetatable(L,-2);
@@ -52,8 +56,8 @@ void push_udim2(lua_State* L,UDim2Value value) {
 int udim_new(lua_State* L) {
     int n=lua_gettop(L);if(n>2){luaL_error(L,"UDim.new accepts at most two numbers");return 0;}
     double scale=0,offset=0;
-    if(n>=1&&!valid_number(L,1,&scale)){luaL_error(L,"UDim scale must be a finite bounded number");return 0;}
-    if(n>=2&&!valid_number(L,2,&offset)){luaL_error(L,"UDim offset must be a finite bounded number");return 0;}
+    if(n>=1&&!lua_isnil(L,1)&&!valid_number(L,1,&scale)){luaL_error(L,"UDim scale must be a finite bounded number");return 0;}
+    if(n>=2&&!lua_isnil(L,2)&&!valid_number(L,2,&offset)){luaL_error(L,"UDim offset must be a finite bounded number");return 0;}
     if(!valid_offset(offset)){luaL_error(L,"UDim offset exceeds the supported integer range");return 0;}
     // UDim stores pixel offsets as signed integers. Match native integer conversion.
     push_udim(L,{scale,static_cast<int32_t>(std::trunc(offset))});return 1;
@@ -96,7 +100,7 @@ int udim2_new(lua_State* L) {
         if(read_udim(L,1,&x)&&read_udim(L,2,&y)){push_udim2(L,{x,y});return 1;}
     }
     if(n>4){luaL_error(L,"UDim2.new accepts zero, two UDim values, or up to four numbers");return 0;}
-    double c[4]={0,0,0,0};for(int i=0;i<n;i++)if(!valid_number(L,i+1,&c[i])){luaL_error(L,"UDim2 components must be finite bounded numbers");return 0;}
+    double c[4]={0,0,0,0};for(int i=0;i<n;i++)if(!lua_isnil(L,i+1)&&!valid_number(L,i+1,&c[i])){luaL_error(L,"UDim2 components must be finite bounded numbers");return 0;}
     if(!valid_offset(c[1])||!valid_offset(c[3])){luaL_error(L,"UDim2 offset exceeds the supported integer range");return 0;}
     push_udim2(L,{{c[0],static_cast<int32_t>(std::trunc(c[1]))},{c[2],static_cast<int32_t>(std::trunc(c[3]))}});return 1;
 }
@@ -132,9 +136,13 @@ int udim2_sub(lua_State* L) {
 int udim2_lerp(lua_State* L) {
     UDim2Value a,b;double alpha=0;if(!read_udim2(L,1,&a)||!read_udim2(L,2,&b)||!valid_number(L,3,&alpha)){luaL_error(L,"UDim2:Lerp expects a goal UDim2 and finite alpha");return 0;}
     double xo=a.x.offset+(b.x.offset-a.x.offset)*alpha,yo=a.y.offset+(b.y.offset-a.y.offset)*alpha;
-    double xs=a.x.scale+(b.x.scale-a.x.scale)*alpha,ys=a.y.scale+(b.y.scale-a.y.scale)*alpha;
+    // Roblox lerps UDim2 scale in float32: the difference, product and sum each
+    // round to float32, which breaks midpoint ties differently than double math.
+    float xf=static_cast<float>(alpha);
+    float xs=static_cast<float>(a.x.scale)+(static_cast<float>(b.x.scale)-static_cast<float>(a.x.scale))*xf;
+    float ys=static_cast<float>(a.y.scale)+(static_cast<float>(b.y.scale)-static_cast<float>(a.y.scale))*xf;
     if(!std::isfinite(xs)||!std::isfinite(ys)||!valid_offset(xo)||!valid_offset(yo)){luaL_error(L,"UDim2:Lerp result is out of range");return 0;}
-    push_udim2(L,{{xs,static_cast<int32_t>(std::trunc(xo))},{ys,static_cast<int32_t>(std::trunc(yo))}});return 1;
+    push_udim2(L,{{xs,static_cast<int32_t>(std::round(xo))},{ys,static_cast<int32_t>(std::round(yo))}});return 1;
 }
 int udim2_equal(lua_State* L) {
     UDim2Value a,b;bool same=read_udim2(L,1,&a)&&read_udim2(L,2,&b)&&a.x.scale==b.x.scale&&a.x.offset==b.x.offset&&a.y.scale==b.y.scale&&a.y.offset==b.y.offset;

@@ -1,6 +1,7 @@
 """Advance own-character gravity from received state, separate from replication."""
 from physics_ground import _is_part_descendant, _property_type_map, extract_ground
 from collision_groups import context_from_world
+from no_collision_constraints import _constructor_fields as no_collision_defaults
 from physics_script_bridge import PhysicsScriptBridge
 from physics_gravity import ReceivedGravity
 from physics_job_statistics import PhysicsJobStatistics
@@ -26,7 +27,7 @@ _SNAPSHOT_DESCENDANT_CACHE = OrderedDict()
 _SNAPSHOT_DESCENDANT_CACHE_MAX_WORLDS = 4
 _SNAPSHOT_NODE_CACHE = OrderedDict()
 _SNAPSHOT_NODE_CACHE_MAX_WORLDS = 4
-_SNAPSHOT_NODE_CACHE_MAX_NODES = 8192
+_SNAPSHOT_NODE_CACHE_MAX_NODES = 65536
 
 
 class _FrozenDict(dict):
@@ -195,37 +196,70 @@ def _cached_node_snapshots(world, keys, *, read_only=False):
     return result
 
 
-def _snapshot_for_keys(world, player, character, children, *, allow_network_constructor_defaults=False):
+def _snapshot_for_keys(world, player, character, children, *, allow_network_constructor_defaults=False, read_only=False):
     """Build the local controller view from an already-maintained key set."""
     keys = {key for key in (player, character) if key is not None}
     keys.update(children)
-    nodes = _cached_node_snapshots(world, keys)
+    nodes = _cached_node_snapshots(world, keys, read_only=(read_only and not allow_network_constructor_defaults))
     if allow_network_constructor_defaults:
+        ncc_defaults = None
         for node in nodes:
-            if (node.get('constructor_defaults_known') is True
-                    and 'Anchored' not in node.get('properties', {})
-                    and node.get('class_name') in ('Part', 'MeshPart', 'Seat', 'VehicleSeat', 'SpawnLocation')):
+            if node.get('constructor_defaults_known') is not True:
+                continue
+            class_name = node.get('class_name')
+            props = node.get('properties')
+            if (class_name in ('Part', 'MeshPart', 'Seat', 'VehicleSeat', 'SpawnLocation')
+                    and (props is None or 'Anchored' not in props)):
                 node.setdefault('properties', {})['Anchored'] = False
                 node.setdefault('origins', {})['Anchored'] = 'class_default'
+            elif class_name == 'NoCollisionConstraint':
+                if ncc_defaults is None:
+                    ncc_defaults = no_collision_defaults()
+                node_props = node.setdefault('properties', {})
+                node_origins = node.setdefault('origins', {})
+                for field, value in ncc_defaults.items():
+                    if field not in node_props:
+                        node_props[field] = value
+                        node_origins[field] = 'class_default'
     return {'local_player': instance_id(player),
             'initial_replication_complete': 13 in world.tags,
             'nodes': nodes}
 
 
+def _children_map(world):
+    children = {}
+    for key, node in world.instances.items():
+        if isinstance(node, dict):
+            parent = node.get('parent')
+            if parent is not None:
+                bucket = children.get(parent)
+                if bucket is None:
+                    children[parent] = [key]
+                else:
+                    bucket.append(key)
+    return children
+
+
+def _descendants_from_children(children, ancestor):
+    if ancestor is None:
+        return set()
+    descendants = set()
+    stack = list(children.get(ancestor, ()))
+    while stack:
+        key = stack.pop()
+        if key not in descendants and key != ancestor:
+            descendants.add(key)
+            sub = children.get(key)
+            if sub:
+                stack.extend(sub)
+    return descendants
+
+
 def _descendant_keys(world, ancestor):
     """Return cached-world descendants without exporting unrelated nodes."""
-    descendants = set()
-    for key, node in world.instances.items():
-        parent = node.get('parent') if isinstance(node, dict) else None
-        seen = set()
-        while parent is not None and parent not in seen:
-            if parent == ancestor:
-                descendants.add(key)
-                break
-            seen.add(parent)
-            parent_node = world.instances.get(parent)
-            parent = parent_node.get('parent') if isinstance(parent_node, dict) else None
-    return descendants
+    if ancestor is None:
+        return set()
+    return _descendants_from_children(_children_map(world), ancestor)
 
 
 def _cached_descendant_keys(world, ancestor):
@@ -402,10 +436,13 @@ class RuntimePhysicsPrediction:
         self._no_collision_keys = set()
         self._class_by_key = {}
         self._geometry_dirty = False
+        self._env_dirty = False
         self._collision_dirty = True
         self._platform_poses = {}
         self._platform_pose_at = None
         self._workspace_key = None
+        self._workspace_keys = None
+        self._physics_service_keys = ()
         self._gravity = ReceivedGravity()
         self._job_statistics = PhysicsJobStatistics()
         self._job_scheduler = PhysicsJobScheduler()
@@ -445,11 +482,14 @@ class RuntimePhysicsPrediction:
             self._no_collision_keys = set()
             self._class_by_key = {}
             self._geometry_dirty = False
+            self._env_dirty = False
             self._collision_dirty = True
             self._platform_poses = {}
             self._platform_pose_at = None
             self._last_step = None
             self._workspace_key = None
+            self._workspace_keys = None
+            self._physics_service_keys = ()
             self._gravity = ReceivedGravity()
             self._job_statistics = PhysicsJobStatistics()
             self._job_scheduler = PhysicsJobScheduler()
@@ -465,6 +505,9 @@ class RuntimePhysicsPrediction:
             self._collision_dirty = True
             own_dirty = True
             geometry_dirty = True
+            self._env_dirty = True
+        if own_dirty:
+            self._env_dirty = True
         if geometry_dirty:
             self._geometry_dirty = True
         if self._mesh_asset_queue is not None:
@@ -483,10 +526,11 @@ class RuntimePhysicsPrediction:
                 self._character_children | self._no_collision_keys,
                 allow_network_constructor_defaults=self.allow_network_constructor_defaults)
             self.bridge.update(snapshot)
-        if (own_dirty or geometry_dirty) and self.bridge.controller is not None:
+        if self._env_dirty and self.bridge.controller is not None:
             environment_snapshot = _snapshot_for_keys(
                 world, self._player_key, self._character_key,
-                self._character_children | self._environment_keys)
+                self._character_children | self._environment_keys,
+                read_only=True)
             decoded_terrain = getattr(world, 'decoded_terrain_materials', None)
             if isinstance(decoded_terrain, dict):
                 environment_snapshot['decoded_terrain_materials'] = decoded_terrain
@@ -499,6 +543,7 @@ class RuntimePhysicsPrediction:
                 # Old injected test controllers may not implement environment
                 # hooks. The built-in controller always does.
                 pass
+            self._env_dirty = False
         self._revision = world.revision
         controller = self.bridge.controller
         if (controller is not None and self._geometry_dirty
@@ -541,7 +586,16 @@ class RuntimePhysicsPrediction:
                 if callable(update_context):
                     root_key=next((key for key in self._character_children
                                    if instance_id(key)==controller.root_id),None)
-                    update_context(context_from_world(world,self._geometry,self._character_key,root_key))
+                    if len(self._physics_service_keys) == 1:
+                        ps_node = world.instances.get(self._physics_service_keys[0])
+                        ps_props = ps_node.get('properties', {}) if isinstance(ps_node, dict) else {}
+                    else:
+                        ps_props = {}
+                    update_context(context_from_world(
+                        world, self._geometry, self._character_key, root_key,
+                        constraint_keys=self._no_collision_keys,
+                        physics_service_properties=ps_props,
+                        allow_network_constructor_defaults=self.allow_network_constructor_defaults))
                 self._collision_dirty=False
             controller.update_geometry(self._geometry)
         admitted = self._job_scheduler.admit(now)
@@ -590,26 +644,60 @@ class RuntimePhysicsPrediction:
         avatar = world.avatar(user_id)
         self._player_key = avatar.get('player_key')
         self._character_key = avatar.get('character_key')
-        self._character_children = {
-            key for key in _descendant_keys(world, self._character_key)
-        } if self._character_key is not None else set()
-        self._class_by_key = {
-            key: world.schema['classes'][node['class']]['name']
-            for key, node in world.instances.items()
-            if isinstance(node, dict) and isinstance(node.get('class'), int)
-            and 0 <= node['class'] < len(world.schema['classes'])
-        }
-        self._environment_keys = {
-            key for key, name in self._class_by_key.items()
-            if name in _ENVIRONMENT_CLASSES
-        }
-        self._geometry_keys = {
-            key for key, name in self._class_by_key.items()
-            if name in ('Terrain', 'MeshPart') or _is_part_descendant(name)
-        }
-        self._no_collision_keys={key for key,name in self._class_by_key.items() if name=='NoCollisionConstraint'}
-        workspaces = [key for key, name in self._class_by_key.items() if name == 'Workspace']
+        class_names = [cls['name'] for cls in world.schema['classes']]
+        class_count = len(class_names)
+        class_by_key = {}
+        children = {}
+        workspaces = []
+        physics_services = []
+        no_collision_keys = set()
+        for key, node in world.instances.items():
+            if not isinstance(node, dict):
+                continue
+            parent = node.get('parent')
+            if parent is not None:
+                bucket = children.get(parent)
+                if bucket is None:
+                    children[parent] = [key]
+                else:
+                    bucket.append(key)
+            class_index = node.get('class')
+            if type(class_index) is int and 0 <= class_index < class_count:
+                name = class_names[class_index]
+                class_by_key[key] = name
+                if name == 'Workspace':
+                    workspaces.append(key)
+                elif name == 'NoCollisionConstraint':
+                    no_collision_keys.add(key)
+                elif name == 'PhysicsService':
+                    physics_services.append(key)
+        self._class_by_key = class_by_key
+        self._no_collision_keys = no_collision_keys
+        self._physics_service_keys = tuple(physics_services)
         self._workspace_key = workspaces[0] if len(workspaces) == 1 else None
+
+        self._character_children = (
+            _descendants_from_children(children, self._character_key)
+            if self._character_key is not None else set()
+        )
+        if self._workspace_key is not None:
+            workspace_keys = _descendants_from_children(children, self._workspace_key)
+            workspace_keys.add(self._workspace_key)
+            self._workspace_keys = workspace_keys
+            phys_items = ((key, class_by_key[key]) for key in workspace_keys if key in class_by_key)
+        else:
+            self._workspace_keys = None
+            phys_items = class_by_key.items()
+
+        environment_keys = set()
+        geometry_keys = set()
+        for key, name in phys_items:
+            if name in _ENVIRONMENT_CLASSES:
+                environment_keys.add(key)
+            if name in ('Terrain', 'MeshPart') or _is_part_descendant(name):
+                geometry_keys.add(key)
+        self._environment_keys = environment_keys
+        self._geometry_keys = geometry_keys
 
     def _changes_since(self, world):
         """Apply the bounded replication journal and classify what needs refresh.
@@ -644,6 +732,7 @@ class RuntimePhysicsPrediction:
         full_refresh = False
         geometry_dirty = False
         classes = world.schema['classes']
+        workspace = self._workspace_keys
         # Keep this aligned with extract_ground's inputs. ReplicationPV can be
         # the freshest pose in place of CFrame, and shape aliases decide
         # whether a Part is a supported Block collider.
@@ -661,15 +750,19 @@ class RuntimePhysicsPrediction:
                                    'CollisionFidelity', 'Material', 'PhysicsData',
                                    'SolidMeshHolder', 'PhysicalConfigData', 'AeroMeshData',
                                    'VoxelData', 'TerrainMaterial', 'TerrainMaterials'}
+        environment_fields = {'Parent', 'Part0', 'Part1', 'Enabled', 'Occupant',
+                              'CFrame', 'Position', 'Size', 'VoxelData',
+                              'TerrainMaterial', 'TerrainMaterials',
+                              'SmoothVoxelsUpgraded', 'Materials', 'MaterialColors', 'WaterColor'}
+        global_collision_fields = {'CollisionGroupData', 'CollisionGroups',
+                                   'UseWorkspaceCollisionGroups'}
+        part_collision_fields = {'CollisionGroupData', 'CollisionGroups', 'CollisionGroup',
+                                 'CollisionGroupReplicate', 'UseWorkspaceCollisionGroups',
+                                 'CanCollide', 'Parent'}
 
         for action in pending:
             key = action.get('key')
             kind = action.get('kind')
-            if kind in ('create','remove') or (kind=='set' and
-                    {'CollisionGroupData','CollisionGroups','CollisionGroup',
-                     'CollisionGroupReplicate','UseWorkspaceCollisionGroups','CanCollide','Parent'}
-                    & action.get('fields',{}).keys()):
-                self._collision_dirty=True
             class_name = self._class_by_key.get(key)
             if kind == 'create':
                 node = action.get('instance', {})
@@ -677,25 +770,41 @@ class RuntimePhysicsPrediction:
                 if isinstance(class_id, int) and 0 <= class_id < len(classes):
                     class_name = classes[class_id]['name']
                     self._class_by_key[key] = class_name
-                if class_name=='NoCollisionConstraint':
-                    self._no_collision_keys.add(key);own_dirty=True;self._collision_dirty=True
-                if class_name in _ENVIRONMENT_CLASSES:
-                    self._environment_keys.add(key)
-                    geometry_dirty = True
-                if class_name in ('Terrain', 'MeshPart') or _is_part_descendant(class_name):
-                    self._geometry_keys.add(key)
+                if class_name == 'NoCollisionConstraint':
+                    self._no_collision_keys.add(key); own_dirty = True; self._collision_dirty = True
+                parent = node.get('parent')
+                if workspace is None:
+                    in_ws = True
+                elif parent in workspace:
+                    workspace.add(key)
+                    in_ws = True
+                elif parent is not None and parent not in self._class_by_key:
+                    full_refresh = True
+                    in_ws = True
+                else:
+                    in_ws = False
+                if in_ws:
+                    self._collision_dirty = True
+                    if class_name in _ENVIRONMENT_CLASSES:
+                        self._environment_keys.add(key)
+                        self._env_dirty = True
+                        geometry_dirty = True
+                    if class_name in ('Terrain', 'MeshPart') or _is_part_descendant(class_name):
+                        self._geometry_keys.add(key)
+                        geometry_dirty = True
                 if (self._player_key is None and class_name == 'Player'):
                     full_refresh = True
-                if class_name == 'Workspace':
+                if class_name in ('Workspace', 'PhysicsService'):
                     full_refresh = True
                 if (self._character_key is not None and
-                        (node.get('parent') == self._character_key
-                         or node.get('parent') in self._character_children)):
+                        (parent == self._character_key or parent in self._character_children)):
                     self._character_children.add(key)
                     own_dirty = True
             elif kind == 'remove':
                 if key in self._no_collision_keys:
-                    self._no_collision_keys.discard(key);own_dirty=True;self._collision_dirty=True
+                    self._no_collision_keys.discard(key); own_dirty = True; self._collision_dirty = True
+                if key in self._physics_service_keys:
+                    full_refresh = True
                 if key in (self._player_key, self._character_key, self._workspace_key):
                     full_refresh = True
                 if key in self._character_children:
@@ -703,16 +812,40 @@ class RuntimePhysicsPrediction:
                     own_dirty = True
                     full_refresh = True
                 self._class_by_key.pop(key, None)
-                self._geometry_keys.discard(key)
-                if key in self._environment_keys:
+                in_ws = workspace is None or key in workspace
+                if workspace is not None:
+                    workspace.discard(key)
+                if in_ws:
+                    self._collision_dirty = True
+                    if key in self._geometry_keys:
+                        self._geometry_keys.discard(key)
+                        geometry_dirty = True
+                    elif class_name == 'Terrain' or class_name == 'MeshPart' or _is_part_descendant(class_name):
+                        geometry_dirty = True
+                    if key in self._environment_keys:
+                        self._environment_keys.discard(key)
+                        self._env_dirty = True
+                        geometry_dirty = True
+                else:
+                    self._geometry_keys.discard(key)
                     self._environment_keys.discard(key)
-                    geometry_dirty = True
             elif kind == 'set':
                 fields = action.get('fields', {})
-                if class_name=='NoCollisionConstraint' and {'Enabled','Part0','Part1','Parent'} & fields.keys():
-                    own_dirty=True;self._collision_dirty=True
+                changed_fields = fields.keys()
+                in_ws = workspace is None or key in workspace
+                if 'Parent' in fields and workspace is not None:
+                    new_parent = fields['Parent']
+                    was_ws = key in workspace
+                    now_ws = new_parent in workspace
+                    if was_ws != now_ws or (new_parent is not None and new_parent not in self._class_by_key):
+                        full_refresh = True
+                        in_ws = True
+                if (in_ws and (part_collision_fields & changed_fields)) or (global_collision_fields & changed_fields):
+                    self._collision_dirty = True
+                if class_name == 'NoCollisionConstraint' and {'Enabled', 'Part0', 'Part1', 'Parent'} & changed_fields:
+                    own_dirty = True; self._collision_dirty = True
                 if key == self._player_key:
-                    if {'Character', 'UserId'} & fields.keys():
+                    if {'Character', 'UserId'} & changed_fields:
                         full_refresh = True
                 elif key == self._character_key:
                     if 'Parent' in fields:
@@ -739,36 +872,31 @@ class RuntimePhysicsPrediction:
                     full_refresh = True
                 elif self._player_key is None and class_name == 'Player' and 'UserId' in fields:
                     full_refresh = True
-                if class_name in _ENVIRONMENT_CLASSES and (
-                        {'Parent', 'Part0', 'Part1', 'Enabled', 'Occupant', 'CFrame', 'Position', 'Size'}
-                        & fields.keys()):
-                    geometry_dirty = True
-
-            if (class_name == 'Terrain' or class_name == 'MeshPart'
-                    or _is_part_descendant(class_name)):
-                if kind in ('create', 'remove'):
-                    geometry_dirty = True
-                elif kind == 'set':
-                    changed_fields = action.get('fields', {}).keys()
-                    if always_geometry_fields & changed_fields:
+                if in_ws:
+                    if class_name in _ENVIRONMENT_CLASSES and (environment_fields & changed_fields):
+                        self._env_dirty = True
                         geometry_dirty = True
-                    elif geometry_payload_fields & changed_fields:
-                        geometry_dirty = True
-                    elif velocity_fields & changed_fields:
-                        instance = world.instances.get(key)
-                        properties = instance.get('properties', {}) if isinstance(instance, dict) else {}
-                        if properties.get('CanCollide') is True:
+                    if (class_name == 'Terrain' or class_name == 'MeshPart'
+                            or _is_part_descendant(class_name)):
+                        if always_geometry_fields & changed_fields:
                             geometry_dirty = True
-                    elif pose_size_fields & changed_fields:
-                        instance = world.instances.get(key)
-                        properties = instance.get('properties', {}) if isinstance(instance, dict) else {}
-                        # extract_ground creates colliders only from explicitly
-                        # anchored parts. Unanchored body-part motion cannot
-                        # change the cached floor map.
-                        if (properties.get('Anchored') is True
-                                or (properties.get('Anchored') is False
-                                    and properties.get('CanCollide') is True)):
+                        elif geometry_payload_fields & changed_fields:
                             geometry_dirty = True
+                        elif velocity_fields & changed_fields:
+                            instance = world.instances.get(key)
+                            properties = instance.get('properties', {}) if isinstance(instance, dict) else {}
+                            if properties.get('CanCollide') is True:
+                                geometry_dirty = True
+                        elif pose_size_fields & changed_fields:
+                            instance = world.instances.get(key)
+                            properties = instance.get('properties', {}) if isinstance(instance, dict) else {}
+                            # extract_ground creates colliders only from explicitly
+                            # anchored parts. Unanchored body-part motion cannot
+                            # change the cached floor map.
+                            if (properties.get('Anchored') is True
+                                    or (properties.get('Anchored') is False
+                                        and properties.get('CanCollide') is True)):
+                                geometry_dirty = True
 
         if full_refresh:
             return own_dirty, True, geometry_dirty
@@ -804,10 +932,13 @@ class RuntimePhysicsPrediction:
         self._no_collision_keys = set()
         self._class_by_key = {}
         self._geometry_dirty = False
+        self._env_dirty = False
         self._collision_dirty = True
         self._platform_poses = {}
         self._platform_pose_at = None
         self._workspace_key = None
+        self._workspace_keys = None
+        self._physics_service_keys = ()
         self._gravity = ReceivedGravity()
         self._job_statistics = PhysicsJobStatistics()
         self._job_scheduler = PhysicsJobScheduler()

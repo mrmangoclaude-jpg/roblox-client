@@ -131,16 +131,29 @@ int cframe_vector_world(lua_State* L) { return cframe_space(L, false, true, fals
 int cframe_vector_object(lua_State* L) { return cframe_space(L, true, true, false); }
 
 int cframe_euler(lua_State* L, bool yxz) {
-    double x = finite_frame_angle(L, 1);
-    double y = finite_frame_angle(L, 2);
-    double z = finite_frame_angle(L, 3);
-    double cx=std::cos(x), sx=std::sin(x), cy=std::cos(y), sy=std::sin(y);
-    double cz=std::cos(z), sz=std::sin(z);
-    FrameMatrix rx{1,0,0, 0,cx,-sx, 0,sx,cx};
-    FrameMatrix ry{cy,0,sy, 0,1,0, -sy,0,cy};
-    FrameMatrix rz{cz,-sz,0, sz,cz,0, 0,0,1};
-    return push_frame_value(L, {}, frame_product(
-        yxz ? frame_product(ry, rx) : frame_product(rx, ry), rz));
+    float x = static_cast<float>(finite_frame_angle(L, 1));
+    float y = static_cast<float>(finite_frame_angle(L, 2));
+    float z = static_cast<float>(finite_frame_angle(L, 3));
+    float cx=static_cast<float>(std::cos(double(x))), sx=static_cast<float>(std::sin(double(x)));
+    float cy=static_cast<float>(std::cos(double(y))), sy=static_cast<float>(std::sin(double(y)));
+    float cz=static_cast<float>(std::cos(double(z))), sz=static_cast<float>(std::sin(double(z)));
+    using FM = std::array<float, 9>;
+    FM rx{1,0,0, 0,cx,-sx, 0,sx,cx};
+    FM ry{cy,0,sy, 0,1,0, -sy,0,cy};
+    FM rz{cz,-sz,0, sz,cz,0, 0,0,1};
+    auto mul=[](const FM& a, const FM& b){
+        FM r{};
+        for(int i=0;i<3;++i)for(int j=0;j<3;++j){
+            float acc=0;
+            for(int k=0;k<3;++k)acc=static_cast<float>(acc+static_cast<float>(a[3*i+k]*b[3*k+j]));
+            r[3*i+j]=acc;
+        }
+        return r;
+    };
+    FM rot = mul(mul(yxz ? ry : rx, yxz ? rx : ry), rz);
+    FrameMatrix r{};
+    for(int i=0;i<9;++i)r[i]=static_cast<double>(rot[i]);
+    return push_frame_value(L, {}, r);
 }
 int cframe_euler_xyz(lua_State* L) { return cframe_euler(L, false); }
 int cframe_euler_yxz(lua_State* L) { return cframe_euler(L, true); }

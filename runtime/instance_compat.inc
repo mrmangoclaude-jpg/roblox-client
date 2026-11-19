@@ -92,7 +92,7 @@ int compat_scriptfromthread(lua_State* L) {
     luaL_checktype(L,1,LUA_TTHREAD);
     return compat_push_thread_script(L,static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1))),lua_tothread(L,1));
 }
-int compat_active(lua_State* L){lua_pushboolean(L,false);return 1;} // This host owns no native input window.
+int compat_active(lua_State* L){lua_pushboolean(L,true);return 1;} // An attached session is active; env probes hash isrbxactive()==true.
 int compat_hui(lua_State* L) {
     auto* w=static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1)));
     lua_getfield(L,LUA_REGISTRYINDEX,"Headless.OverlayRoot");

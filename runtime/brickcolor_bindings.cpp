@@ -262,10 +262,12 @@ int create(lua_State* L) {
     int count=lua_gettop(L);const Entry* entry=nullptr;
     if(count==1&&lua_type(L,1)==LUA_TNUMBER) {
         double number=lua_tonumber(L,1);
-        if(!std::isfinite(number)||std::floor(number)!=number) {
-            luaL_error(L,"BrickColor.new number must be an integer palette id");return 0;
+        // Roblox floors the value to a palette id; ids without a palette entry
+        // (including non-finite input) fall back to Medium stone grey below.
+        if(std::isfinite(number)) {
+            double id=std::floor(number);
+            if(id>=0&&id<=65535)entry=by_number(static_cast<int>(id));
         }
-        if(number>=0&&number<=65535)entry=by_number(static_cast<int>(number));
     } else if(count==1&&lua_type(L,1)==LUA_TSTRING) {
         size_t size=0;const char* name=lua_tolstring(L,1,&size);entry=by_name(name,size);
     } else if(count==1&&lua_type(L,1)==LUA_TUSERDATA) {
@@ -283,18 +285,25 @@ int create(lua_State* L) {
     } else if(count==3) {
         double rgb[3];for(int i=0;i<3;i++){rgb[i]=luaL_checknumber(L,i+1);if(!std::isfinite(rgb[i])||rgb[i]<0||rgb[i]>1){luaL_error(L,"BrickColor channels must be normalized finite values");return 0;}}
         entry=closest_color(rgb[0],rgb[1],rgb[2]);
-    } else {luaL_error(L,"BrickColor.new expects a palette id, name, Color3, or three RGB numbers");return 0;}
+    } else if(count==1){luaL_argerror(L,1,lua_pushfstring(L,"Color3 expected, got %s",luaL_typename(L,1)));return 0;}
+    else {luaL_error(L,"BrickColor.new expects a palette id, name, Color3, or three RGB numbers");return 0;}
     if(!entry)entry=by_number(194);
     push_value(L,entry);return 1;
 }
 int palette(lua_State* L) {
-    if(lua_gettop(L)!=1){luaL_error(L,"BrickColor.palette expects one palette index");return 0;}
-    luaL_checktype(L,1,LUA_TNUMBER);
-    const double value=lua_tonumber(L,1);
-    if(!std::isfinite(value)||std::floor(value)!=value||value<0||value>=128){
-        luaL_error(L,"BrickColor.palette index must be an integer from 0 through 127");return 0;
-    }
-    push_value(L,by_number(kPalette[static_cast<int>(value)]));return 1;
+    if(lua_gettop(L)<1){luaL_error(L,"Argument 1 missing or nil");return 0;}
+    const double value=luaL_checknumber(L,1);
+    // Roblox rounds the index half away from zero, converts to int32 (non-finite
+    // input saturates to INT_MIN), then bounds-checks against the 128-entry palette.
+    int index;
+    if(std::isfinite(value)){
+        const double rounded=std::round(value);
+        if(rounded>2147483647.0)index=2147483647;
+        else if(rounded<-2147483648.0)index=-2147483648;
+        else index=static_cast<int>(rounded);
+    }else index=-2147483648;
+    if(index<0||index>=128){luaL_error(L,"palette index out of bounds (%d)",index);return 0;}
+    push_value(L,by_number(kPalette[index]));return 1;
 }
 int random_color(lua_State* L) {
     if(lua_gettop(L)!=0){luaL_error(L,"BrickColor.random expects no arguments");return 0;}

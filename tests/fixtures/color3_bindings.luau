@@ -36,4 +36,19 @@ assert(not pcall(Color3.fromHex, "abcd"))
 assert(not pcall(Color3.new, 0 / 0, 0, 0))
 assert(not pcall(function() red.R = 0 end))
 
+-- ToHSV components are float32 (Studio-verified bit-exact). 191/255 rounds to
+-- the f32 value below, not the double 0.7490196078431373.
+local blue = Color3.fromRGB(64, 128, 255)
+local bh, bs, bv = blue:ToHSV()
+assert(bh == 0.6108202338218689 and bs == 0.74901962280273438 and bv == 1)
+local warm = Color3.fromRGB(255, 128, 64)
+local _, ws, wv = warm:ToHSV()
+assert(ws == 0.74901962280273438 and wv == 1)
+
+-- The whole conversion runs in float32; computing in double then rounding once
+-- at the end diverges in the last ULP for channels like 123/255 (Studio-verified).
+local mixed = Color3.fromRGB(123, 45, 67)
+local mh, ms, mv = mixed:ToHSV()
+assert(mh == 0.95299148559570312 and ms == 0.63414627313613892 and mv == 0.48235294222831726)
+
 return true

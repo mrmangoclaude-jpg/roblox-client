@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <new>
 #include <stdexcept>
@@ -42,9 +43,9 @@ float checked_finite_float(lua_State* L, int index, const char* label) {
     return static_cast<float>(input);
 }
 
-std::array<float, 3> checked_vector(lua_State* L, int index, const char* label) {
+std::array<float, 3> checked_vector(lua_State* L, int index) {
     if (!lua_isvector(L, index)) {
-        luaL_argerror(L, index, label);
+        luaL_argerror(L, index, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, index)));
         return {};
     }
     const float* input = lua_tovector(L, index);
@@ -67,12 +68,9 @@ void push_region(lua_State* L, const std::array<float, 3>& minimum,
 }
 
 int region_new(lua_State* L) {
-    if (lua_gettop(L) != 2) {
-        luaL_error(L, "Region3.new expects minimum and maximum Vector3 values");
-        return 0;
-    }
-    const auto minimum = checked_vector(L, 1, "minimum Vector3 expected");
-    const auto maximum = checked_vector(L, 2, "maximum Vector3 expected");
+    const std::array<float, 3> zero{0, 0, 0};
+    const auto minimum = lua_isnone(L, 1) ? zero : checked_vector(L, 1);
+    const auto maximum = lua_isnone(L, 2) ? zero : checked_vector(L, 2);
     push_region(L, minimum, maximum);
     return 1;
 }
@@ -148,9 +146,17 @@ int region_equal(lua_State* L) {
 
 int region_string(lua_State* L) {
     const Region& value = *checked_region(L, 1);
-    lua_pushfstring(L, "{%f, %f, %f}, {%f, %f, %f}",
-        double(value.minimum[0]), double(value.minimum[1]), double(value.minimum[2]),
-        double(value.maximum[0]), double(value.maximum[1]), double(value.maximum[2]));
+    float center[3], size[3];
+    for (int axis = 0; axis < 3; ++axis) {
+        center[axis] = (value.minimum[axis] + value.maximum[axis]) * 0.5f;
+        size[axis] = value.maximum[axis] - value.minimum[axis];
+    }
+    char buffer[256];
+    int n = std::snprintf(buffer, sizeof(buffer),
+        "%.9g, %.9g, %.9g, 1, 0, 0, 0, 1, 0, 0, 0, 1; %.9g, %.9g, %.9g",
+        double(center[0]), double(center[1]), double(center[2]),
+        double(size[0]), double(size[1]), double(size[2]));
+    lua_pushlstring(L, buffer, static_cast<size_t>(n));
     return 1;
 }
 

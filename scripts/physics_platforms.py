@@ -20,10 +20,22 @@ Matrix3 = tuple[float, ...]
 def _vec(value, label: str) -> Vector3:
     if not isinstance(value, (tuple, list)) or len(value) != 3:
         raise ValueError(f'{label} must have three finite components')
-    out = tuple(float(v) for v in value)
-    if any(not math.isfinite(v) for v in out):
+    x, y, z = value
+    if type(x) is float and type(y) is float and type(z) is float:
+        if math.isfinite(x) and math.isfinite(y) and math.isfinite(z):
+            return (x, y, z) if type(value) is list else value
+        raise ValueError(f'{label} must have three finite components')
+    out = (float(x), float(y), float(z))
+    if not (math.isfinite(out[0]) and math.isfinite(out[1]) and math.isfinite(out[2])):
         raise ValueError(f'{label} must have three finite components')
     return out
+
+
+def _trusted_platform_pose(position, rotation: Matrix3) -> 'PlatformPose':
+    pose = object.__new__(PlatformPose)
+    object.__setattr__(pose, 'position', _vec(position, 'position'))
+    object.__setattr__(pose, 'rotation', rotation)
+    return pose
 
 
 @dataclass(frozen=True)
@@ -33,7 +45,8 @@ class PlatformPose:
 
     def __post_init__(self):
         object.__setattr__(self, 'position', _vec(self.position, 'position'))
-        object.__setattr__(self, 'rotation', rotation_matrix(self.rotation))
+        if self.rotation != (1., 0., 0., 0., 1., 0., 0., 0., 1.):
+            object.__setattr__(self, 'rotation', rotation_matrix(self.rotation))
 
 
 def platform_poses_from_world(world) -> dict:
@@ -54,6 +67,7 @@ def platform_poses_from_world(world) -> dict:
     if not isinstance(classes, list):
         raise ValueError('world schema has no classes list')
     poses = {}
+    prop_type_cache = {}
     for key, instance in instances.items():
         if not isinstance(instance, dict):
             continue
@@ -68,12 +82,15 @@ def platform_poses_from_world(world) -> dict:
         if not isinstance(props, dict) or type(props.get('Anchored')) is not bool:
             continue
         try:
-            types = _property_type_map(schema, class_index)
+            types = prop_type_cache.get(class_index)
+            if types is None:
+                types = _property_type_map(schema, class_index)
+                prop_type_cache[class_index] = types
             frame, record_type = _received_part_frame(world, key, props, types)
             rotation = _received_rotation(frame, record_type) if frame is not None else None
             if frame is None or rotation is None:
                 continue
-            poses[key] = PlatformPose(frame.get('position'), rotation)
+            poses[key] = _trusted_platform_pose(frame.get('position'), rotation)
         except (KeyError, TypeError, ValueError):
             continue
     return poses

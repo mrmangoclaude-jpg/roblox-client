@@ -13,8 +13,10 @@ void push_ray(lua_State* L, const float* origin, const float* direction) {
     luaL_getmetatable(L, kRayMeta); lua_setmetatable(L, -2);
 }
 int ray_new(lua_State* L) {
-    const float* origin = luaL_checkvector(L, 1);
-    const float* direction = luaL_checkvector(L, 2);
+    if (!lua_isvector(L, 1)) { luaL_argerror(L, 1, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, 1))); return 0; }
+    if (!lua_isvector(L, 2)) { luaL_argerror(L, 2, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, 2))); return 0; }
+    const float* origin = lua_tovector(L, 1);
+    const float* direction = lua_tovector(L, 2);
     push_ray(L, origin, direction); return 1;
 }
 void ray_projection(const RayValue& ray, const float* point, double* closest) {
@@ -55,7 +57,13 @@ int ray_equal(lua_State* L) {
 int ray_readonly(lua_State* L) { luaL_error(L, "Ray values are immutable"); return 0; }
 int ray_string(lua_State* L) {
     auto* ray = checked_ray(L, 1);
-    lua_pushfstring(L, "{%f, %f, %f}, {%f, %f, %f}", double(ray->origin[0]), double(ray->origin[1]), double(ray->origin[2]), double(ray->direction[0]), double(ray->direction[1]), double(ray->direction[2])); return 1;
+    // Studio renders a Ray as "{origin}, {direction}" with each component at
+    // %.9g (the PhysicalProperties convention), not Vector3's full-precision form.
+    char text[160];
+    std::snprintf(text, sizeof(text), "{%.9g, %.9g, %.9g}, {%.9g, %.9g, %.9g}",
+        double(ray->origin[0]), double(ray->origin[1]), double(ray->origin[2]),
+        double(ray->direction[0]), double(ray->direction[1]), double(ray->direction[2]));
+    lua_pushstring(L, text); return 1;
 }
 void ray_method(lua_State* L, const char* name, lua_CFunction fn) {
     lua_pushcfunction(L, fn, name); lua_setfield(L, -2, name);

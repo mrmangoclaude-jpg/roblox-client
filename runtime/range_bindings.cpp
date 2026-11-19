@@ -90,7 +90,7 @@ int number_range_equal(lua_State* L) {
 int number_range_tostring(lua_State* L) {
     auto* value = static_cast<NumberRangeValue*>(luaL_checkudata(L, 1, kNumberRangeMeta));
     char buffer[128];
-    int length = std::snprintf(buffer, sizeof(buffer), "%g, %g", value->min, value->max);
+    int length = std::snprintf(buffer, sizeof(buffer), "%g %g ", value->min, value->max);
     lua_pushlstring(L, buffer, static_cast<size_t>(length));
     return 1;
 }
@@ -119,7 +119,8 @@ int rect_new(lua_State* L) {
         return 1;
     }
     if (count != 4) {
-        luaL_error(L, "Rect.new expects two Vector2 values or four numbers");
+        lua_pushfstring(L, "Invalid number of arguments: %d", count);
+        lua_error(L);
         return 0;
     }
     float min_x = checked_component(L, 1, "Rect minX");
@@ -156,7 +157,7 @@ int rect_equal(lua_State* L) {
 int rect_tostring(lua_State* L) {
     auto* value = static_cast<RectValue*>(luaL_checkudata(L, 1, kRectMeta));
     char buffer[192];
-    int length = std::snprintf(buffer, sizeof(buffer), "%g, %g, %g, %g",
+    int length = std::snprintf(buffer, sizeof(buffer), "%.9g, %.9g, %.9g, %.9g",
         value->min_x, value->min_y, value->max_x, value->max_y);
     lua_pushlstring(L, buffer, static_cast<size_t>(length));
     return 1;

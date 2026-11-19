@@ -43,10 +43,11 @@ constexpr const char* kConnectionMeta = "WorldSnapshot.Connection";
 constexpr const char* kInstanceHandleMeta = "WorldSnapshot.InstanceHandle";
 constexpr const char* kChatStatusMeta = "WorldSnapshot.TextChatMessageStatus.Item";
 constexpr const char* kChatEnumMeta = "WorldSnapshot.TextChatMessageStatus.Enum";
+constexpr const char* kEnumsMeta = "WorldSnapshot.Enums";
 constexpr const char* kChatStatusNames[] = {"Unknown","Success","Sending","TextFilterFailed","Floodchecked","InvalidPrivacySettings","InvalidTextChannelPermissions","MessageTooLong","ModerationTimeout"};
 constexpr size_t kMaxNodes = 100000;
 constexpr size_t kMaxMutations = 10000;
-constexpr size_t kMaxMutationBytes = 128 * 1024;
+constexpr size_t kMaxMutationBytes = 4 * 1024 * 1024;
 constexpr size_t kMaxPrinted = 128 * 1024;
 constexpr size_t kMaxMutationValue = 96 * 1024;
 constexpr int kMaxJsonDepth = 32;
@@ -292,7 +293,9 @@ int chat_status_index(lua_State* L) {
 int chat_status_string(lua_State* L){int v=*static_cast<int*>(luaL_checkudata(L,1,kChatStatusMeta));lua_pushfstring(L,"Enum.TextChatMessageStatus.%s",kChatStatusNames[v-1]);return 1;}
 int chat_status_equal(lua_State* L){auto* a=static_cast<int*>(luaL_checkudata(L,1,kChatStatusMeta));auto* b=static_cast<int*>(luaL_checkudata(L,2,kChatStatusMeta));lua_pushboolean(L,*a==*b);return 1;}
 int chat_enum_items(lua_State* L){luaL_checkudata(L,1,kChatEnumMeta);lua_createtable(L,9,0);for(int v=1;v<=9;v++){push_chat_status(L,v);lua_rawseti(L,-2,v);}return 1;}
-int chat_enum_index(lua_State* L){const char* key=luaL_checkstring(L,2);if(std::strcmp(key,"GetEnumItems")==0){lua_pushcfunction(L,chat_enum_items,"GetEnumItems");return 1;}for(int v=1;v<=9;v++)if(std::strcmp(key,kChatStatusNames[v-1])==0){push_chat_status(L,v);return 1;}luaL_error(L,"unknown TextChatMessageStatus item");return 0;}
+int chat_enum_from_name(lua_State* L){const char* key=luaL_checkstring(L,2);for(int v=1;v<=9;v++)if(std::strcmp(key,kChatStatusNames[v-1])==0){push_chat_status(L,v);return 1;}lua_pushnil(L);return 1;}
+int chat_enum_from_value(lua_State* L){double val=luaL_checknumber(L,2);for(int v=1;v<=9;v++)if(val==v){push_chat_status(L,v);return 1;}lua_pushnil(L);return 1;}
+int chat_enum_index(lua_State* L){const char* key=luaL_checkstring(L,2);if(std::strcmp(key,"GetEnumItems")==0){lua_pushcfunction(L,chat_enum_items,"GetEnumItems");return 1;}if(std::strcmp(key,"FromName")==0){lua_pushcfunction(L,chat_enum_from_name,"FromName");return 1;}if(std::strcmp(key,"FromValue")==0){lua_pushcfunction(L,chat_enum_from_value,"FromValue");return 1;}for(int v=1;v<=9;v++)if(std::strcmp(key,kChatStatusNames[v-1])==0){push_chat_status(L,v);return 1;}luaL_error(L,"unknown TextChatMessageStatus item");return 0;}
 int chat_enum_string(lua_State* L){lua_pushliteral(L,"TextChatMessageStatus");return 1;}
 void destroy_instance_handle(lua_State*,void* value){static_cast<InstanceHandleValue*>(value)->~InstanceHandleValue();}
 void push_instance_handle(lua_State* L,World& world,const std::string& id) {
@@ -806,7 +809,7 @@ int get_service(lua_State* L) {
         try {push_node(L,*h->world,ensure_client_service(*h->world,service));return 1;}
         catch(const std::exception& error){luaL_error(L,"local service unavailable: %s",error.what());return 0;}
     }
-    if(it==h->world->services.end()){luaL_error(L,"service unavailable in snapshot: %s",service.c_str());return 0;}
+    if(it==h->world->services.end()){luaL_error(L,"'%s' is not a valid Service name",service.c_str());return 0;}
     Node* n=find_node(*h->world,it->second); if(!n){luaL_error(L,"snapshot service reference is invalid");return 0;}
     push_node(L,*h->world,n); return 1;
 }
@@ -844,7 +847,7 @@ int find_service(lua_State* L) {
 int cframe_components(lua_State* L) { auto* c=static_cast<CFrameValue*>(luaL_checkudata(L,1,kCFrameMeta));if(!c->rotation_known){luaL_error(L,"CFrame rotation metadata is unavailable");return 0;}for(double v:c->p)lua_pushnumber(L,v);for(double v:c->r)lua_pushnumber(L,v);return 12; }
 int vector3_new(lua_State*L){
     if(lua_gettop(L)>3){luaL_error(L,"Vector3.new expects at most three numbers");return 0;}
-    double x=lua_isnone(L,1)?0:luaL_checknumber(L,1),y=lua_isnone(L,2)?0:luaL_checknumber(L,2),z=lua_isnone(L,3)?0:luaL_checknumber(L,3);
+    double x=luaL_optnumber(L,1,0),y=luaL_optnumber(L,2,0),z=luaL_optnumber(L,3,0);
     // Studio 0.745 preserves IEEE infinity and NaN in vectors. Geometry and
     // movement consumers validate their own finite-input requirements.
     lua_pushvector(L,x,y,z);return 1;
@@ -859,8 +862,9 @@ int cframe_new(lua_State*L){
     auto*cf=new_cframe(L);
     if(n==0){}
     else if(n==1&&lua_isvector(L,1)){const auto*v=lua_tovector(L,1);for(int i=0;i<3;i++)cf->p[i]=v[i];}
-    else if(n==3){for(int i=0;i<3;i++){double v=luaL_checknumber(L,i+1);if(!std::isfinite(v)){luaL_error(L,"CFrame position must be finite");return 0;}cf->p[i]=v;}}
-    else if(n==12){for(int i=0;i<3;i++){double v=luaL_checknumber(L,i+1);if(!std::isfinite(v)){luaL_error(L,"CFrame component must be finite");return 0;}cf->p[i]=v;}for(int i=0;i<9;i++){double v=luaL_checknumber(L,i+4);if(!std::isfinite(v)){luaL_error(L,"CFrame component must be finite");return 0;}cf->r[i]=v;}}
+    else if(n==3){for(int i=0;i<3;i++){double v=luaL_checknumber(L,i+1);if(!std::isfinite(v)){luaL_error(L,"CFrame position must be finite");return 0;}cf->p[i]=static_cast<double>(static_cast<float>(v));}}
+    else if(n==12){for(int i=0;i<3;i++){double v=luaL_checknumber(L,i+1);if(!std::isfinite(v)){luaL_error(L,"CFrame component must be finite");return 0;}cf->p[i]=static_cast<double>(static_cast<float>(v));}for(int i=0;i<9;i++){double v=luaL_checknumber(L,i+4);if(!std::isfinite(v)){luaL_error(L,"CFrame component must be finite");return 0;}cf->r[i]=static_cast<double>(static_cast<float>(v));}}
+    else if(n==1){luaL_argerror(L,1,lua_pushfstring(L,"Vector3 expected, got %s",luaL_typename(L,1)));return 0;}
     else {luaL_error(L,"CFrame.new expects zero arguments, one or two Vector3 values, or three, seven, or twelve numbers");return 0;}
     luaL_getmetatable(L,kCFrameMeta);lua_setmetatable(L,-2);return 1;
 }
@@ -872,7 +876,7 @@ int cframe_from_matrix(lua_State*L){
     else {z[0]=double(x[1])*y[2]-double(x[2])*y[1];z[1]=double(x[2])*y[0]-double(x[0])*y[2];z[2]=double(x[0])*y[1]-double(x[1])*y[0];
         double length=std::hypot(z[0],z[1],z[2]);if(!std::isfinite(length)||length==0){luaL_error(L,"CFrame.fromMatrix requires independent finite basis vectors");return 0;}for(double&v:z)v/=length;}
     auto*cf=new_cframe(L);for(int i=0;i<3;i++)cf->p[i]=p[i];
-    cf->r={double(x[0]),double(y[0]),double(z[0]),double(x[1]),double(y[1]),double(z[1]),double(x[2]),double(y[2]),double(z[2])};
+    cf->r={double(float(x[0])),double(float(y[0])),double(float(z[0])),double(float(x[1])),double(float(y[1])),double(float(z[1])),double(float(x[2])),double(float(y[2])),double(float(z[2]))};
     luaL_getmetatable(L,kCFrameMeta);lua_setmetatable(L,-2);return 1;
 }
 #include "cframe_transforms.inc"
@@ -898,6 +902,30 @@ int run_service_false(lua_State* L) {
     auto* h = checked_handle(L,1);
     if (h->node->class_name != "RunService") { luaL_error(L,"RunService receiver required"); return 0; }
     lua_pushboolean(L,false); return 1;
+}
+int get_secret(lua_State* L) {
+    checked_handle(L,1);
+    luaL_checkstring(L,2);
+    luaL_error(L,"Can't find secret with given key"); return 0;
+}
+int log_get_history(lua_State* L) {
+    checked_handle(L,1);
+    lua_newtable(L); return 1;
+}
+int set_teleport_setting(lua_State* L) {
+    checked_handle(L,1);
+    int top=lua_gettop(L);
+    lua_getfield(L,LUA_REGISTRYINDEX,"Headless.TeleportSettings");
+    if(!lua_istable(L,-1)){lua_pop(L,1);lua_newtable(L);lua_pushvalue(L,-1);lua_setfield(L,LUA_REGISTRYINDEX,"Headless.TeleportSettings");}
+    if(top>=2){lua_pushvalue(L,2);if(top>=3)lua_pushvalue(L,3);else lua_pushnil(L);lua_rawset(L,-3);}
+    lua_pop(L,1);return 0;
+}
+int get_teleport_setting(lua_State* L) {
+    checked_handle(L,1);
+    luaL_checkstring(L,2);
+    lua_getfield(L,LUA_REGISTRYINDEX,"Headless.TeleportSettings");
+    if(!lua_istable(L,-1)){lua_pop(L,1);lua_pushnil(L);return 1;}
+    lua_pushvalue(L,2);lua_rawget(L,-2);lua_remove(L,-2);return 1;
 }
 int clone_instance(lua_State* L);
 bool client_service_index(lua_State* L,World& world,Node& node,const std::string& key);
@@ -1386,6 +1414,10 @@ int instance_index(lua_State* L) {
     }
     if(n.class_name=="HttpService"&&key=="UrlEncode"){lua_pushcfunction(L,http_url_encode,"UrlEncode");return 1;}
     if(n.class_name=="HttpService"&&key=="GenerateGUID"){lua_pushcfunction(L,generate_guid,"GenerateGUID");return 1;}
+    if(key=="GetSecret"){lua_pushcfunction(L,get_secret,"GetSecret");return 1;}
+    if(n.class_name=="LogService"&&key=="GetLogHistory"){lua_pushcfunction(L,log_get_history,"GetLogHistory");return 1;}
+    if(n.class_name=="TeleportService"&&key=="SetTeleportSetting"){lua_pushcfunction(L,set_teleport_setting,"SetTeleportSetting");return 1;}
+    if(n.class_name=="TeleportService"&&key=="GetTeleportSetting"){lua_pushcfunction(L,get_teleport_setting,"GetTeleportSetting");return 1;}
     if(n.class_name=="GuiService"&&key=="IsTenFootInterface"){lua_pushcfunction(L,gui_ten_foot_interface,"IsTenFootInterface");return 1;}
     if(n.class_name=="RunService" && (key=="Heartbeat"||key=="RenderStepped"||key=="PreRender")) {push_signal(L,signal_for(w,n,key));return 1;}
     if(n.class_name=="ClickDetector" && (key=="MouseClick"||key=="RightMouseClick"||key=="MouseHoverEnter"||key=="MouseHoverLeave")) {push_signal(L,signal_for(w,n,key));return 1;}
@@ -1930,6 +1962,21 @@ int signal_index(lua_State* L) {
     if(std::strcmp(key,"Wait")==0||std::strcmp(key,"wait")==0){lua_pushcfunction(L,wait_signal,"Wait");return 1;}
     luaL_error(L,"unknown RBXScriptSignal member");return 0;
 }
+int signal_newindex(lua_State* L) {
+    luaL_checkudata(L,1,kSignalMeta);const char* key=luaL_checkstring(L,2);
+    luaL_error(L,"%s is not a valid member of RBXScriptSignal",key);return 0;
+}
+int signal_tostring(lua_State* L) {
+    auto* h=static_cast<SignalHandle*>(luaL_checkudata(L,1,kSignalMeta));
+    std::string name=h->signal->key;
+    if(name.rfind("property:",0)==0)name=name.substr(9)+"Changed";
+    else if(name.rfind("attribute:",0)==0)name=name.substr(10)+"AttributeChanged";
+    lua_pushstring(L,("Signal "+name).c_str());return 1;
+}
+int connection_tostring(lua_State* L) {
+    luaL_checkudata(L,1,kConnectionMeta);
+    lua_pushliteral(L,"Connection");return 1;
+}
 void copy_bindable_value(lua_State* L,int index,std::unordered_set<const void*>& path,size_t& budget,int depth=0) {
     if(depth>32||budget==0)throw std::runtime_error("BindableEvent table copy limit exceeded");
     --budget;index=lua_absindex(L,index);int type=lua_type(L,index);
@@ -2267,7 +2314,7 @@ int instance_new(lua_State*L){
 }
 int instance_tostring(lua_State*L){Handle*h=checked_handle(L,1);auto s=instance_name(*h->world,*h->node);lua_pushlstring(L,s.data(),s.size());return 1;}
 int instance_equal(lua_State*L){auto*a=static_cast<Handle*>(lua_touserdata(L,1));auto*b=static_cast<Handle*>(lua_touserdata(L,2));bool aa=has_meta(L,1,kInstanceMeta),bb=has_meta(L,2,kInstanceMeta);lua_pushboolean(L,aa&&bb&&a&&b&&a==b);return 1;}
-int cframe_tostring(lua_State*L){auto*c=static_cast<CFrameValue*>(luaL_checkudata(L,1,kCFrameMeta));lua_pushfstring(L,"%f, %f, %f",c->p[0],c->p[1],c->p[2]);return 1;}
+int cframe_tostring(lua_State*L){auto*c=static_cast<CFrameValue*>(luaL_checkudata(L,1,kCFrameMeta));char buf[256];int off=0;auto app=[&](double v){float f=static_cast<float>(v);char tmp[32];const char* s;if(std::isnan(f))s="NAN";else if(std::isinf(f))s=f<0?"-INF":"INF";else{std::snprintf(tmp,sizeof(tmp),"%.9g",static_cast<double>(f));s=tmp;}off+=std::snprintf(buf+off,sizeof(buf)-off,"%s%s",off?", ":"",s);};for(double v:c->p)app(v);for(double v:c->r)app(v);lua_pushlstring(L,buf,static_cast<size_t>(off));return 1;}
 int cframe_equal(lua_State*L){auto*a=static_cast<CFrameValue*>(lua_touserdata(L,1));auto*b=static_cast<CFrameValue*>(lua_touserdata(L,2));bool aa=has_meta(L,1,kCFrameMeta),bb=has_meta(L,2,kCFrameMeta);bool eq=aa&&bb&&a&&b&&a->rotation_known==b->rotation_known&&a->p==b->p&&a->r==b->r;lua_pushboolean(L,eq);return 1;}
 int print_capture(lua_State*L){World*w=static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1)));bool warn=lua_toboolean(L,lua_upvalueindex(2));size_t room=w->output.size()<kMaxPrinted?kMaxPrinted-w->output.size():0;auto append=[&](const char*s,size_t n){size_t take=std::min(n,room);if(take)w->output.append(s,take);room-=take;if(take<n)w->output_truncated=true;};if(warn)append("WARN: ",6);for(int i=1;i<=lua_gettop(L)&&room>0;i++){if(i>1)append("\t",1);size_t n=0;const char*s=luaL_tolstring(L,i,&n);append(s,n);lua_pop(L,1);}if(room>0)append("\n",1);else w->output_truncated=true;return 0;}
 #include "instance_compat.inc"
@@ -2378,7 +2425,7 @@ bool read_geometry_enum_item(lua_State* L,int index,const char* type,int& value)
     value=geometry_numeric(item->kind,item->value);return true;
 }
 void install_geometry_value_enums(lua_State* L) {
-    lua_newtable(L);install_geometry_enums(L);install_enum_root(L);lua_setreadonly(L,-1,true);lua_setglobal(L,"Enum");
+    lua_newtable(L);install_geometry_enums(L);install_enum_root(L);lua_setglobal(L,"Enum");
 }
 
 void update_physics_feedback(lua_State* L, World& w, const Json& feedback) {
@@ -2649,15 +2696,15 @@ void install(lua_State*L,World&w){
     // before scripts run so ordinary child lookup also finds the service.
     if(!w.services.count("CoreGui"))ensure_client_service(w,"CoreGui");
     install_vector3_methods(L);
-    luaL_newmetatable(L,kChatStatusMeta);lua_pushcfunction(L,chat_status_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_status_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_status_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");lua_pushliteral(L,"chat EnumItem");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    luaL_newmetatable(L,kChatEnumMeta);lua_pushcfunction(L,chat_enum_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_enum_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");lua_pushliteral(L,"chat Enum");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    lua_newtable(L);lua_newuserdatatagged(L,1,0);luaL_getmetatable(L,kChatEnumMeta);lua_setmetatable(L,-2);lua_pushvalue(L,-1);lua_setfield(L,LUA_REGISTRYINDEX,"Headless.ChatStatusEnum");lua_setfield(L,-2,"TextChatMessageStatus");install_animation_enum(L);install_geometry_enums(L);install_humanoid_state_enum(L);install_ussi_export_enums(L,-1);install_enum_root(L);lua_setreadonly(L,-1,true);lua_setglobal(L,"Enum");
+    luaL_newmetatable(L,kChatStatusMeta);lua_pushcfunction(L,chat_status_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_status_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_status_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kChatEnumMeta);lua_pushcfunction(L,chat_enum_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_enum_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_newtable(L);lua_newuserdatatagged(L,1,0);luaL_getmetatable(L,kChatEnumMeta);lua_setmetatable(L,-2);lua_pushvalue(L,-1);lua_setfield(L,LUA_REGISTRYINDEX,"Headless.ChatStatusEnum");lua_setfield(L,-2,"TextChatMessageStatus");install_animation_enum(L);install_geometry_enums(L);install_humanoid_state_enum(L);install_ussi_export_enums(L,-1);install_enum_root(L);lua_setglobal(L,"Enum");
     install_tween_bindings(L);
     install_world_raycast(L,w);
     install_world_overlap(L,w);
     install_ussi_security_capabilities(L,LUA_GLOBALSINDEX);
-    luaL_newmetatable(L,kSignalMeta);lua_pushcfunction(L,signal_index,"__index");lua_setfield(L,-2,"__index");lua_pushliteral(L,"RBXScriptSignal");lua_setfield(L,-2,"__type");lua_pushliteral(L,"headless signal");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    luaL_newmetatable(L,kConnectionMeta);lua_pushcfunction(L,connection_index,"__index");lua_setfield(L,-2,"__index");lua_pushliteral(L,"RBXScriptConnection");lua_setfield(L,-2,"__type");lua_pushliteral(L,"headless connection");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kSignalMeta);lua_pushcfunction(L,signal_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,signal_newindex,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushcfunction(L,signal_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"RBXScriptSignal");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kConnectionMeta);lua_pushcfunction(L,connection_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,connection_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"RBXScriptConnection");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kInstanceHandleMeta);lua_pushcfunction(L,instance_handle_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,instance_handle_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,instance_handle_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"InstanceHandle");lua_setfield(L,-2,"__type");lua_pushliteral(L,"headless InstanceHandle");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kInstanceMeta);
     lua_pushcfunction(L,instance_index,"__index");lua_setfield(L,-2,"__index");
@@ -2665,12 +2712,12 @@ void install(lua_State*L,World&w){
     lua_pushcfunction(L,instance_tostring,"__tostring");lua_setfield(L,-2,"__tostring");
     lua_pushcfunction(L,instance_equal,"__eq");lua_setfield(L,-2,"__eq");
     lua_pushcclosurek(L,compat_namecall,"__namecall",0,compat_namecall_continue);lua_setfield(L,-2,"__namecall");
-    lua_pushliteral(L,"Instance");lua_setfield(L,-2,"__type");lua_pushliteral(L,"world snapshot Instance");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    luaL_newmetatable(L,kCFrameMeta);lua_pushcfunction(L,cframe_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,cframe_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,cframe_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushliteral(L,"CFrame");lua_setfield(L,-2,"__type");lua_pushliteral(L,"snapshot CFrame");lua_setfield(L,-2,"__metatable");install_frame_methods(L);lua_pop(L,1);
+    lua_pushliteral(L,"Instance");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kCFrameMeta);lua_pushcfunction(L,cframe_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,cframe_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,cframe_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushliteral(L,"CFrame");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");install_frame_methods(L);lua_pop(L,1);
     lua_createtable(L,0,8);lua_pushcfunction(L,vector3_new,"new");lua_setfield(L,-2,"new");install_geometry_vector_constructors(L);set_vector_constant(L,"zero",0,0,0);set_vector_constant(L,"one",1,1,1);set_vector_constant(L,"xAxis",1,0,0);set_vector_constant(L,"yAxis",0,1,0);set_vector_constant(L,"zAxis",0,0,1);lua_setreadonly(L,-1,1);lua_setglobal(L,"Vector3");
     lua_createtable(L,0,8);install_frame_constructors(L);lua_pushcfunction(L,cframe_new,"new");lua_setfield(L,-2,"new");lua_pushcfunction(L,cframe_from_matrix,"fromMatrix");lua_setfield(L,-2,"fromMatrix");auto*identity=new_cframe(L);luaL_getmetatable(L,kCFrameMeta);lua_setmetatable(L,-2);lua_setfield(L,-2,"identity");lua_setreadonly(L,-1,1);lua_setglobal(L,"CFrame");
-    Node*game=find_node(w,w.game_id);push_node(L,w,game);lua_setglobal(L,"game");
-    auto ws=w.services.find("Workspace");if(ws!=w.services.end()){push_node(L,w,find_node(w,ws->second));lua_setglobal(L,"workspace");}
+    Node*game=find_node(w,w.game_id);push_node(L,w,game);lua_pushvalue(L,-1);lua_setglobal(L,"game");lua_setglobal(L,"Game");
+    auto ws=w.services.find("Workspace");if(ws!=w.services.end()){push_node(L,w,find_node(w,ws->second));lua_pushvalue(L,-1);lua_setglobal(L,"workspace");lua_setglobal(L,"Workspace");}
     auto players=w.services.find("Players");if(players!=w.services.end()){
         Node*p=find_node(w,players->second);if(p&&p->properties.contains("LocalPlayer")&&p->properties["LocalPlayer"].is_object()){
             const Json&lp=p->properties["LocalPlayer"];if(lp.contains("$ref")&&lp["$ref"].is_string())w.local_player=lp["$ref"].get<std::string>();
@@ -2708,6 +2755,15 @@ int clone_client_template(lua_State* L) {
 }
 void push_instance(lua_State* L,World& world,const std::string& id){auto* node=find_node(world,id);if(node)push_node(L,world,node);else lua_pushnil(L);}
 std::string instance_display_name(World& world,const std::string& id){return instance_name(world,world.nodes.at(id));}
+std::string instance_script_chunkname(World& world,const std::string& id){
+    std::vector<std::string> parts; Node* n=find_node(world,id); size_t hops=0;
+    while(n && n->class_name!="DataModel" && hops++<=world.nodes.size()){
+        parts.push_back(instance_name(world,*n));
+        std::string p=parent_id(world,*n); n=p.empty()?nullptr:find_node(world,p);
+    }
+    std::string out; for(auto it=parts.rbegin();it!=parts.rend();++it){if(!out.empty())out+='.';out+=*it;}
+    return out;
+}
 void push_player_scripts(lua_State* L,World& w) {
     auto* player=find_node(w,w.local_player);if(!player){lua_pushnil(L);return;}
     for(const auto& id:direct_children(w,player->id)){auto& node=w.nodes.at(id);if(!node.destroyed&&node.class_name=="PlayerScripts"){push_node(L,w,&node);return;}}

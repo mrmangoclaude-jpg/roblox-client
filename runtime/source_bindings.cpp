@@ -195,6 +195,19 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
     install_host_io(L,bindings);
     lua_pushcfunction(L,lz4_compress,"lz4compress");lua_setglobal(L,"lz4compress");
     lua_pushcfunction(L,lz4_decompress,"lz4decompress");lua_setglobal(L,"lz4decompress");
+    // Luraph env probes hash iscclosure across the executor surface, so every
+    // function handed out must read as a native C closure. Wrap the remaining
+    // Lua globals (host I/O, network, drawing) the same way real executors do.
+    {
+        const char* sweep=
+            "local env=getfenv() "
+            "for k,v in pairs(env) do "
+            "if type(v)==\"function\" and not iscclosure(v) then env[k]=newcclosure(v,k) end "
+            "end";
+        std::string bytecode=Luau::compile(sweep);
+        if(luau_load(L,"=executor-c-sweep",bytecode.data(),bytecode.size(),0)!=0)lua_error(L);
+        mark_executor_closure(L,-1);lua_call(L,0,0);
+    }
     // These functions were installed by the executor; engine/library functions
     // inherited from the base environment keep their original classification.
     lua_pushnil(L);

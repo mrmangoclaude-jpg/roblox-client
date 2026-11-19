@@ -294,6 +294,14 @@ int randomToString(lua_State* L)
     return 1;
 }
 
+int randomEqual(lua_State* L)
+{
+    RandomState* a = static_cast<RandomState*>(luaL_checkudata(L, 1, kMetatable));
+    RandomState* b = static_cast<RandomState*>(luaL_checkudata(L, 2, kMetatable));
+    lua_pushboolean(L, a->state == b->state);
+    return 1;
+}
+
 void setFunction(lua_State* L, const char* name, lua_CFunction function)
 {
     lua_pushcfunction(L, function, name);
@@ -314,9 +322,10 @@ void install_random_compat(lua_State* L)
         lua_setreadonly(L, -1, true);
         lua_setfield(L, -2, "__index");
         setFunction(L, "__tostring", randomToString);
+        setFunction(L, "__eq", randomEqual);
         lua_pushstring(L, "Random");
         lua_setfield(L, -2, "__type");
-        lua_pushstring(L, "Random");
+        lua_pushstring(L, "The metatable is locked");
         lua_setfield(L, -2, "__metatable");
         lua_setreadonly(L, -1, true);
     }

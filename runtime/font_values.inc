@@ -41,7 +41,7 @@ int enum_number(lua_State* L,int index,const char* type,int fallback=-1) {
     return value;
 }
 std::string string_argument(lua_State* L,int index) {
-    if(lua_type(L,index)!=LUA_TSTRING){luaL_argerror(L,index,"string expected");return {};}
+    if(lua_type(L,index)!=LUA_TSTRING){luaL_argerror(L,index,lua_pushfstring(L,"string expected, got %s",luaL_typename(L,index)));return {};}
     size_t size=0;const char* raw=luaL_checklstring(L,index,&size);
     if(size>family_limit||std::memchr(raw,0,size)){luaL_argerror(L,index,"font string exceeds limit or contains NUL");return {};}
     return std::string(raw,size);

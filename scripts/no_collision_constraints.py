@@ -30,9 +30,10 @@ def _constructor_fields():
     return {name:fields[name]['value'] for name in ('Enabled','Part0','Part1')}
 
 
-def constructor_defaults(creation):
+def constructor_defaults(creation, *, allow_network_constructor_defaults=False):
     """Omitted fields retain their constructor values on complete new instances."""
-    if all(creation.get(flag) for flag in ('fresh','complete','ordinary')):
+    required = ('fresh', 'complete') if allow_network_constructor_defaults else ('fresh', 'complete', 'ordinary')
+    if all(creation.get(flag) for flag in required):
         return _constructor_fields()
     return {}
 
@@ -50,11 +51,19 @@ def topology_records(nodes):
     return tuple(result)
 
 
-def capture_nodes(world, sources, root_key):
+def capture_nodes(world, sources, root_key, *, constraint_keys=None, allow_network_constructor_defaults=False):
     """Capture constraints, endpoints, and ancestor chains without world mutation."""
     instances=world.instances;classes=world.schema['classes']
     def kind(key):return classes[instances[key]['class']]['name']
-    constraints={key for key in instances if kind(key)=='NoCollisionConstraint'}
+    if constraint_keys is None:
+        constraint_cids = {i for i, cls in enumerate(classes) if cls['name'] == 'NoCollisionConstraint'}
+        if not constraint_cids:
+            constraints = set()
+        else:
+            constraints = {key for key, node in instances.items()
+                           if isinstance(node, dict) and node.get('class') in constraint_cids}
+    else:
+        constraints = {key for key in constraint_keys if key in instances}
     wanted=set(sources)|constraints
     if root_key is not None:wanted.add(root_key)
     for key in constraints:
@@ -75,7 +84,9 @@ def capture_nodes(world, sources, root_key):
         node=instances[key];record={'id':identifier(key),'class_name':kind(key),
                                    'parent':identifier(node.get('parent'))}
         if key in constraints:
-            props={**constructor_defaults(world.creation.get(key,{})),**node.get('properties',{})};fields={}
+            props={**constructor_defaults(world.creation.get(key,{}),
+                                          allow_network_constructor_defaults=allow_network_constructor_defaults),
+                   **node.get('properties',{})};fields={}
             for field in ('Enabled','Part0','Part1'):
                 if field not in props:continue
                 value=props[field]

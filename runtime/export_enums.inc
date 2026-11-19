@@ -169,6 +169,8 @@ static int usi_export_item_index(lua_State* L) {
     else if(n==5 && !memcmp(key,"Value",5)) lua_pushinteger(L,item.value);
     else if(n==8 && !memcmp(key,"EnumType",8)) {
         lua_getfield(L,LUA_REGISTRYINDEX,kUsiExportEnumsRegistry); lua_rawgeti(L,-1,ref->kind+1); lua_remove(L,-2);
+    } else if(n==3 && !memcmp(key,"IsA",3)) {
+        lua_pushcfunction(L,[](lua_State* S)->int{ lua_pushboolean(S,0); return 1; },"EnumItem.IsA");
     } else luaL_error(L,"unknown EnumItem member");
     return 1;
 }
@@ -196,8 +198,8 @@ static int usi_export_enum_tostring(lua_State* L) { lua_pushstring(L,kUsiExportE
 static int usi_export_enum_readonly(lua_State* L) { luaL_error(L,"enum values are immutable");return 0; }
 static void install_ussi_export_enums(lua_State* L, int enumTable) {
     enumTable=lua_absindex(L,enumTable);
-    luaL_newmetatable(L,kUsiExportItemMeta); lua_pushcfunction(L,usi_export_item_index,"EnumItem.__index");lua_setfield(L,-2,"__index"); lua_pushcfunction(L,usi_export_item_tostring,"EnumItem.__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,usi_export_item_equal,"EnumItem.__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,usi_export_enum_readonly,"EnumItem.__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");lua_pushliteral(L,"immutable USSI EnumItem");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    luaL_newmetatable(L,kUsiExportEnumMeta);lua_pushcfunction(L,usi_export_enum_index,"Enum.__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,usi_export_enum_tostring,"Enum.__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,usi_export_enum_readonly,"Enum.__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");lua_pushliteral(L,"immutable USSI Enum");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kUsiExportItemMeta); lua_pushcfunction(L,usi_export_item_index,"EnumItem.__index");lua_setfield(L,-2,"__index"); lua_pushcfunction(L,usi_export_item_tostring,"EnumItem.__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,usi_export_item_equal,"EnumItem.__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,usi_export_enum_readonly,"EnumItem.__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kUsiExportEnumMeta);lua_pushcfunction(L,usi_export_enum_index,"Enum.__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,usi_export_enum_tostring,"Enum.__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,usi_export_enum_readonly,"Enum.__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     lua_createtable(L,(int)std::size(kUsiExportEnums),0); int enums=lua_gettop(L); lua_createtable(L,(int)std::size(kUsiExportEnums)*kExportEnumStride,0);int items=lua_gettop(L);
     for(int k=0;k<(int)std::size(kUsiExportEnums);++k){
         auto* e=(UsiExportEnumRef*)lua_newuserdatatagged(L,sizeof(UsiExportEnumRef),0);e->kind=k;luaL_getmetatable(L,kUsiExportEnumMeta);lua_setmetatable(L,-2);

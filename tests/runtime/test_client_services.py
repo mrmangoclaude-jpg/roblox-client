@@ -92,6 +92,18 @@ return before==nil,stats.ClassName,stats.Parent==game,
         self.assertTrue(result['ok'], result)
         self.assertEqual(result['values'], [True, 'Stats', True, True, True, False])
 
+    def test_game_and_workspace_global_aliases_share_identity(self):
+        result = self.execute('''
+return game == Game, workspace == Workspace,
+       typeof(Game), typeof(Workspace),
+       Game.Name == game.Name, Game.ClassName,
+       workspace == game:GetService("Workspace"),
+       Game == workspace.Parent, Game.Parent == nil,
+       tostring(Game) == tostring(game)
+''')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['values'], [True, True, 'Instance', 'Instance', True, 'DataModel', True, True, True, True])
+
     def test_encoding_service_base64_uses_buffers(self):
         result = self.execute('''
 assert(game:FindService("EncodingService")==nil)

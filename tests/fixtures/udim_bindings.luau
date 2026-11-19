@@ -27,4 +27,15 @@ assert(not pcall(function() UDim.new(0, math.huge) end))
 assert(not pcall(function() UDim2.fromScale(0, 0 / 0) end))
 assert(not pcall(function() UDim2.fromOffset(0, 1e20) end))
 assert(not pcall(function() return a + UDim.new() end))
+
+-- Lerp computes scale in float32: this midpoint lands just above the f32 tie
+-- and rounds up (Studio-verified bit-exact), unlike naive double math which
+-- hits the exact tie and rounds to even.
+local la = UDim2.new(0.2168044, 31, 0.193200797, 7)
+local lb = UDim2.new(0.561694264, 187, 0.780333221, 167)
+local lr = la:Lerp(lb, 0.5)
+assert(lr.X.Scale == 0.38924932479858398)
+assert(lr.Y.Scale == 0.48676702380180359)
+assert(lr.X.Offset == 109 and lr.Y.Offset == 87)
+
 return "UDim bindings passed"

@@ -912,7 +912,13 @@ struct GuiLayoutPass {
             auto* parent=find_node(w,parent_id(w,n));int hops=0;
             while(parent&&parent->class_name!="PlayerGui"&&parent->class_name!="CoreGui"&&parent->id!=w.overlay_root&&++hops<=128)
                 parent=find_node(w,parent_id(w,*parent));
-            if((!parent&&n.id!=w.overlay_root)||hops>128)return b; // No attached GUI surface.
+            if((!parent&&n.id!=w.overlay_root)||hops>128) {
+                // A ScreenGui detached from PlayerGui/CoreGui still reports
+                // Studio's default 800x600 surface at the origin; GUI insets
+                // do not apply to that detached surface.
+                b.attached=true;b.width=800;b.height=600;
+                if(!natural)boxes[n.id]=b;return b;
+            }
             b.attached=w.display["size"][0].get<double>()>0&&w.display["size"][1].get<double>()>0;
             int mode=2;
             const auto* explicit_mode=property_value(w,n,"ScreenInsets");

@@ -484,5 +484,64 @@ class RuntimePredictionTests(unittest.TestCase):
         world.schema['properties'][0]['type'] = 2
         self.assertNotIn(key, _received_surface_velocities(world, geometry))
 
+    def test_non_workspace_instances_excluded_and_reparent_refreshes(self):
+        world, _ = fixture()
+        world.schema['classes'].extend([
+            {'name': 'ReplicatedStorage', 'properties': []},
+            {'name': 'Folder', 'properties': []},
+            {'name': 'Weld', 'properties': []},
+        ])
+        rs_cid, folder_cid, weld_cid = len(world.schema['classes']) - 3, len(world.schema['classes']) - 2, len(world.schema['classes']) - 1
+        rs = (1, 100)
+        folder = (1, 101)
+        rs_part = (1, 102)
+        rs_weld = (1, 103)
+        ws_part = (1, 104)
+        world.instances[rs] = {'class': rs_cid, 'parent': None, 'properties': {}}
+        world.instances[folder] = {'class': folder_cid, 'parent': rs, 'properties': {}}
+        world.instances[rs_part] = {
+            'class': 3, 'parent': folder,
+            'properties': {'Anchored': True, 'CanCollide': True,
+                           'CFrame': {'position': [10., 0., 0.], 'rotation_id': 1}},
+        }
+        world.instances[rs_weld] = {'class': weld_cid, 'parent': folder, 'properties': {}}
+        world.instances[ws_part] = {
+            'class': 3, 'parent': (1, 6),
+            'properties': {'Anchored': True, 'CanCollide': True,
+                           'CFrame': {'position': [0., -5., 0.], 'rotation_id': 1}},
+        }
+        world.touch(ws_part, created=True)
+
+        predictor = RuntimePhysicsPrediction()
+        predictor.advance(world, 123, 10.)
+        self.assertIn(ws_part, predictor._geometry_keys)
+        self.assertNotIn(rs_part, predictor._geometry_keys)
+        self.assertNotIn(rs_weld, predictor._environment_keys)
+
+        # Mutating an RS part or creating a child under RS does not dirty geometry or env.
+        world.instances[rs_part]['properties']['CFrame'] = {'position': [20., 0., 0.], 'rotation_id': 1}
+        world.touch(rs_part, ['CFrame'])
+        _, full_refresh, geometry_dirty = predictor._changes_since(world)
+        self.assertFalse(full_refresh)
+        self.assertFalse(geometry_dirty)
+        self.assertFalse(predictor._env_dirty)
+        predictor.advance(world, 123, 10.1)
+
+        # Moving an anchored Workspace part sets geometry_dirty without setting _env_dirty.
+        world.instances[ws_part]['properties']['CFrame'] = {'position': [1., -5., 0.], 'rotation_id': 1}
+        world.touch(ws_part, ['CFrame'])
+        _, full_refresh, geometry_dirty = predictor._changes_since(world)
+        self.assertFalse(full_refresh)
+        self.assertTrue(geometry_dirty)
+        self.assertFalse(predictor._env_dirty)
+        predictor.advance(world, 123, 10.4)
+
+        # Reparenting Folder from ReplicatedStorage into Workspace picks up all descendants.
+        world.instances[folder]['parent'] = (1, 6)
+        world.touch(folder, ['Parent'])
+        predictor.advance(world, 123, 10.5)
+        self.assertIn(rs_part, predictor._geometry_keys)
+        self.assertIn(rs_weld, predictor._environment_keys)
+
 if __name__ == '__main__':
     unittest.main()

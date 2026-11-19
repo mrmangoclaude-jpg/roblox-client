@@ -51,6 +51,7 @@ def _class_parents():
         return {}
 
 
+@lru_cache(maxsize=512)
 def _is_part_descendant(class_name: str) -> bool:
     """Return true only for Part or a class whose pinned ancestry reaches Part."""
     parents = _class_parents()
@@ -286,6 +287,8 @@ def _received_rotation(cframe, record_type):
         return None
     rotation = cframe.get('rotation')
     if isinstance(rotation,(tuple,list)):
+        if rotation == (1.,0.,0.,0.,1.,0.,0.,0.,1.) or rotation == [1.,0.,0.,0.,1.,0.,0.,0.,1.]:
+            return (1.,0.,0.,0.,1.,0.,0.,0.,1.)
         if len(rotation) == 3 and all(isinstance(row,(tuple,list)) and len(row) == 3 for row in rotation):
             rotation = tuple(v for row in rotation for v in row)
         try:return rotation_matrix(rotation)
@@ -321,12 +324,13 @@ def _property_type_map(schema: dict, class_index: int) -> dict[str, tuple[int, i
 
 
 def _part_shape(schema: dict, property_types: dict[str, tuple[int, int | None]], props: dict,
-                *, allow_default: bool = False) -> tuple[str | None, bool]:
+                *, allow_default: bool = False, enum_names: list | None = None) -> tuple[str | None, bool]:
     """Return (shape_name, inferred); missing shape inference is opt-in only."""
     shape_names = ('Shape', 'shape', 'NetworkShape', 'PartType', 'PrimitiveType')
     present = [name for name in shape_names if name in props]
-    enum_names = [entry.get('name') for entry in schema.get('enums', [])
-                  if isinstance(entry, dict)]
+    if enum_names is None:
+        enum_names = [entry.get('name') for entry in schema.get('enums', [])
+                      if isinstance(entry, dict)]
     if not present:
         meta = property_types.get('shape')
         if (allow_default and meta is not None and meta[0] == 7
@@ -466,12 +470,16 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
 
     colliders: list[AABB | OBB] = []
     unsupported: list[tuple[Any, str]] = []
+    prop_type_cache: dict[int, dict[str, tuple[int, int | None]]] = {}
+    enum_names = [entry.get('name') for entry in schema.get('enums', [])
+                  if isinstance(entry, dict)]
     for key, instance in instances.items():
         if not isinstance(instance, dict):
             unsupported.append((key, 'invalid instance record'))
             continue
         try:
-            class_name = classes[instance['class']]['name']
+            class_index = instance['class']
+            class_name = classes[class_index]['name']
         except (KeyError, IndexError, TypeError):
             unsupported.append((key, 'invalid class reference'))
             continue
@@ -509,7 +517,11 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
             else:
                 anchored, anchored_inferred = None, False
             admitted_anchor=(anchored is True or (include_unanchored and anchored is False))
-            frame,record_type=_received_part_frame(world,key,props,_property_type_map(schema,instance['class']))
+            ptypes = prop_type_cache.get(class_index)
+            if ptypes is None:
+                ptypes = _property_type_map(schema, class_index)
+                prop_type_cache[class_index] = ptypes
+            frame,record_type=_received_part_frame(world,key,props,ptypes)
             if (isinstance(mesh,TriangleMesh) and mesh.source==key
                     and can_collide is True and admitted_anchor
                     and frame is not None and _received_rotation(frame,record_type) is not None):
@@ -532,7 +544,10 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
             continue
         if not _is_part_descendant(class_name):
             continue
-        property_types = _property_type_map(schema, instance['class'])
+        property_types = prop_type_cache.get(class_index)
+        if property_types is None:
+            property_types = _property_type_map(schema, class_index)
+            prop_type_cache[class_index] = property_types
         can_collide_inferred = False
         if 'CanCollide' in props:
             can_collide = props['CanCollide']
@@ -559,7 +574,8 @@ def extract_ground(world: object, *, allow_network_constructor_defaults: bool = 
         shape_kind, shape_inferred = _part_shape(
             schema, property_types, props,
             allow_default=(allow_network_constructor_defaults
-                           and _fresh_complete_creation(world, key)))
+                           and _fresh_complete_creation(world, key)),
+            enum_names=enum_names)
         if shape_kind is None:
             unsupported.append((key, 'Part shape is unknown or not a supported Block'))
             continue

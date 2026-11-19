@@ -192,6 +192,12 @@ int getupvalue(lua_State* L) {
     return 1;
 }
 
+int isfunctionhooked(lua_State* L) {
+    luaL_checktype(L,1,LUA_TFUNCTION);registry_table(L,kHooks);
+    lua_pushvalue(L,1);lua_rawget(L,-2);
+    const bool hooked=lua_isfunction(L,-1);lua_pop(L,2);lua_pushboolean(L,hooked);return 1;
+}
+
 } // namespace
 
 void mark_executor_closure(lua_State* L,int index) {
@@ -218,7 +224,7 @@ void push_closure_clone(lua_State* L,int index) {
 }
 
 void install_closure_bindings(lua_State* L) {
-    for(auto item:{std::pair<const char*,lua_CFunction>{"hookfunction",hookfunction},{"replaceclosure",hookfunction},{"restorefunction",restorefunction}}) {
+    for(auto item:{std::pair<const char*,lua_CFunction>{"hookfunction",hookfunction},{"replaceclosure",hookfunction},{"restorefunction",restorefunction},{"isfunctionhooked",isfunctionhooked},{"ishooked",isfunctionhooked}}) {
         lua_pushcfunction(L,item.second,item.first);mark_executor_closure(L,-1);lua_setglobal(L,item.first);
     }
     lua_pushcfunction(L, clonefunction, "clonefunction");

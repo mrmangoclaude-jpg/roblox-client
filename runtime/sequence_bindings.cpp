@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <string>
 #include <vector>
 
 namespace {
@@ -25,7 +26,7 @@ struct Sequence {
     std::vector<Keypoint> points;
 };
 struct Color { double r, g, b; };
-struct ColorKeypoint { double time; Color value; };
+struct ColorKeypoint { double time; Color value; double envelope; };
 struct ColorSequence { std::vector<ColorKeypoint> points; };
 
 double finite_number(lua_State* L, int index, const char* label) {
@@ -117,13 +118,9 @@ int push_keypoint(lua_State* L, double time, double value, double envelope) {
 }
 int keypoint_new(lua_State* L) {
     int count = lua_gettop(L);
-    if (count < 2 || count > 3) {
-        luaL_error(L, "NumberSequenceKeypoint.new expects time, value, and optional envelope");
-        return 0;
-    }
     double time = finite_number(L, 1, "time");
     double value = finite_number(L, 2, "value");
-    double envelope = count == 3 ? finite_number(L, 3, "envelope") : 0;
+    double envelope = count >= 3 ? finite_number(L, 3, "envelope") : 0;
     return push_keypoint(L, time, value, envelope);
 }
 int keypoint_index(lua_State* L) {
@@ -147,7 +144,7 @@ int immutable(lua_State* L) {
 int keypoint_tostring(lua_State* L) {
     Keypoint* p = check_keypoint(L, 1);
     char text[192];
-    int n = std::snprintf(text, sizeof(text), "%.17g, %.17g, %.17g",
+    int n = std::snprintf(text, sizeof(text), "%g %g %g ",
                           p->time, p->value, p->envelope);
     lua_pushlstring(L, text, static_cast<size_t>(n));
     return 1;
@@ -245,7 +242,13 @@ int sequence_index(lua_State* L) {
 }
 int sequence_tostring(lua_State* L) {
     Sequence* sequence = check_sequence(L, 1);
-    lua_pushfstring(L, "NumberSequence (%d keypoints)", static_cast<int>(sequence->points.size()));
+    std::string text;
+    char field[96];
+    for (const auto& p : sequence->points) {
+        int n = std::snprintf(field, sizeof(field), "%g %g %g ", p.time, p.value, p.envelope);
+        text.append(field, static_cast<size_t>(n));
+    }
+    lua_pushlstring(L, text.data(), text.size());
     return 1;
 }
 int sequence_equal(lua_State* L) {
@@ -265,28 +268,30 @@ void validate_color_time(lua_State* L, double time, int arg) {
     if (!std::isfinite(time) || time < 0 || time > 1)
         luaL_argerror(L, arg, "time must be finite and between 0 and 1");
 }
-int push_color_keypoint(lua_State* L, double time, Color color) {
+int push_color_keypoint(lua_State* L, double time, Color color, double envelope) {
     validate_color_time(L, time, 1);
     auto* point = static_cast<ColorKeypoint*>(lua_newuserdatatagged(L, sizeof(ColorKeypoint), 0));
-    new (point) ColorKeypoint{time, color};
+    new (point) ColorKeypoint{time, color, envelope};
     luaL_getmetatable(L, kColorKeypointMeta);
     lua_setmetatable(L, -2);
     return 1;
 }
 int color_keypoint_new(lua_State* L) {
-    if (lua_gettop(L) != 2) {
-        luaL_error(L, "ColorSequenceKeypoint.new expects time and Color3 value");
+    double time = finite_number(L, 1, "time");
+    Color color{};
+    if (!read_color3(L, 2, color.r, color.g, color.b)) {
+        lua_pushliteral(L, "could not parse arg #2 to ColorSequenceKeypoint.new(), Color3 expected.");
+        lua_error(L);
         return 0;
     }
-    double time = finite_number(L, 1, "time");
-    Color color = check_color3(L, 2);
-    return push_color_keypoint(L, time, color);
+    return push_color_keypoint(L, time, color, 0);
 }
 int color_keypoint_index(lua_State* L) {
     ColorKeypoint* point = check_color_keypoint(L, 1);
     const char* name = luaL_checkstring(L, 2);
     if (std::strcmp(name, "Time") == 0) lua_pushnumber(L, point->time);
     else if (std::strcmp(name, "Value") == 0) push_color3(L, point->value);
+    else if (std::strcmp(name, "Envelope") == 0) lua_pushnumber(L, point->envelope);
     else {
         luaL_getmetatable(L, kColorKeypointMeta);
         lua_pushvalue(L, 2);
@@ -297,8 +302,10 @@ int color_keypoint_index(lua_State* L) {
 }
 int color_keypoint_tostring(lua_State* L) {
     ColorKeypoint* point = check_color_keypoint(L, 1);
-    lua_pushfstring(L, "%.17g, Color3(%.17g, %.17g, %.17g)", point->time,
-                    point->value.r, point->value.g, point->value.b);
+    char text[192];
+    int n = std::snprintf(text, sizeof(text), "%g %g %g %g %g ", point->time,
+                    point->value.r, point->value.g, point->value.b, point->envelope);
+    lua_pushlstring(L, text, static_cast<size_t>(n));
     return 1;
 }
 int color_keypoint_equal(lua_State* L) {
@@ -309,7 +316,8 @@ int color_keypoint_equal(lua_State* L) {
     ColorKeypoint* a = check_color_keypoint(L, 1);
     ColorKeypoint* b = check_color_keypoint(L, 2);
     lua_pushboolean(L, a->time == b->time && a->value.r == b->value.r
-        && a->value.g == b->value.g && a->value.b == b->value.b);
+        && a->value.g == b->value.g && a->value.b == b->value.b
+        && a->envelope == b->envelope);
     return 1;
 }
 void append_color_point(lua_State* L, ColorSequence& sequence, const ColorKeypoint& point) {
@@ -362,8 +370,8 @@ int color_sequence_new(lua_State* L) {
     } else if (count == 1 || count == 2) {
         Color first = check_color3(L, 1);
         Color last = count == 2 ? check_color3(L, 2) : first;
-        sequence->points.push_back(ColorKeypoint{0, first});
-        sequence->points.push_back(ColorKeypoint{1, last});
+        sequence->points.push_back(ColorKeypoint{0, first, 0});
+        sequence->points.push_back(ColorKeypoint{1, last, 0});
     } else {
         luaL_error(L, "ColorSequence.new expects one color, two endpoint colors, or a keypoint array");
         return 0;
@@ -379,7 +387,7 @@ int color_sequence_index(lua_State* L) {
         lua_createtable(L, static_cast<int>(sequence->points.size()), 0);
         for (size_t i = 0; i < sequence->points.size(); ++i) {
             const auto& point = sequence->points[i];
-            push_color_keypoint(L, point.time, point.value);
+            push_color_keypoint(L, point.time, point.value, point.envelope);
             lua_rawseti(L, -2, static_cast<int>(i + 1));
         }
     } else {
@@ -392,7 +400,14 @@ int color_sequence_index(lua_State* L) {
 }
 int color_sequence_tostring(lua_State* L) {
     ColorSequence* sequence = check_color_sequence(L, 1);
-    lua_pushfstring(L, "ColorSequence (%d keypoints)", static_cast<int>(sequence->points.size()));
+    std::string text;
+    char field[192];
+    for (const auto& p : sequence->points) {
+        int n = std::snprintf(field, sizeof(field), "%g %g %g %g %g ", p.time,
+                              p.value.r, p.value.g, p.value.b, p.envelope);
+        text.append(field, static_cast<size_t>(n));
+    }
+    lua_pushlstring(L, text.data(), text.size());
     return 1;
 }
 int color_sequence_equal(lua_State* L) {
@@ -405,7 +420,8 @@ int color_sequence_equal(lua_State* L) {
     bool equal = a.size() == b.size();
     for (size_t i = 0; equal && i < a.size(); ++i)
         equal = a[i].time == b[i].time && a[i].value.r == b[i].value.r
-            && a[i].value.g == b[i].value.g && a[i].value.b == b[i].value.b;
+            && a[i].value.g == b[i].value.g && a[i].value.b == b[i].value.b
+            && a[i].envelope == b[i].envelope;
     lua_pushboolean(L, equal);
     return 1;
 }

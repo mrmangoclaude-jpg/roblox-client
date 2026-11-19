@@ -53,6 +53,19 @@ int compat_registry(lua_State* L) {lua_pushvalue(L,LUA_REGISTRYINDEX);return 1;}
 #include "memory_categories.inc"
 #include "filesystem_compat.inc"
 void install_local_compat(lua_State* L) {
+    // Roblox locks the string metatable: getmetatable("") yields the protection
+    // string while getrawmetatable still exposes the table. Luraph's env probe
+    // fingerprints this, so the bare Luau string metatable must carry __metatable.
+    lua_pushliteral(L,"");
+    if(lua_getmetatable(L,-1)) {
+        int was_readonly=lua_getreadonly(L,-1);
+        if(was_readonly)lua_setreadonly(L,-1,false);
+        lua_pushliteral(L,"The metatable is locked");
+        lua_setfield(L,-2,"__metatable");
+        if(was_readonly)lua_setreadonly(L,-1,true);
+        lua_pop(L,1);
+    }
+    lua_pop(L,1);
     // Retain Luau's genuine info/traceback implementations when extending the
     // debug surface. A fresh table discarded them from every source VM.
     lua_newtable(L);int debug_table=lua_gettop(L);

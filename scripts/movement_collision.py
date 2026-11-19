@@ -97,18 +97,32 @@ def rotation_matrix(value: object) -> tuple[float, ...]:
     """Validate a row-major local-to-world rigid rotation, without repairing it."""
     if not isinstance(value, (tuple, list)) or len(value) != 9:
         raise ValueError('rotation must contain nine finite numbers')
-    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in value):
-        raise ValueError('rotation must contain nine finite numbers')
-    matrix = tuple(float(v) for v in value)
-    for a in range(3):
-        for b in range(3):
-            dot = sum(matrix[3*i+a]*matrix[3*i+b] for i in range(3))
-            if abs(dot-(1.0 if a == b else 0.0)) > 1e-5:
-                raise ValueError('rotation must be orthonormal')
-    a,b,c,d,e,f,g,h,i = matrix
-    if abs(a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g)-1) > 1e-5:
+    a, b, c, d, e, f, g, h, i = value
+    isfinite = math.isfinite
+    if (type(a) is float and type(b) is float and type(c) is float
+            and type(d) is float and type(e) is float and type(f) is float
+            and type(g) is float and type(h) is float and type(i) is float):
+        if not (isfinite(a) and isfinite(b) and isfinite(c)
+                and isfinite(d) and isfinite(e) and isfinite(f)
+                and isfinite(g) and isfinite(h) and isfinite(i)):
+            raise ValueError('rotation must contain nine finite numbers')
+    else:
+        for v in value:
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not isfinite(v):
+                raise ValueError('rotation must contain nine finite numbers')
+        a, b, c, d, e, f, g, h, i = (float(a), float(b), float(c),
+                                     float(d), float(e), float(f),
+                                     float(g), float(h), float(i))
+    if (abs(a*a + d*d + g*g - 1.0) > 1e-5
+            or abs(a*b + d*e + g*h) > 1e-5
+            or abs(a*c + d*f + g*i) > 1e-5
+            or abs(b*b + e*e + h*h - 1.0) > 1e-5
+            or abs(b*c + e*f + h*i) > 1e-5
+            or abs(c*c + f*f + i*i - 1.0) > 1e-5):
+        raise ValueError('rotation must be orthonormal')
+    if abs(a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g) - 1.0) > 1e-5:
         raise ValueError('rotation must be right-handed')
-    return matrix
+    return (a, b, c, d, e, f, g, h, i)
 
 
 def ray_obb(origin: object, direction: object, center: object, half_size: object,

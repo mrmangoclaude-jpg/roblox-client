@@ -77,8 +77,15 @@ void push_geometry_item(lua_State* L,int kind,int value) {
     lua_rawgeti(L,-1,kind*64+value+1);lua_remove(L,-2);
 }
 int checked_geometry_value(lua_State* L,int index,int kind) {
-    auto* item=static_cast<GeometryEnumItem*>(luaL_checkudata(L,index,kGeometryItemMeta));
-    if(item->kind!=kind)luaL_error(L,"Enum.%s item required",kGeometryEnums[kind].name);
+    if(lua_isnoneornil(L,index))luaL_error(L,"Argument %d missing or nil",index);
+    if(!has_meta(L,index,kGeometryItemMeta)) {
+        const char* cn=luaL_typename(L,index);
+        if(lua_type(L,index)==LUA_TNUMBER)cn="double";
+        else if(lua_type(L,index)==LUA_TBOOLEAN)cn="bool";
+        luaL_error(L,"Unable to cast %s to %s",cn,kGeometryEnums[kind].name);
+    }
+    auto* item=static_cast<GeometryEnumItem*>(lua_touserdata(L,index));
+    if(item->kind!=kind)luaL_error(L,"Unable to cast %s to %s",kGeometryEnums[item->kind].name,kGeometryEnums[kind].name);
     return item->value;
 }
 int geometry_enum_readonly(lua_State* L) { luaL_error(L,"enum values are immutable");return 0; }
@@ -88,6 +95,7 @@ int geometry_item_index(lua_State* L) {
     if(key=="Name")lua_pushstring(L,kGeometryEnums[item->kind].names[item->value]);
     else if(key=="Value")lua_pushinteger(L,geometry_numeric(item->kind,item->value));
     else if(key=="EnumType")push_geometry_enum(L,item->kind);
+    else if(key=="IsA")lua_pushcfunction(L,[](lua_State* S)->int{lua_pushboolean(S,0);return 1;},"EnumItem.IsA");
     else luaL_error(L,"unknown EnumItem member");
     return 1;
 }
@@ -165,13 +173,13 @@ void install_geometry_enums(lua_State* L) {
     geometry_enum_method(L,"__tostring",geometry_item_string);
     geometry_enum_method(L,"__eq",geometry_item_equal);
     lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"immutable geometry EnumItem");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kGeometryEnumMeta);
     geometry_enum_method(L,"__index",geometry_enum_index);
     geometry_enum_method(L,"__newindex",geometry_enum_readonly);
     geometry_enum_method(L,"__tostring",geometry_enum_string);
     lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"immutable geometry Enum");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     lua_newtable(L);int enums=lua_gettop(L);
     lua_newtable(L);int items=lua_gettop(L);
     for(int kind=0;kind<int(std::size(kGeometryEnums));++kind) {
@@ -223,4 +231,10 @@ int vector3_from_normal(lua_State* L) {
 void install_geometry_vector_constructors(lua_State* L) {
     geometry_enum_method(L,"FromAxis",vector3_from_axis);
     geometry_enum_method(L,"FromNormalId",vector3_from_normal);
+    geometry_enum_method(L,"fromAxis",vector3_from_axis);
+    geometry_enum_method(L,"fromNormalId",vector3_from_normal);
+    lua_getglobal(L,"vector");
+    lua_getfield(L,-1,"min"); lua_setfield(L,-3,"min");
+    lua_getfield(L,-1,"max"); lua_setfield(L,-3,"max");
+    lua_pop(L,1);
 }

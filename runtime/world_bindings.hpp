@@ -292,6 +292,7 @@ void complete_text_service(lua_State* from,World& world,const Json& responses);
 void complete_remote_server(lua_State* from,World& world,const Json& responses);
 void push_instance(lua_State* L,World& world,const std::string& id);
 std::string instance_display_name(World& world,const std::string& id);
+std::string instance_script_chunkname(World& world,const std::string& id);
 Json script_nodes(World& world);
 const std::vector<std::string>& get_script_order(World& world);
 // Read-only bounded projection for local browser/native display surfaces.

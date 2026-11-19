@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from session_integrity import bind_container_observer, container_candidate_probe
 
 MAX_CODE = 128 * 1024
-MAX_CATALOG = 3 * 1024 * 1024
+MAX_CATALOG = 32 * 1024 * 1024
 
 
 def _referenced_shared(value, shared, out, depth=0):
@@ -28,7 +28,7 @@ def _referenced_shared(value, shared, out, depth=0):
 class CodePreparationQueue:
     """Bounded background verifier; never stall the network event loop."""
     def __init__(self):
-        self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='script-code')
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='script-code')
         self.pending = {}
 
     def resolve(self, key, digest, properties, shared, *, allow_small_unsigned=False):
@@ -43,7 +43,7 @@ class CodePreparationQueue:
                 try:return future.result()
                 except Exception:return {'reason':'code_preparation_failed'}
             else:return None
-        if len(self.pending) < 64:
+        if len(self.pending) < 512:
             code = {name: properties.get(name) for name in ('Source','Bytecode','ScriptBytecode')}
             needed_shared = {}
             for v in code.values():
@@ -109,11 +109,14 @@ def prepare_script(properties, shared=None, *, verify=None, unpack=None, normali
     # can reject valid code, or mistake encoded instructions for plain Luau.
     # Keep generic format inference in bytecode_container for unknown inputs.
     normalize = normalize or (lambda original: standardize_opcodes(original, '203'))
-    reason = 'unsupported_protected_code'
+    reason = 'code_unavailable'
     for raw in candidates[:8]:
-        if not 0 < len(raw) <= MAX_CODE:
+        if not raw:
+            continue
+        if len(raw) > MAX_CODE:
             reason = 'bytecode_size_limit'
             continue
+        reason = 'unsupported_protected_code'
         originals = [raw]
         unpacked = None
         try:
@@ -186,6 +189,38 @@ def _script_priority(world, key, instance, class_name):
     return 2
 
 
+def _update_fingerprint(fingerprint, value):
+    """Hash nested property structures directly without huge repr(bytes) copies."""
+    t = type(value)
+    if value is None:
+        fingerprint.update(b'N')
+    elif t is bytes or t is bytearray:
+        fingerprint.update(b'B')
+        fingerprint.update(len(value).to_bytes(8, 'little'))
+        fingerprint.update(value)
+    elif t is str:
+        raw = value.encode('utf-8', 'surrogatepass')
+        fingerprint.update(b'S')
+        fingerprint.update(len(raw).to_bytes(8, 'little'))
+        fingerprint.update(raw)
+    elif t is dict:
+        fingerprint.update(b'D')
+        fingerprint.update(len(value).to_bytes(8, 'little'))
+        for k, v in value.items():
+            _update_fingerprint(fingerprint, k)
+            _update_fingerprint(fingerprint, v)
+    elif t is tuple or t is list:
+        fingerprint.update(b'T' if t is tuple else b'L')
+        fingerprint.update(len(value).to_bytes(8, 'little'))
+        for item in value:
+            _update_fingerprint(fingerprint, item)
+    else:
+        raw = repr(value).encode('utf-8', 'surrogatepass')
+        fingerprint.update(b'R')
+        fingerprint.update(len(raw).to_bytes(8, 'little'))
+        fingerprint.update(raw)
+
+
 def script_catalog(world):
     """Cache by each script's actual code/shared-string inputs, not world traffic."""
     cache = getattr(world, '_script_catalog_cache', {})
@@ -193,22 +228,25 @@ def script_catalog(world):
     allow_small_unsigned = getattr(world, 'allow_small_unsigned_scripts', False) is True
     policy = {'allow_small_unsigned': True} if allow_small_unsigned else {}
     classes = world.schema['classes']
+    script_cids = frozenset(
+        i for i, cls in enumerate(classes)
+        if cls['name'] in ('Script', 'LocalScript', 'ModuleScript')
+    )
     script_items = []
     for key, instance in world.instances.items():
-        cname = classes[instance['class']]['name']
-        if cname in ('Script', 'LocalScript', 'ModuleScript'):
-            script_items.append((_script_priority(world, key, instance, cname), key, instance))
+        cidx = instance['class']
+        if cidx in script_cids:
+            script_items.append((_script_priority(world, key, instance, classes[cidx]['name']), key, instance))
     if len(script_items) > 4096:
         raise ValueError('Script catalog exceeds 4096 entries')
     script_items.sort(key=lambda item: item[0])
     for _, key, instance in script_items:
         properties = instance['properties']
-        # repr is only an in-memory fingerprint input; it is never printed/saved.
         fingerprint = hashlib.sha256()
         fingerprint.update(bytes((allow_small_unsigned,)))
         for name in ('Source', 'Bytecode', 'ScriptBytecode'):
             value = properties.get(name)
-            fingerprint.update(repr(value).encode())
+            _update_fingerprint(fingerprint, value)
             for candidate in _candidates(value, world.shared):
                 fingerprint.update(candidate)
         digest = fingerprint.digest()
@@ -242,6 +280,6 @@ def script_catalog(world):
     world._script_catalog_cache = next_cache
     queue = getattr(world, '_script_preparation_queue', None)
     if queue is not None:
-        for key in set(queue.pending)-set(world.instances):
+        for key in [k for k in queue.pending if k not in world.instances]:
             queue.pending.pop(key)[1].cancel()
     return current

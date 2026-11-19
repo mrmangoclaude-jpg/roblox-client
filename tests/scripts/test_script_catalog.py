@@ -45,6 +45,8 @@ class ScriptCatalogTests(unittest.TestCase):
         self.assertEqual(prepare_script({'Source': 'return "hello"'})['source'], 'return "hello"')
         self.assertEqual(prepare_script({}), {'reason': 'code_unavailable'})
         self.assertEqual(prepare_script({'Source': 'x' * (128*1024+1)})['reason'], 'source_size_limit')
+        self.assertEqual(prepare_script({'Bytecode': b''})['reason'], 'code_unavailable')
+        self.assertEqual(prepare_script({'Bytecode': b'x' * (128*1024+1)})['reason'], 'bytecode_size_limit')
 
     def test_signature_verification_precedes_normalization(self):
         calls=[]

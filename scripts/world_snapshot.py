@@ -241,8 +241,12 @@ def _node_snapshot(world, key, instance, *, creation=None, versions=None):
             'property_revisions': versions}
 
 
-def make_world_snapshot(world, user_id, *, job_id=None, include_script_sources=True):
-    if len(world.instances) > MAX_NODES-1:
+def make_world_snapshot(world, user_id, *, job_id=None, place_id=None, game_id=None,
+                        include_script_sources=True, max_nodes=None, excluded_ids=None):
+    node_limit = MAX_NODES if max_nodes is None else max_nodes
+    excluded = excluded_ids or ()
+    included_count = len(world.instances) - sum(1 for k in excluded if k in world.instances) if excluded else len(world.instances)
+    if included_count > node_limit - 1:
         raise ValueError('World snapshot node limit exceeded')
     parents = json.loads((ROOT/'runtime/class-parents-745.json').read_text())['parents']
     class_parents = {name: parent for name, parent in parents.items() if isinstance(parent, str)}
@@ -251,8 +255,16 @@ def make_world_snapshot(world, user_id, *, job_id=None, include_script_sources=T
     if job_id is not None:
         nodes[0]['properties']['JobId'] = job_id
         nodes[0]['origins']['JobId'] = 'issued_session'
+    if place_id is not None:
+        nodes[0]['properties']['PlaceId'] = place_id
+        nodes[0]['origins']['PlaceId'] = 'issued_session'
+    if game_id is not None:
+        nodes[0]['properties']['GameId'] = game_id
+        nodes[0]['origins']['GameId'] = 'issued_session'
     services = {}
     for key, instance in world.instances.items():
+        if key in excluded:
+            continue
         node = _node_snapshot(world, key, instance)
         if key in world.top_containers:
             services[node['class_name']] = node['id']
@@ -304,7 +316,7 @@ def make_world_snapshot(world, user_id, *, job_id=None, include_script_sources=T
     return snapshot
 
 
-def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None):
+def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None, skip_record=None):
     if max_actions is not None and (type(max_actions) is not int or max_actions < 1):
         raise ValueError('Delta action budget must be positive')
     if max_bytes is not None and (type(max_bytes) is not int or max_bytes < 1024):
@@ -315,6 +327,7 @@ def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None)
     actions = []
     used_bytes = 256  # Envelope and final sequence; leave room for JSON separators.
     sequence = world.revision
+    last_handled = since_revision
     records = retained(since_revision) if retained else world.actions
     if retained is None and records and since_revision >= records[len(records) // 2]['sequence']:
         # A caught-up consumer needs only the recent suffix. Walk it backwards
@@ -330,8 +343,11 @@ def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None)
         if record['sequence'] <= since_revision:
             continue
         if max_actions is not None and len(actions) >= max_actions:
-            sequence = actions[-1]['sequence']
+            sequence = last_handled
             break
+        if skip_record is not None and skip_record(record):
+            last_handled = record['sequence']
+            continue
         kind = record['kind']
         action = {'sequence': record['sequence'], 'kind': kind, 'id': instance_id(record['key'])}
         if kind == 'create':
@@ -367,10 +383,11 @@ def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None)
         if max_bytes is not None and used_bytes + size > max_bytes:
             if not actions:
                 raise ValueError('One world action exceeds the delta byte budget')
-            sequence = actions[-1]['sequence']
+            sequence = last_handled
             break
         actions.append(action)
         used_bytes += size
+        last_handled = record['sequence']
     return {'version': 1, 'delta': True, 'sequence': sequence, 'actions': actions}
 
 

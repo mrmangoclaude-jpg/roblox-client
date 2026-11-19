@@ -134,7 +134,8 @@ function getcustomassetdata(uri)
     assert(type(uri)=="string" and assets[uri],"unknown workspace asset")
     return readfile(assets[uri])
 end
-function identifyexecutor() return "Roblox Client Research", "local-vm-1" end
+-- Executor identity must read as a native C closure: Luraph env probes hash iscclosure(identifyexecutor).
+identifyexecutor = newcclosure(function() return "Roblox Client Research", "local-vm-1" end, "identifyexecutor")
 getexecutorname=identifyexecutor
 local identities=setmetatable({}, {__mode="k"})
 function getthreadidentity() return identities[coroutine.running()] or 2 end
@@ -152,4 +153,26 @@ function hookmetamethod(object,name,callback)
     local ok,err=pcall(rawset,mt,name,callback);setreadonly(mt,readonly)
     assert(ok,err);return previous
 end
+-- Native executor helpers read as C closures; env probes hash iscclosure/setfenv on them.
+getcustomasset = newcclosure(getcustomasset, "getcustomasset")
+getsynasset = newcclosure(function(p) return getcustomasset(p) end, "getsynasset")
+hookmetamethod = newcclosure(hookmetamethod, "hookmetamethod")
+-- Workspace file helpers are native executor closures too; the env probe's setfenv
+-- sweep hashes iscclosure/setfenv across every global, so Lua here diverges the key.
+isfile = newcclosure(isfile, "isfile")
+isfolder = newcclosure(isfolder, "isfolder")
+makefolder = newcclosure(makefolder, "makefolder")
+readfile = newcclosure(readfile, "readfile")
+readfilechunk = newcclosure(readfilechunk, "readfilechunk")
+getfileinfo = newcclosure(getfileinfo, "getfileinfo")
+setworkspacequota = newcclosure(setworkspacequota, "setworkspacequota")
+writefile = newcclosure(writefile, "writefile")
+appendfile = newcclosure(appendfile, "appendfile")
+listfiles = newcclosure(listfiles, "listfiles")
+delfile = newcclosure(delfile, "delfile")
+delfolder = newcclosure(delfolder, "delfolder")
+loadfile = newcclosure(loadfile, "loadfile")
+dofile = newcclosure(dofile, "dofile")
+runfile = dofile
+getcustomassetdata = newcclosure(getcustomassetdata, "getcustomassetdata")
 )LOCALWORKSPACE"
