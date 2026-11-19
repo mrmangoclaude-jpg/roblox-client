@@ -324,6 +324,19 @@ CFrameValue* new_cframe(lua_State* L) {
 }
 
 Handle* checked_handle(lua_State* L, int i) {
+    if (i == 1) {
+        bool is_instance = false;
+        if (lua_type(L, 1) == LUA_TUSERDATA && lua_getmetatable(L, 1)) {
+            luaL_getmetatable(L, kInstanceMeta);
+            is_instance = lua_rawequal(L, -1, -2) != 0;
+            lua_pop(L, 2);
+        }
+        if (!is_instance) {
+            // A member function called with '.' receives no Instance as its first argument. Roblox names the function.
+            lua_Debug frame{};
+            if (lua_getinfo(L, 0, "n", &frame) && frame.name) luaL_error(L, "Expected ':' not '.' calling member function %s", frame.name);
+        }
+    }
     return static_cast<Handle*>(luaL_checkudata(L, i, kInstanceMeta));
 }
 bool has_meta(lua_State* L, int i, const char* name) {
@@ -817,6 +830,7 @@ int get_service(lua_State* L) {
         push_node(L,*h->world,find_node(*h->world,kUserGameSettingsId));return 1;
     }
     if(h->node->id!=h->world->game_id){luaL_error(L,"GetService requires ServiceProvider");return 0;}
+    if(lua_isnoneornil(L,2))return luaL_error(L,"Argument 1 missing or nil"),0;
     std::string service=luaL_checkstring(L,2); auto it=h->world->services.find(service);
     if(it==h->world->services.end()&&local_service_supported(service)) {
         try {push_node(L,*h->world,ensure_client_service(*h->world,service));return 1;}
@@ -916,6 +930,28 @@ int run_service_false(lua_State* L) {
     if (h->node->class_name != "RunService") { luaL_error(L,"RunService receiver required"); return 0; }
     lua_pushboolean(L,false); return 1;
 }
+// HttpService requests cannot be issued from a client. Roblox validates the arguments first, then refuses.
+void http_validate_url(lua_State* L,int index) {
+    if(lua_isnoneornil(L,index))luaL_error(L,"Argument %d missing or nil",index-1);
+    if(lua_type(L,index)!=LUA_TSTRING)luaL_error(L,"Invalid URL type, URL should be a string or secret.");
+    size_t length=0;const char* url=lua_tolstring(L,index,&length);
+    auto starts=[&](const char* prefix){size_t n=std::strlen(prefix);if(length<n)return false;for(size_t i=0;i<n;++i)if(std::tolower(static_cast<unsigned char>(url[i]))!=prefix[i])return false;return true;};
+    if(!starts("http://")&&!starts("https://"))luaL_error(L,"URL must be http");
+}
+int http_get_async(lua_State* L){checked_handle(L,1);http_validate_url(L,2);return luaL_error(L,"Http requests can only be executed by game server"),0;}
+int http_post_async(lua_State* L){checked_handle(L,1);http_validate_url(L,2);if(lua_isnoneornil(L,3))luaL_error(L,"Argument 2 missing or nil");return luaL_error(L,"Http requests can only be executed by game server"),0;}
+int http_request_async(lua_State* L){
+    checked_handle(L,1);
+    if(lua_isnoneornil(L,2))luaL_error(L,"Argument 1 missing or nil");
+    if(!lua_istable(L,2))luaL_error(L,"Invalid request options");
+    lua_getfield(L,2,"Url");if(lua_type(L,-1)!=LUA_TSTRING||lua_objlen(L,-1)==0)luaL_error(L,"Invalid request options, Url is empty");
+    http_validate_url(L,lua_gettop(L));
+    return luaL_error(L,"Http requests can only be executed by game server"),0;
+}
+int http_internal_only(lua_State* L){
+    checked_handle(L,1);lua_Debug frame{};const char* name=lua_getinfo(L,0,"n",&frame)&&frame.name?frame.name:"?";
+    return luaL_error(L,"The current thread cannot call '%s' (lacking capability %s)",name,"RobloxScript"),0;
+}
 int get_secret(lua_State* L) {
     checked_handle(L,1);
     luaL_checkstring(L,2);
@@ -943,6 +979,7 @@ int get_teleport_setting(lua_State* L) {
 int clone_instance(lua_State* L);
 // Set by Instance.fromExisting: copy only the instance itself, and ignore Archivable.
 static bool clone_root_only=false,clone_ignore_archivable=false;
+std::string instance_full_name(World& w,Node& node);
 bool client_service_index(lua_State* L,World& world,Node& node,const std::string& key);
 int destroy_instance(lua_State* L);
 int clear_children(lua_State* L);
@@ -977,11 +1014,9 @@ Signal& signal_for(World& w,Node& node,const std::string& key) {
     auto& ref=*signal;w.signals.emplace(id,std::move(signal));return ref;
 }
 void push_signal(lua_State* L,Signal& signal) {
-    lua_pushlightuserdata(L,&signal);lua_rawget(L,LUA_REGISTRYINDEX);
-    if(lua_isuserdata(L,-1))return;lua_pop(L,1);
+    // Roblox creates a new signal object for every index: they compare equal (__eq) but rawequal is false.
     auto* handle=static_cast<SignalHandle*>(lua_newuserdatatagged(L,sizeof(SignalHandle),0));handle->signal=&signal;
     luaL_getmetatable(L,kSignalMeta);lua_setmetatable(L,-2);
-    lua_pushlightuserdata(L,&signal);lua_pushvalue(L,-2);lua_rawset(L,LUA_REGISTRYINDEX);
 }
 void emit(World& w,Node& node,const std::string& key,Json args=Json::array(),int argument_ref=LUA_NOREF,int argument_count=0) {
     std::string id=Json::array({node.id,key}).dump();auto signal=w.signals.find(id);if(signal==w.signals.end())return;
@@ -1235,7 +1270,7 @@ int text_service_request(lua_State*);
 int text_service_continue(lua_State*,int);
 bool text_font_index(lua_State*,World&,Node&,const std::string&);
 #include "path2d_bindings.inc"
-int instance_index(lua_State* L) {
+int instance_index_raw(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world; Node& n=*h->node; std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);
     if(api_trace_enabled())api_trace(L,"get",n.class_name+"."+key);
     if(n.class_name=="VirtualInputManager"&&virtual_input_index(L,key))return 1;
@@ -1347,13 +1382,13 @@ int instance_index(lua_State* L) {
     if(camera_index(L,w,n,key))return 1;
     try{if(collision_groups_index(L,w,n,key))return 1;}catch(const std::exception& e){luaL_error(L,"collision groups: %s",e.what());return 0;}
     if(key=="GetNoCollisionConstraints"&&pivot_part(w,n)){lua_pushcfunction(L,get_no_collision_constraints,"GetNoCollisionConstraints");return 1;}
-    if((n.class_name=="Workspace"||n.class_name=="WorldModel")&&key=="Raycast") {lua_pushcfunction(L,world_root_raycast,"WorldRoot.Raycast");return 1;}
-    if(collision_world_root(n)&&key=="Spherecast") {lua_pushcfunction(L,world_root_spherecast,"WorldRoot.Spherecast");return 1;}
-    if(collision_world_root(n)&&key=="Blockcast") {lua_pushcfunction(L,world_root_blockcast,"WorldRoot.Blockcast");return 1;}
+    if((n.class_name=="Workspace"||n.class_name=="WorldModel")&&key=="Raycast") {lua_pushcfunction(L,world_root_raycast,"Raycast");return 1;}
+    if(collision_world_root(n)&&key=="Spherecast") {lua_pushcfunction(L,world_root_spherecast,"Spherecast");return 1;}
+    if(collision_world_root(n)&&key=="Blockcast") {lua_pushcfunction(L,world_root_blockcast,"Blockcast");return 1;}
     if(collision_world_root(n)&&(key=="GetPartBoundsInBox"||key=="GetPartBoundsInRadius")) {lua_pushlstring(L,key.data(),key.size());lua_pushcclosure(L,world_root_overlap,key.c_str(),1);return 1;}
     if(collision_world_root(n)&&world_region_method(key)) {lua_pushlstring(L,key.data(),key.size());lua_pushcclosure(L,world_root_region,key.c_str(),1);return 1;}
     if(collision_world_root(n)&&world_legacy_ray_method(key)) {lua_pushlstring(L,key.data(),key.size());lua_pushcclosure(L,world_root_legacy_ray,key.c_str(),1);return 1;}
-    if(collision_world_root(n)&&key=="BulkMoveTo"){lua_pushcfunction(L,world_root_bulk_move,"WorldRoot.BulkMoveTo");return 1;}
+    if(collision_world_root(n)&&key=="BulkMoveTo"){lua_pushcfunction(L,world_root_bulk_move,"BulkMoveTo");return 1;}
     try{if(mouse_projection_index(L,w,n,key))return 1;}catch(const std::exception& e){luaL_error(L,"mouse projection: %s",e.what());return 0;}
     try{if(model_pivot_index(L,w,n,key))return 1;}catch(const std::exception& e){luaL_error(L,"model pivot unavailable: %s",e.what());return 0;}
     if(n.class_name=="SpecialMesh"&&key=="MeshType") {
@@ -1383,7 +1418,7 @@ int instance_index(lua_State* L) {
     if(client_service_index(L,w,n,key)||collection_instance_index(L,w,n,key))return 1;
     if(n.class_name=="EncodingService"&&encoding_service_index(L,key))return 1;
     if(n.class_name=="TweenService"&&key=="GetValue"){lua_pushcfunction(L,tween_service_get_value,"GetValue");return 1;}
-    if(key=="GetService"){lua_pushcfunction(L,get_service,"GetService");return 1;}
+    if(key=="GetService"&&(n.id==w.game_id||n.id==kSettingsId)){lua_pushcfunction(L,get_service,"GetService");return 1;} // only ServiceProviders have it
     if(key=="FindService"){lua_pushcfunction(L,find_service,"FindService");return 1;}
     if(key=="GetChildren"){lua_pushcfunction(L,get_children,"GetChildren");return 1;}
     if(key=="GetDescendants"){lua_pushcfunction(L,get_descendants,"GetDescendants");return 1;}
@@ -1438,6 +1473,11 @@ int instance_index(lua_State* L) {
         lua_pushlstring(L,key.data(),key.size());lua_pushcclosurek(L,local_json,key.c_str(),1,nullptr);return 1;
     }
     if(n.class_name=="HttpService"&&key=="UrlEncode"){lua_pushcfunction(L,http_url_encode,"UrlEncode");return 1;}
+    if(n.class_name=="HttpService"&&key=="GetAsync"){lua_pushcfunction(L,http_get_async,"GetAsync");return 1;}
+    if(n.class_name=="HttpService"&&key=="PostAsync"){lua_pushcfunction(L,http_post_async,"PostAsync");return 1;}
+    if(n.class_name=="HttpService"&&key=="RequestAsync"){lua_pushcfunction(L,http_request_async,"RequestAsync");return 1;}
+    if(n.class_name=="HttpService"&&(key=="RequestInternal"||key=="SetHttpEnabled")){lua_pushcfunction(L,http_internal_only,key.c_str());return 1;}
+    if(n.class_name=="HttpService"&&key=="HttpEnabled"){lua_pushboolean(L,0);return 1;}
     if(n.class_name=="HttpService"&&key=="GenerateGUID"){lua_pushcfunction(L,generate_guid,"GenerateGUID");return 1;}
     if(key=="GetSecret"){lua_pushcfunction(L,get_secret,"GetSecret");return 1;}
     if(n.class_name=="LogService"&&key=="GetLogHistory"){lua_pushcfunction(L,log_get_history,"GetLogHistory");return 1;}
@@ -1478,12 +1518,19 @@ int instance_index(lua_State* L) {
     if(key=="Changed"||key=="AttributeChanged"||key=="ChildAdded"||key=="ChildRemoved"||key=="DescendantAdded"||key=="DescendantRemoving"||key=="AncestryChanged"||key=="Destroying") {
         try{push_signal(L,signal_for(w,n,key));}catch(const std::exception& e){luaL_error(L,"signal unavailable: %s",e.what());}return 1;
     }
-    if(n.class_name=="RunService" && (key=="IsStudio" || key=="IsServer" || key=="IsEdit" || key=="IsRunMode")){lua_pushcfunction(L,run_service_false,"RunService mode");return 1;}
-    if(n.class_name=="RunService" && (key=="IsRunning" || key=="IsClient")){lua_pushcfunction(L,run_service_true,"RunService mode");return 1;}
+    if(n.class_name=="RunService" && (key=="IsStudio" || key=="IsServer" || key=="IsEdit" || key=="IsRunMode")){lua_pushcfunction(L,run_service_false,key.c_str());return 1;}
+    if(n.class_name=="RunService" && (key=="IsRunning" || key=="IsClient")){lua_pushcfunction(L,run_service_true,key.c_str());return 1;}
     const Json* value=property_value(w,n,key);
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
     if(!value)for(const auto& id:direct_children(w,n.id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
-    if(!value){luaL_error(L,"property '%s' unavailable in snapshot for %s (%s)",key.c_str(),n.name.c_str(),n.class_name.c_str());return 0;}
+    if(!value) {
+        // A member the class does not have reads as Roblox words it: X is not a valid member of Class "Full.Name".
+        auto known=w.class_property_types.find(n.class_name);
+        if(known==w.class_property_types.end()||!known->contains(key)) {
+            luaL_error(L,"%s is not a valid member of %s \"%s\"",key.c_str(),n.class_name.c_str(),instance_full_name(w,n).c_str());return 0;
+        }
+        luaL_error(L,"property '%s' unavailable in snapshot for %s (%s)",key.c_str(),n.name.c_str(),n.class_name.c_str());return 0;
+    }
     // The replication reader retains PhysicalProperties as a 5/6-scalar
     // array. Expose the typed source value without altering received data.
     if(const Json* descriptor=property_descriptor(n,key)) {
@@ -1501,6 +1548,36 @@ int instance_index(lua_State* L) {
         }
     }
     push_json(L,w,*value);return 1;
+}
+// Full name as error messages print it: "Workspace.Model.Part", without the DataModel.
+std::string instance_full_name(World& w,Node& node) {
+    std::vector<std::string> parts;Node* walk=&node;size_t hops=0;
+    while(walk&&walk->id!=w.game_id&&hops++<=w.nodes.size()){parts.push_back(instance_name(w,*walk));std::string up=parent_id(w,*walk);walk=up.empty()?nullptr:find_node(w,up);}
+    std::string full;for(auto it=parts.rbegin();it!=parts.rend();++it){if(!full.empty())full+='.';full+=*it;}
+    return full;
+}
+char instance_method_cache_key;
+// Roblox hands out one function object per member function, so game.GetService == game.GetService and
+// Folder.Destroy == Part.Destroy. Protected scripts compare these. The code above creates member functions per index,
+// so intern the plain ones (no upvalues) by their C entry point.
+int instance_index(lua_State* L) {
+    const int result=instance_index_raw(L);
+    if(result==1&&lua_iscfunction(L,-1)) {
+        if(lua_getupvalue(L,-1,1)){lua_pop(L,1);return result;}
+        // Several members can share one C entry point (RunService.IsStudio/IsClient/IsServer), so the name is part of the key.
+        lua_CFunction entry=lua_tocfunction(L,-1);
+        lua_Debug member{};lua_getinfo(L,-1,"n",&member);
+        char identity[32];std::snprintf(identity,sizeof(identity),"%p:",reinterpret_cast<void*>(entry));
+        const std::string cache_key=std::string(identity)+(member.name?member.name:"");
+        lua_pushlightuserdata(L,&instance_method_cache_key);lua_rawget(L,LUA_REGISTRYINDEX);
+        if(!lua_istable(L,-1)){lua_pop(L,1);lua_newtable(L);lua_pushlightuserdata(L,&instance_method_cache_key);lua_pushvalue(L,-2);lua_rawset(L,LUA_REGISTRYINDEX);}
+        lua_pushlstring(L,cache_key.data(),cache_key.size());lua_rawget(L,-2);
+        if(lua_isfunction(L,-1)){lua_remove(L,-2);lua_remove(L,-2);return 1;}
+        lua_pop(L,1);
+        lua_pushlstring(L,cache_key.data(),cache_key.size());lua_pushvalue(L,-3);lua_rawset(L,-3);
+        lua_pop(L,1);
+    }
+    return result;
 }
 
 Json vector_to_json(lua_State* L,int i){const LUA_VECTOR_TYPE* v=lua_tovector(L,i);if(!v)throw std::runtime_error("invalid vector");return Json{{"$vector3",Json::array({encode_number(v[0]),encode_number(v[1]),encode_number(v[2])})}};}
@@ -1880,19 +1957,31 @@ int attribute_changed_signal(lua_State* L) {
     auto* h=checked_handle(L,1);size_t n;const char* name=luaL_checklstring(L,2,&n);
     try{push_signal(L,signal_for(*h->world,*h->node,"attribute:"+std::string(name,n)));}catch(const std::exception& e){luaL_error(L,"signal unavailable: %s",e.what());}return 1;
 }
+// Roblox words a wrong receiver as "invalid argument #1 to 'Connect' (RBXScriptSignal expected, got number)".
+void require_receiver(lua_State* L,const char* meta,const char* type_name) {
+    bool ok=false;
+    if(lua_type(L,1)==LUA_TUSERDATA&&lua_getmetatable(L,1)){luaL_getmetatable(L,meta);ok=lua_rawequal(L,-1,-2)!=0;lua_pop(L,2);}
+    if(!ok)luaL_typeerror(L,1,type_name);
+}
 int disconnect_connection(lua_State* L) {
-    auto* handle=static_cast<ConnectionHandle*>(luaL_checkudata(L,1,kConnectionMeta));
+    require_receiver(L,kConnectionMeta,"RBXScriptConnection");
+    auto* handle=static_cast<ConnectionHandle*>(lua_touserdata(L,1));
     handle->connection->connected=false;handle->connection->manually_disconnected=true;return 0;
 }
 int connection_index(lua_State* L) {
-    auto* handle=static_cast<ConnectionHandle*>(luaL_checkudata(L,1,kConnectionMeta));const char* key=luaL_checkstring(L,2);
+    require_receiver(L,kConnectionMeta,"RBXScriptConnection");
+    auto* handle=static_cast<ConnectionHandle*>(lua_touserdata(L,1));const char* key=luaL_checkstring(L,2);
     if(std::strcmp(key,"Connected")==0){lua_pushboolean(L,handle->connection->connected);return 1;}
     if(connection_compat_index(L,*handle->connection,key))return 1;
     if(std::strcmp(key,"Disconnect")==0||std::strcmp(key,"disconnect")==0){lua_pushcfunction(L,disconnect_connection,"Disconnect");return 1;}
-    luaL_error(L,"unknown RBXScriptConnection member");return 0;
+    luaL_error(L,"%s is not a valid member of RBXScriptConnection",key);return 0;
 }
 int connect_signal(lua_State* L) {
-    auto* h=static_cast<SignalHandle*>(luaL_checkudata(L,1,kSignalMeta));luaL_checktype(L,2,LUA_TFUNCTION);
+    require_receiver(L,kSignalMeta,"RBXScriptSignal");
+    auto* h=static_cast<SignalHandle*>(lua_touserdata(L,1));
+    // Roblox accepts any callback here; a non-function simply never runs.
+    if(!lua_isfunction(L,2)){lua_settop(L,1);lua_pushcfunction(L,[](lua_State*)->int{return 0;},nullptr);}
+    lua_settop(L,2);
     auto& w=*h->signal->world;
     if(w.connections.size()>=2048){luaL_error(L,"local connection count limit exceeded");return 0;}
     auto connection=std::make_unique<Connection>();connection->signal=h->signal;
@@ -1905,7 +1994,8 @@ int connect_signal(lua_State* L) {
     luaL_getmetatable(L,kConnectionMeta);lua_setmetatable(L,-2);return 1;
 }
 int wait_signal(lua_State* L) {
-    auto* h=static_cast<SignalHandle*>(luaL_checkudata(L,1,kSignalMeta));auto& w=*h->signal->world;
+    require_receiver(L,kSignalMeta,"RBXScriptSignal");
+    auto* h=static_cast<SignalHandle*>(lua_touserdata(L,1));auto& w=*h->signal->world;
     if(!w.scheduler||!lua_isyieldable(L)){luaL_error(L,"signal Wait requires a scheduled yieldable source thread");return 0;}
     auto& waiters=w.waiters[h->signal];if(waiters.size()>=2048){luaL_error(L,"signal waiter limit exceeded");return 0;}
     try{w.scheduler->wait_signal(L);}catch(const std::exception& e){luaL_error(L,"signal wait failed: %s",e.what());return 0;}
@@ -1981,12 +2071,19 @@ int send_chat_request(lua_State* L,bool universe) {
 int send_chat(lua_State* L){return send_chat_request(L,false);}
 int send_universe_chat(lua_State* L){return send_chat_request(L,true);}
 int signal_index(lua_State* L) {
-    luaL_checkudata(L,1,kSignalMeta);const char* key=luaL_checkstring(L,2);
-    if(std::strcmp(key,"Connect")==0||std::strcmp(key,"connect")==0||std::strcmp(key,"Once")==0) {
+    require_receiver(L,kSignalMeta,"RBXScriptSignal");const char* key=luaL_checkstring(L,2);
+    if(std::strcmp(key,"Connect")==0||std::strcmp(key,"connect")==0||std::strcmp(key,"Once")==0||std::strcmp(key,"ConnectParallel")==0) {
         lua_pushboolean(L,std::strcmp(key,"Once")==0);lua_pushcclosurek(L,connect_signal,"Connect",1,nullptr);return 1;
     }
     if(std::strcmp(key,"Wait")==0||std::strcmp(key,"wait")==0){lua_pushcfunction(L,wait_signal,"Wait");return 1;}
-    luaL_error(L,"unknown RBXScriptSignal member");return 0;
+    luaL_error(L,"%s is not a valid member of RBXScriptSignal",key);return 0;
+}
+int signal_equal(lua_State* L) {
+    const bool a=lua_type(L,1)==LUA_TUSERDATA&&lua_getmetatable(L,1);
+    bool both=false;
+    if(a){luaL_getmetatable(L,kSignalMeta);both=lua_rawequal(L,-1,-2)!=0;lua_pop(L,2);}
+    if(both&&lua_type(L,2)==LUA_TUSERDATA&&lua_getmetatable(L,2)){luaL_getmetatable(L,kSignalMeta);both=lua_rawequal(L,-1,-2)!=0;lua_pop(L,2);}else both=false;
+    lua_pushboolean(L,both&&static_cast<SignalHandle*>(lua_touserdata(L,1))->signal==static_cast<SignalHandle*>(lua_touserdata(L,2))->signal);return 1;
 }
 int signal_newindex(lua_State* L) {
     luaL_checkudata(L,1,kSignalMeta);const char* key=luaL_checkstring(L,2);
@@ -2185,7 +2282,7 @@ int instance_newindex(lua_State* L){
                 throw std::runtime_error("Parent property is locked after Destroy");
             }
             if(lua_isnil(L,3))value=nullptr;
-            else {Handle*p=checked_handle(L,3);if(p->world!=&w)throw std::runtime_error("parent belongs to a different snapshot");if(p->node==&n||is_descendant_of(w,*p->node,n.id))throw std::runtime_error("parent change would create a cycle");value=Json{{"$ref",p->node->id}};}
+            else {if(!(lua_type(L,3)==LUA_TUSERDATA&&has_meta(L,3,kInstanceMeta)))luaL_typeerror(L,3,"Instance");Handle*p=checked_handle(L,3);if(p->world!=&w)throw std::runtime_error("parent belongs to a different snapshot");if(p->node==&n||is_descendant_of(w,*p->node,n.id))throw std::runtime_error("parent change would create a cycle");value=Json{{"$ref",p->node->id}};}
         } else if(key=="Name") {size_t len;const char*s=luaL_checklstring(L,3,&len);if(len>256)throw std::runtime_error("Name exceeds 256 bytes");value=std::string(s,len);}
         else {
             const bool gui_assignment=validate_gui_assignment(L,w,n,key);
@@ -2290,7 +2387,16 @@ int instance_newindex(lua_State* L){
         for(const auto& [member,previous]:motion_members)if(previous!=value)property_events(w,*member,key);
         for(auto&[derived_key,derived_value]:derived)if(derived_key!="archivable"&&derived_key!="Archivable")property_events(w,n,derived_key);
         if(key=="Parent")refresh_current_camera(w);
-    }catch(const std::exception&e){luaL_error(L,"local property write failed for %s.%s: %s",n.class_name.c_str(),key.c_str(),e.what());return 0;}
+    }catch(const std::runtime_error&e){
+        const std::string message=e.what();
+        if(message=="property absent from snapshot; local creation is unsupported")
+            luaL_error(L,"%s is not a valid member of %s \"%s\"",key.c_str(),n.class_name.c_str(),instance_full_name(w,n).c_str());
+        if(message=="parent change would create a cycle"&&lua_type(L,3)==LUA_TUSERDATA&&has_meta(L,3,kInstanceMeta)) {
+            Node& parent=*static_cast<Handle*>(lua_touserdata(L,3))->node;
+            luaL_error(L,"Attempt to set parent of %s to %s would result in circular reference",instance_name(w,n).c_str(),instance_full_name(w,parent).c_str());
+        }
+        luaL_error(L,"local property write failed for %s.%s: %s",n.class_name.c_str(),key.c_str(),message.c_str());return 0;
+    }
     return 0;
 }
 #include "smooth_damp.inc"
@@ -2323,7 +2429,7 @@ int instance_new(lua_State*L){
             {"Character",{{"value",nullptr}}},{"GameplayPaused",{{"value",false}}}}}};
         constructor=&player;
     }
-    if(!constructor || !constructor->value("creatable",false)){luaL_error(L,"class '%s' is not a supported creatable class",cls.c_str());return 0;}
+    if(!constructor || !constructor->value("creatable",false)){luaL_error(L,"Unable to create an Instance of type \"%s\"",cls.c_str());return 0;}
     Handle*parent=nullptr;
     if(lua_gettop(L)==2&&!lua_isnil(L,2)){parent=checked_handle(L,2);if(parent->world!=w){luaL_error(L,"Parent belongs to a different world snapshot");return 0;}}
     if(w->nodes.size()>=kMaxNodes+1000){luaL_error(L,"local instance limit exceeded");return 0;}
@@ -2744,12 +2850,12 @@ void install(lua_State*L,World&w){
     install_world_overlap(L,w);
     install_ussi_security_capabilities(L,LUA_GLOBALSINDEX);
     install_path2d_bindings(L);
-    luaL_newmetatable(L,kSignalMeta);lua_pushcfunction(L,signal_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,signal_newindex,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushcfunction(L,signal_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"RBXScriptSignal");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    luaL_newmetatable(L,kSignalMeta);lua_pushcfunction(L,signal_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,signal_newindex,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushcfunction(L,signal_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,signal_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushliteral(L,"RBXScriptSignal");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kConnectionMeta);lua_pushcfunction(L,connection_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,connection_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"RBXScriptConnection");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kInstanceHandleMeta);lua_pushcfunction(L,instance_handle_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,instance_handle_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,instance_handle_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"InstanceHandle");lua_setfield(L,-2,"__type");lua_pushliteral(L,"headless InstanceHandle");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kInstanceMeta);
     lua_pushcfunction(L,instance_index,"__index");lua_setfield(L,-2,"__index");
-    lua_pushcfunction(L,instance_newindex,"__newindex");lua_setfield(L,-2,"__newindex");
+    lua_pushcfunction(L,instance_newindex,nullptr);lua_setfield(L,-2,"__newindex"); // unnamed, so argument errors read "invalid argument #3 (Instance expected, got number)"
     lua_pushcfunction(L,instance_tostring,"__tostring");lua_setfield(L,-2,"__tostring");
     lua_pushcfunction(L,instance_equal,"__eq");lua_setfield(L,-2,"__eq");
     lua_pushcclosurek(L,compat_namecall,"__namecall",0,compat_namecall_continue);lua_setfield(L,-2,"__namecall");
@@ -2779,8 +2885,8 @@ void install(lua_State*L,World&w){
     lua_createtable(L,0,0);
     lua_createtable(L,0,2);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,client_index,"client.__index",1,nullptr);lua_setfield(L,-2,"__index");lua_pushliteral(L,"world snapshot client");lua_setfield(L,-2,"__metatable");
     lua_setmetatable(L,-2);lua_setglobal(L,"client");
-    lua_createtable(L,0,1);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_new,"Instance.new",1,nullptr);lua_setfield(L,-2,"new");lua_pushcfunction(L,instance_from_existing,"fromExisting");lua_setfield(L,-2,"fromExisting");lua_setreadonly(L,-1,1);lua_setglobal(L,"Instance");
-    lua_newtable(L);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_handle_new,"InstanceHandle.new",1,nullptr);lua_setfield(L,-2,"new");lua_setreadonly(L,-1,true);lua_setglobal(L,"InstanceHandle");
+    lua_createtable(L,0,1);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_new,"new",1,nullptr);lua_setfield(L,-2,"new");lua_pushcfunction(L,instance_from_existing,"fromExisting");lua_setfield(L,-2,"fromExisting");lua_setreadonly(L,-1,1);lua_setglobal(L,"Instance");
+    lua_newtable(L);lua_pushlightuserdata(L,&w);lua_pushcclosurek(L,instance_handle_new,"new",1,nullptr);lua_setfield(L,-2,"new");lua_setreadonly(L,-1,true);lua_setglobal(L,"InstanceHandle");
     install_instance_compat(L,w);
     install_instance_extended(L,w);
     assert(lua_gettop(L) == stack_base);

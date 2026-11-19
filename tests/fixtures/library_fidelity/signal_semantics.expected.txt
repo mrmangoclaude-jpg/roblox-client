@@ -1,0 +1,58 @@
+signal == signal -> boolean:true | boolean:true
+rawequal(signal, signal) -> boolean:true | boolean:false
+signal.Connect == signal.Connect -> boolean:true | boolean:false
+signal.Connect same index -> boolean:true | boolean:false
+signal.Wait == signal.Wait -> boolean:true | boolean:false
+signal.Once type -> boolean:true | "function"
+typeof signal -> boolean:true | "RBXScriptSignal"
+tostring signal -> boolean:true | "Signal Changed"
+type signal -> boolean:true | "userdata"
+signal other index -> boolean:false | "Foo is not a valid member of RBXScriptSignal"
+workspace.Changed == game.Changed -> boolean:true | boolean:false
+typeof connection -> boolean:true | "RBXScriptConnection"
+tostring connection -> boolean:true | "Connection"
+connection.Connected -> boolean:true | boolean:true
+connection.Disconnect == other -> boolean:true | boolean:false
+connection.disconnect type -> boolean:true | "function"
+connection == connection -> boolean:true | boolean:false
+connection other index -> boolean:false | "Foo is not a valid member of RBXScriptConnection"
+c1:Disconnect() -> boolean:true
+connection.Connected after -> boolean:true | boolean:false
+c1:Disconnect() twice -> boolean:true
+Connect() no self -> boolean:false | "missing argument #1 to 'Connect' (RBXScriptSignal expected)"
+Connect(1) -> boolean:false | "invalid argument #1 to 'Connect' (RBXScriptSignal expected, got number)"
+Connect(signal) -> boolean:true | RBXScriptConnection:Connection
+Connect(signal, nil) -> boolean:true | RBXScriptConnection:Connection
+Connect(signal, 1) -> boolean:true | RBXScriptConnection:Connection
+Connect(signal, 'x') -> boolean:true | RBXScriptConnection:Connection
+Connect(game, noop) -> boolean:false | "invalid argument #1 to 'Connect' (RBXScriptSignal expected, got Instance)"
+Disconnect() no self -> boolean:false | "missing argument #1 to 'Disconnect' (RBXScriptConnection expected)"
+Disconnect(1) -> boolean:false | "invalid argument #1 to 'Disconnect' (RBXScriptConnection expected, got number)"
+Disconnect(signal) -> boolean:false | "invalid argument #1 to 'Disconnect' (RBXScriptConnection expected, got RBXScriptSignal)"
+Wait() no self -> boolean:false | "missing argument #1 to 'Wait' (RBXScriptSignal expected)"
+Wait(1) -> boolean:false | "invalid argument #1 to 'Wait' (RBXScriptSignal expected, got number)"
+Once(signal, 1) -> boolean:true | RBXScriptConnection:Connection
+ConnectParallel type -> boolean:true | "function"
+game.GetService == game.GetService -> boolean:true | boolean:true
+game.FindFirstChild == workspace.FindFirstChild -> boolean:true | boolean:true
+game.GetService == game.FindFirstChild -> boolean:true | boolean:false
+workspace.Raycast == workspace.Raycast -> boolean:true | boolean:true
+Folder.Destroy == Part.Destroy -> boolean:true | boolean:true
+typeof game.GetService -> boolean:true | "function"
+GetService() no self -> boolean:false | "Expected ':' not '.' calling member function GetService"
+GetService(game) -> boolean:false | "Argument 1 missing or nil"
+GetService(game, 'Nope') -> boolean:false | "'Nope' is not a valid Service name"
+GetService(game, 1) -> boolean:false | "'1' is not a valid Service name"
+GetService(game, nil) -> boolean:false | "Argument 1 missing or nil"
+GetService(game, 'Workspace') == workspace -> boolean:true | boolean:true
+GetService(game, 'HttpService') type -> boolean:true | "Instance"
+GetService(game, 'RunService') type -> boolean:true | "Instance"
+game.Parent -> boolean:true | nil:nil
+game.Name type -> boolean:true | "string"
+game.ClassName -> boolean:true | "DataModel"
+tostring workspace -> boolean:true | "Workspace"
+typeof game.AttributeChanged -> boolean:true | "RBXScriptSignal"
+AttributeChanged:Connect -> boolean:true | boolean:true
+Folder:GetChildren -> boolean:true | number:0
+Folder:WaitForChild timeout -> boolean:true | nil:nil
+Folder.Name = digits -> boolean:true | "1392044856"

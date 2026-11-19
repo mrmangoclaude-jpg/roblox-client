@@ -94,7 +94,7 @@ int raycast_params_index(lua_State* L) {
     if(key=="IgnoreWater")lua_pushboolean(L,p->filter.ignore_water);
     else if(key=="Margin")lua_pushnumber(L,p->margin);
     else if(key=="SizeGradient")lua_pushnumber(L,p->size_gradient);
-    else if(key=="AddToFilter")lua_pushcfunction(L,raycast_params_add,"RaycastParams.AddToFilter");
+    else if(key=="AddToFilter")lua_pushcfunction(L,raycast_params_add,"AddToFilter");
     else return luaL_error(L,"unknown RaycastParams member: %s",key.c_str()),0;
     return 1;
 }
@@ -198,6 +198,6 @@ void install_world_raycast(lua_State* L,World& w) {
     geometry_enum_method(L,"__index",raycast_result_index);geometry_enum_method(L,"__newindex",raycast_result_readonly);
     lua_pushliteral(L,"RaycastResult");lua_setfield(L,-2,"__type");
     lua_pushliteral(L,"RaycastResult");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
-    lua_newtable(L);lua_pushlightuserdata(L,&w);lua_pushcclosure(L,raycast_params_new,"RaycastParams.new",1);lua_setfield(L,-2,"new");
+    lua_newtable(L);lua_pushlightuserdata(L,&w);lua_pushcclosure(L,raycast_params_new,"new",1);lua_setfield(L,-2,"new");
     lua_setreadonly(L,-1,true);lua_setglobal(L,"RaycastParams");
 }

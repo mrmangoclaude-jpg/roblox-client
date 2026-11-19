@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <limits>
 
@@ -40,33 +41,46 @@ struct RandomState
     uint64_t state;
 };
 
-void checkArity(lua_State* L, int expected, const char* method)
+// Argument errors read like the engine for these methods: no function name ("missing argument #2 (number expected)").
+double numberArgument(lua_State* L, int index)
 {
-    if (lua_gettop(L) != expected)
-        luaL_error(L, "%s expects %d argument(s)", method, expected - 1);
+    const int type = lua_type(L, index);
+    if (type == LUA_TNONE)
+        luaL_error(L, "missing argument #%d (number expected)", index);
+    if (type == LUA_TNUMBER || (type == LUA_TSTRING && lua_isnumber(L, index)))
+        return lua_tonumber(L, index);
+    luaL_error(L, "invalid argument #%d (number expected, got %s)", index, luaL_typename(L, index));
+    return 0;
 }
 
-double finiteNumber(lua_State* L, int index)
+// Double to int64 the way the hardware converts: truncate, and NaN or anything out of range becomes INT64_MIN.
+int64_t toInt64(double value)
 {
-    luaL_checktype(L, index, LUA_TNUMBER);
-    const double value = lua_tonumber(L, index);
-    if (!std::isfinite(value))
-        luaL_argerror(L, index, "number must be finite");
-    return value;
+    if (!(value == value) || value >= 9223372036854775808.0 || value < -9223372036854775808.0)
+        return std::numeric_limits<int64_t>::min();
+    return static_cast<int64_t>(value);
 }
 
-int32_t integerBound(lua_State* L, int index)
+uint64_t mulHigh64(uint64_t a, uint64_t b)
 {
-    const double value = std::trunc(finiteNumber(L, index));
-    if (value < static_cast<double>(std::numeric_limits<int32_t>::min()) ||
-        value > static_cast<double>(std::numeric_limits<int32_t>::max()))
-        luaL_argerror(L, index, "integer bound is outside signed int32");
-    return static_cast<int32_t>(value);
+    const uint64_t aLow = a & 0xFFFFFFFFu, aHigh = a >> 32, bLow = b & 0xFFFFFFFFu, bHigh = b >> 32;
+    const uint64_t p0 = aLow * bLow, p1 = aLow * bHigh, p2 = aHigh * bLow, p3 = aHigh * bHigh;
+    const uint64_t middle = (p0 >> 32) + (p1 & 0xFFFFFFFFu) + (p2 & 0xFFFFFFFFu);
+    return p3 + (p1 >> 32) + (p2 >> 32) + (middle >> 32);
 }
 
 RandomState* stateFor(lua_State* L)
 {
-    return static_cast<RandomState*>(luaL_checkudata(L, 1, kMetatable));
+    bool receiver = false;
+    if (lua_type(L, 1) == LUA_TUSERDATA && lua_getmetatable(L, 1))
+    {
+        luaL_getmetatable(L, kMetatable);
+        receiver = lua_rawequal(L, -1, -2) != 0;
+        lua_pop(L, 2);
+    }
+    if (!receiver)
+        luaL_typeerror(L, 1, "Random");
+    return static_cast<RandomState*>(lua_touserdata(L, 1));
 }
 
 RandomState* pushRandom(lua_State* L, uint64_t state)
@@ -78,14 +92,16 @@ RandomState* pushRandom(lua_State* L, uint64_t state)
     return result;
 }
 
-uint64_t normalizedSeed(lua_State* L, double seed)
+uint64_t normalizedSeed(lua_State*, double seed)
 {
     constexpr double limit = static_cast<double>(kMaximumExactSeed);
-    if (!std::isfinite(seed) || seed < -limit || seed > limit)
-        luaL_error(L, "Random seed must be finite and within +/- (2^53 - 1)");
-
+    int64_t integer = 0;
+    if (!(seed == seed))
+        integer = std::numeric_limits<int64_t>::min();
+    else if (seed >= -limit && seed <= limit)
+        integer = static_cast<int64_t>(std::trunc(seed));
     uint64_t state = kIncrement; // Advance from zero once.
-    state += static_cast<uint64_t>(static_cast<int64_t>(std::trunc(seed)));
+    state += static_cast<uint64_t>(integer);
     return state * kMultiplier + kIncrement;
 }
 
@@ -131,24 +147,22 @@ double nextFraction(RandomState& random)
 
 int randomNew(lua_State* L)
 {
-    const int count = lua_gettop(L);
-    if (count > 1)
-        luaL_error(L, "Random.new expects zero or one argument");
     double seed = 0;
-    if (count == 0 || lua_isnil(L, 1))
+    if (lua_isnoneornil(L, 1))
     {
         if (!readHostSeed(seed))
             luaL_error(L, "Random.new could not read host entropy");
     }
+    else if (lua_type(L, 1) == LUA_TNUMBER || (lua_type(L, 1) == LUA_TSTRING && lua_isnumber(L, 1)))
+        seed = lua_tonumber(L, 1);
     else
-        seed = finiteNumber(L, 1);
+        luaL_typeerror(L, 1, "number");
     pushRandom(L, normalizedSeed(L, seed));
     return 1;
 }
 
 int randomClone(lua_State* L)
 {
-    checkArity(L, 1, "Random:Clone");
     const uint64_t state = stateFor(L)->state;
     pushRandom(L, state);
     return 1;
@@ -156,22 +170,27 @@ int randomClone(lua_State* L)
 
 int randomNextNumber(lua_State* L)
 {
-    const int count = lua_gettop(L);
-    if (count != 1 && count != 3)
-        luaL_error(L, "Random:NextNumber expects zero or two arguments");
     RandomState* random = stateFor(L);
+    const int count = lua_gettop(L);
+    // Exactly one argument is rejected; none gives [0,1) and two or more give the range.
+    if (count == 2)
+    {
+        luaL_where(L, 2);
+        lua_pushstring(L, "Random:NextNumber requires 0 or 2 arguments");
+        lua_concat(L, 2);
+        lua_error(L);
+    }
     if (count == 1)
     {
         lua_pushnumber(L, nextFraction(*random));
         return 1;
     }
-    double minimum = finiteNumber(L, 2);
-    double maximum = finiteNumber(L, 3);
+    double minimum = numberArgument(L, 2);
+    double maximum = numberArgument(L, 3);
     if (minimum > maximum)
         std::swap(minimum, maximum);
     const double fraction = nextFraction(*random);
-    // Weighted endpoints avoid overflowing (maximum - minimum) for finite
-    // opposite-sign endpoints. Preserve the supplied source's evaluation order.
+    // Weighted endpoints avoid overflowing (maximum - minimum) for finite opposite-sign endpoints.
     double result = minimum * (1.0 - fraction) + maximum * fraction;
     if (result < minimum)
         result = minimum;
@@ -183,26 +202,29 @@ int randomNextNumber(lua_State* L)
 
 int randomNextInteger(lua_State* L)
 {
-    checkArity(L, 3, "Random:NextInteger");
     RandomState* random = stateFor(L);
-    int64_t minimum = integerBound(L, 2);
-    int64_t maximum = integerBound(L, 3);
+    int64_t minimum = toInt64(numberArgument(L, 2));
+    int64_t maximum = toInt64(numberArgument(L, 3));
     if (minimum > maximum)
         std::swap(minimum, maximum);
-    const uint64_t width = static_cast<uint64_t>(maximum - minimum) + 1u;
-    if (width >= UINT64_C(4294967295))
+    const uint64_t width = static_cast<uint64_t>(maximum) - static_cast<uint64_t>(minimum) + 1u;
+    uint64_t offset = 0;
+    if (width <= UINT64_C(4294967294))
+        offset = (width * static_cast<uint64_t>(nextUint32(*random))) >> 32u;
+    else
+    {
+        // Wide ranges (measured against Studio) discard one draw and scale the next: floor(word * width / 2^32), computed
+        // without overflow for any width.
         (void)nextUint32(*random);
-    const uint64_t scaled = width * static_cast<uint64_t>(nextUint32(*random));
-    // Signed int32 endpoints guarantee this result is representable by Luau's
-    // ordinary integer push API, including full-width and reversed intervals.
-    const int64_t result = minimum + static_cast<int64_t>(scaled >> 32u);
-    lua_pushinteger(L, static_cast<int>(result));
+        const uint64_t word = nextUint32(*random);
+        offset = mulHigh64(word << 32u, width);
+    }
+    lua_pushnumber(L, static_cast<double>(static_cast<int64_t>(static_cast<uint64_t>(minimum) + offset)));
     return 1;
 }
 
 int randomNextUnitVector(lua_State* L)
 {
-    checkArity(L, 1, "Random:NextUnitVector");
     RandomState* random = stateFor(L);
 
     // Pick azimuth and height uniformly; this gives uniform area on the unit
@@ -259,9 +281,9 @@ int randomShuffleLength(lua_State* L, int tableIndex)
 
 int randomShuffle(lua_State* L)
 {
-    checkArity(L, 2, "Random:Shuffle");
     RandomState* random = stateFor(L);
-    luaL_checktype(L, 2, LUA_TTABLE);
+    if (lua_type(L, 2) != LUA_TTABLE)
+        luaL_error(L, "invalid argument #2 (table expected, got %s)", lua_type(L, 2) == LUA_TNONE ? "no value" : luaL_typename(L, 2));
     const int tableIndex = lua_absindex(L, 2);
     if (lua_getreadonly(L, tableIndex))
     {
@@ -288,7 +310,6 @@ int randomShuffle(lua_State* L)
 
 int randomToString(lua_State* L)
 {
-    checkArity(L, 1, "Random tostring");
     (void)stateFor(L);
     lua_pushstring(L, "Random");
     return 1;
@@ -302,6 +323,33 @@ int randomEqual(lua_State* L)
     return 1;
 }
 
+int randomIndex(lua_State* L)
+{
+    if (lua_type(L, 2) != LUA_TSTRING)
+        luaL_error(L, "invalid argument #2 (string expected, got %s)", luaL_typename(L, 2));
+    const char* key = lua_tostring(L, 2);
+    struct Method { const char* name; lua_CFunction function; };
+    static const Method methods[] = {{"NextInteger", randomNextInteger}, {"NextNumber", randomNextNumber},
+        {"NextUnitVector", randomNextUnitVector}, {"Shuffle", randomShuffle}, {"Clone", randomClone}};
+    for (const Method& method : methods)
+    {
+        if (std::strcmp(key, method.name) == 0)
+        {
+            lua_pushcfunction(L, method.function, method.name);
+            return 1;
+        }
+    }
+    luaL_error(L, "%s is not a valid member of Random", key);
+    return 0;
+}
+
+int randomNewIndex(lua_State* L)
+{
+    const char* key = lua_tostring(L, 2);
+    luaL_error(L, "%s is not a valid member of Random", key ? key : "?");
+    return 0;
+}
+
 void setFunction(lua_State* L, const char* name, lua_CFunction function)
 {
     lua_pushcfunction(L, function, name);
@@ -313,14 +361,8 @@ void install_random_compat(lua_State* L)
 {
     if (luaL_newmetatable(L, kMetatable))
     {
-        lua_newtable(L);
-        setFunction(L, "NextInteger", randomNextInteger);
-        setFunction(L, "NextNumber", randomNextNumber);
-        setFunction(L, "NextUnitVector", randomNextUnitVector);
-        setFunction(L, "Shuffle", randomShuffle);
-        setFunction(L, "Clone", randomClone);
-        lua_setreadonly(L, -1, true);
-        lua_setfield(L, -2, "__index");
+        setFunction(L, "__index", randomIndex);
+        setFunction(L, "__newindex", randomNewIndex);
         setFunction(L, "__tostring", randomToString);
         setFunction(L, "__eq", randomEqual);
         lua_pushstring(L, "Random");

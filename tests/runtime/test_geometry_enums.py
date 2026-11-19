@@ -34,7 +34,7 @@ for _,spec in {
     end
     items[1]=nil;assert(#e:GetEnumItems()==#names)
     assert(e:FromName("Missing")==nil and e:FromValue(-1)==nil)
-    assert(e:FromValue(.5)==nil and e:FromValue(math.huge)==nil)
+    assert(rawequal(e:FromValue(.5),e:FromValue(0)) and e:FromValue(math.huge)==nil) -- Studio truncates the value
     assert(e:FromName(names[1]..string.char(0).."junk")==nil)
     assert(not pcall(function()return e.Missing end))
     assert(not pcall(function()e.New=1 end))

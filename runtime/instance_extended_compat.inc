@@ -146,7 +146,7 @@ int instance_extended_hidden_gui(lua_State* L) {
     lua_getfield(L,LUA_REGISTRYINDEX,"Headless.OverlayRoot");
     if(has_meta(L,-1,kInstanceMeta)&&!checked_handle(L,-1)->node->destroyed)return 1;
     lua_pop(L,1);auto* core=ensure_client_service(*world,"CoreGui");
-    lua_pushlightuserdata(L,world);lua_pushcclosurek(L,instance_new,"Instance.new",1,nullptr);
+    lua_pushlightuserdata(L,world);lua_pushcclosurek(L,instance_new,"new",1,nullptr);
     lua_pushliteral(L,"ScreenGui");push_node(L,*world,core);lua_call(L,2,1);
     lua_pushvalue(L,-1);lua_setfield(L,LUA_REGISTRYINDEX,"Headless.OverlayRoot");
     return 1;

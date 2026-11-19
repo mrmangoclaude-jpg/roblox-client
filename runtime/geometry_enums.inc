@@ -88,15 +88,24 @@ int checked_geometry_value(lua_State* L,int index,int kind) {
     if(item->kind!=kind)luaL_error(L,"Unable to cast %s to %s",kGeometryEnums[item->kind].name,kGeometryEnums[kind].name);
     return item->value;
 }
-int geometry_enum_readonly(lua_State* L) { luaL_error(L,"enum values are immutable");return 0; }
+// Assigning to an Enum or EnumItem reads as a missing member in Roblox.
+int geometry_enum_readonly(lua_State* L) { luaL_error(L,"%s is not a valid member of Enum",lua_tostring(L,2)?lua_tostring(L,2):"?");return 0; }
+int geometry_item_readonly(lua_State* L) { luaL_error(L,"%s is not a valid member of EnumItem",lua_tostring(L,2)?lua_tostring(L,2):"?");return 0; }
+// Receiver of an Enum member function: "invalid argument #1 to 'FromValue' (Enum expected, got number)".
+int geometry_enum_kind(lua_State* L,int index) {
+    if(!has_meta(L,index,kGeometryEnumMeta))luaL_typeerror(L,index,"Enum");
+    return *static_cast<int*>(lua_touserdata(L,index));
+}
 int geometry_item_index(lua_State* L) {
     auto* item=static_cast<GeometryEnumItem*>(luaL_checkudata(L,1,kGeometryItemMeta));
     auto key=geometry_enum_key(L,2);
     if(key=="Name")lua_pushstring(L,kGeometryEnums[item->kind].names[item->value]);
     else if(key=="Value")lua_pushinteger(L,geometry_numeric(item->kind,item->value));
     else if(key=="EnumType")push_geometry_enum(L,item->kind);
-    else if(key=="IsA")lua_pushcfunction(L,[](lua_State* S)->int{lua_pushboolean(S,0);return 1;},"EnumItem.IsA");
-    else luaL_error(L,"unknown EnumItem member");
+    else if(key=="IsA")lua_pushcfunction(L,[](lua_State* S)->int{
+        if(!has_meta(S,1,kGeometryItemMeta))luaL_typeerror(S,1,"EnumItem");
+        luaL_checkstring(S,2);lua_pushboolean(S,0);return 1;},"IsA");
+    else luaL_error(L,"%s is not a valid member of \"Enum.%s.%s\"",key.c_str(),kGeometryEnums[item->kind].name,kGeometryEnums[item->kind].names[item->value]);
     return 1;
 }
 int geometry_item_string(lua_State* L) {
@@ -110,13 +119,14 @@ int geometry_item_equal(lua_State* L) {
     lua_pushboolean(L,b&&a->kind==b->kind&&a->value==b->value);return 1;
 }
 int geometry_enum_items(lua_State* L) {
-    int kind=*static_cast<int*>(luaL_checkudata(L,1,kGeometryEnumMeta));
+    int kind=geometry_enum_kind(L,1);
     lua_createtable(L,kGeometryEnums[kind].count,0);
     for(int i=0;i<kGeometryEnums[kind].count;++i){push_geometry_item(L,kind,i);lua_rawseti(L,-2,i+1);}
     return 1;
 }
 int geometry_enum_from_name(lua_State* L) {
-    int kind=*static_cast<int*>(luaL_checkudata(L,1,kGeometryEnumMeta));
+    int kind=geometry_enum_kind(L,1);
+    if(lua_type(L,2)!=LUA_TSTRING)luaL_typeerror(L,2,"string");
     auto name=geometry_enum_key(L,2);
     if(kind==kRaycastFilterType&&(name=="Blacklist"||name=="Whitelist")) {
         push_geometry_item(L,kind,name=="Whitelist"?1:0);return 1;
@@ -126,8 +136,9 @@ int geometry_enum_from_name(lua_State* L) {
     lua_pushnil(L);return 1;
 }
 int geometry_enum_from_value(lua_State* L) {
-    int kind=*static_cast<int*>(luaL_checkudata(L,1,kGeometryEnumMeta));
-    double value=luaL_checknumber(L,2);
+    int kind=geometry_enum_kind(L,1);
+    if(lua_type(L,2)!=LUA_TNUMBER)luaL_typeerror(L,2,"number");
+    double value=std::trunc(lua_tonumber(L,2));
     for(int i=0;i<kGeometryEnums[kind].count;++i)if(value==geometry_numeric(kind,i)){push_geometry_item(L,kind,i);return 1;}
     lua_pushnil(L);
     return 1;
@@ -144,7 +155,7 @@ int geometry_enum_index(lua_State* L) {
     else {
         for(int i=0;i<kGeometryEnums[kind].count;++i)
             if(name==kGeometryEnums[kind].names[i]){push_geometry_item(L,kind,i);return 1;}
-        luaL_error(L,"unknown Enum.%s item",kGeometryEnums[kind].name);
+        luaL_error(L,"%s is not a valid member of \"Enum.%s\"",name.c_str(),kGeometryEnums[kind].name);
     }
     return 1;
 }
@@ -169,7 +180,7 @@ void install_geometry_enums(lua_State* L) {
     }
     luaL_newmetatable(L,kGeometryItemMeta);
     geometry_enum_method(L,"__index",geometry_item_index);
-    geometry_enum_method(L,"__newindex",geometry_enum_readonly);
+    geometry_enum_method(L,"__newindex",geometry_item_readonly);
     geometry_enum_method(L,"__tostring",geometry_item_string);
     geometry_enum_method(L,"__eq",geometry_item_equal);
     lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");

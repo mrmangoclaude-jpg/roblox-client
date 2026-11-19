@@ -38,7 +38,7 @@ static int usi_security_capabilities_equal(lua_State* L) {
 static void install_ussi_security_capabilities(lua_State* L,int globals) {
     globals=lua_absindex(L,globals);
     luaL_newmetatable(L,kUsiSecurityCapabilitiesMeta);lua_pushcfunction(L,usi_security_capabilities_tostring,"SecurityCapabilities.__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,usi_security_capabilities_equal,"SecurityCapabilities.__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,usi_security_capabilities_readonly,"SecurityCapabilities.__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"SecurityCapabilities");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    lua_createtable(L,0,1);lua_pushcfunction(L,usi_security_capabilities_new,"SecurityCapabilities.new");lua_setfield(L,-2,"new");lua_setreadonly(L,-1,true);lua_setfield(L,globals,"SecurityCapabilities");
+    lua_createtable(L,0,1);lua_pushcfunction(L,usi_security_capabilities_new,"new");lua_setfield(L,-2,"new");lua_setreadonly(L,-1,true);lua_setfield(L,globals,"SecurityCapabilities");
 }
 
 static bool push_ussi_security_capabilities_json(lua_State* L,const Json& value) {

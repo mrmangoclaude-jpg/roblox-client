@@ -237,7 +237,7 @@ int part_can_collide_with(lua_State* L) {
     }catch(const std::exception& e){return luaL_error(L,"CanCollideWith: %s",e.what()),0;}
 }
 bool collision_groups_index(lua_State* L,World& w,Node& n,const std::string& key) {
-    if(pivot_part(w,n)&&key=="CanCollideWith"){lua_pushcfunction(L,part_can_collide_with,"BasePart.CanCollideWith");return true;}
+    if(pivot_part(w,n)&&key=="CanCollideWith"){lua_pushcfunction(L,part_can_collide_with,"CanCollideWith");return true;}
     if(pivot_part(w,n)&&key=="CollisionGroupId"){lua_pushinteger(L,part_collision_id(w,n));return true;}
     const bool service=n.class_name=="PhysicsService";
     if(!service&&!collision_world_root(n))return false;

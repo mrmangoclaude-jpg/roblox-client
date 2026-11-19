@@ -201,7 +201,7 @@ int decode_value(lua_State* L) {
     std::string error;
     try { value = Json::parse(raw, raw + length); }
     catch (const std::exception& exception) { error = exception.what(); }
-    if (!error.empty()) { luaL_error(L, "JSONDecode failed: %s", error.c_str()); return 0; }
+    if (!error.empty()) { luaL_error(L, "Can't parse JSON"); return 0; }
     try {
         Budget budget;
         push_json(L, value, 0, budget);

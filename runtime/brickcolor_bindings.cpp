@@ -346,10 +346,12 @@ void install_brickcolor_bindings(lua_State* L) {
     lua_pushcfunction(L,equal,"__eq");lua_setfield(L,-2,"__eq");
     lua_pushliteral(L,"BrickColor");lua_setfield(L,-2,"__type");
     lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    lua_createtable(L,0,11);
+    lua_createtable(L,0,13);
     lua_pushcfunction(L,create,"new");lua_setfield(L,-2,"new");
     lua_pushcfunction(L,palette,"palette");lua_setfield(L,-2,"palette");
     lua_pushcfunction(L,random_color,"random");lua_setfield(L,-2,"random");
+    lua_pushcfunction(L,create,"New");lua_setfield(L,-2,"New");
+    lua_pushcfunction(L,random_color,"Random");lua_setfield(L,-2,"Random");
     set_constant(L,"White",1);set_constant(L,"Black",26);
     set_constant(L,"Gray",194);set_constant(L,"DarkGray",199);
     set_constant(L,"Red",21);set_constant(L,"Yellow",24);

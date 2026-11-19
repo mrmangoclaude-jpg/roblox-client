@@ -261,9 +261,9 @@ int index(lua_State* L) {
     auto* value=check_datetime(L,1);const char* key=luaL_checkstring(L,2);
     if(std::strcmp(key,"UnixTimestampMillis")==0)lua_pushnumber(L,static_cast<double>(value->millis));
     else if(std::strcmp(key,"UnixTimestamp")==0)lua_pushnumber(L,static_cast<double>(floor_div(value->millis,1000)));
-    else if(std::strcmp(key,"ToUniversalTime")==0)lua_pushcfunction(L,universal_time,"DateTime:ToUniversalTime");
-    else if(std::strcmp(key,"ToLocalTime")==0)lua_pushcfunction(L,local_time,"DateTime:ToLocalTime");
-    else if(std::strcmp(key,"ToIsoDate")==0)lua_pushcfunction(L,to_iso_date,"DateTime:ToIsoDate");
+    else if(std::strcmp(key,"ToUniversalTime")==0)lua_pushcfunction(L,universal_time,"ToUniversalTime");
+    else if(std::strcmp(key,"ToLocalTime")==0)lua_pushcfunction(L,local_time,"ToLocalTime");
+    else if(std::strcmp(key,"ToIsoDate")==0)lua_pushcfunction(L,to_iso_date,"ToIsoDate");
     else {lua_pushnil(L);}
     return 1;
 }

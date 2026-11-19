@@ -252,3 +252,39 @@ void install_utf8_extras(lua_State* L) {
     lua_pushcfunction(L, utf8_nfd, "nfdnormalize");
     lua_setfield(L, -2, "nfdnormalize");
 }
+
+
+namespace {
+// coroutine.finally(thread, callback): accepted and ignored here; protected scripts only check that it exists and how it
+// validates its arguments.
+int coroutine_finally(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTHREAD);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    return 0;
+}
+int global_version(lua_State* L)
+{
+    lua_pushstring(L, "0.744.0.7440000");
+    return 1;
+}
+int global_settings(lua_State* L)
+{
+    return luaL_error(L, "The current thread cannot call 'settings' (lacking capability Plugin)"), 0;
+}
+}  // namespace
+
+void install_roblox_global_extras(lua_State* L)
+{
+    lua_getglobal(L, "coroutine");
+    if (lua_istable(L, -1))
+    {
+        lua_pushcfunction(L, coroutine_finally, "finally");
+        lua_setfield(L, -2, "finally");
+    }
+    lua_pop(L, 1);
+    lua_pushcfunction(L, global_version, "version");
+    lua_setglobal(L, "version");
+    lua_pushcfunction(L, global_settings, "settings");
+    lua_setglobal(L, "settings");
+}

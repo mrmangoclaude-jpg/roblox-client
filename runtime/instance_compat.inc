@@ -100,7 +100,7 @@ int compat_hui(lua_State* L) {
     lua_pop(L,1);
     // A separate local display surface. It is not a descendant of game.CoreGui
     // and never changes that tree's membership signals.
-    lua_pushlightuserdata(L,w);lua_pushcclosurek(L,instance_new,"Instance.new",1,nullptr);lua_pushliteral(L,"Folder");lua_call(L,1,1);
+    lua_pushlightuserdata(L,w);lua_pushcclosurek(L,instance_new,"new",1,nullptr);lua_pushliteral(L,"Folder");lua_call(L,1,1);
     auto* root=checked_handle(L,-1)->node;w->overlay_root=root->id;root->name="RuntimeOverlay";
     lua_pushvalue(L,-1);lua_setfield(L,LUA_REGISTRYINDEX,"Headless.OverlayRoot");return 1;
 }

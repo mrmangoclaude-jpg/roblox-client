@@ -116,7 +116,7 @@ int udim2_index(lua_State* L) {
     auto* v=static_cast<UDim2Value*>(luaL_checkudata(L,1,kUDim2));const char* key=luaL_checkstring(L,2);
     if(std::string(key)=="X"||std::string(key)=="Width")push_udim(L,v->x);
     else if(std::string(key)=="Y"||std::string(key)=="Height")push_udim(L,v->y);
-    else if(std::string(key)=="Lerp")lua_pushcfunction(L,udim2_lerp,"UDim2:Lerp");
+    else if(std::string(key)=="Lerp")lua_pushcfunction(L,udim2_lerp,"Lerp");
     else lua_pushnil(L);return 1;
 }
 int udim2_add(lua_State* L) {

@@ -39,7 +39,7 @@ assert(typeof(Vector2int16.new())=="Vector2int16")
 assert(typeof(Vector3int16.new())=="Vector3int16")
 assert(Vector2int16.new(1,2)~=Vector3int16.new(1,2,0))
 assert(not pcall(function()return Vector2int16.new()+Vector3int16.new()end))
-assert(not pcall(function()return 2/Vector3int16.new(1,2,3)end))
+assert(2/Vector3int16.new(1,2,3)==Vector3int16.new(2,1,0)) -- Studio divides a number by each component
 assert(not pcall(function()Vector3int16.new=function()end end))
 ''')
 

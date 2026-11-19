@@ -1,0 +1,50 @@
+typeof Enum -> boolean:true | "Enums"
+tostring Enum -> boolean:true | "Enums"
+typeof HumanoidRigType -> boolean:true | "Enum"
+tostring HumanoidRigType -> boolean:true | "HumanoidRigType"
+typeof R15 -> boolean:true | "EnumItem"
+tostring R15 -> boolean:true | "Enum.HumanoidRigType.R15"
+R15.Name/Value -> boolean:true | "R15" | number:1
+R15.EnumType -> boolean:true | Enum:HumanoidRigType
+R15.EnumType == rig -> boolean:true | boolean:true
+rig.R15 == rig.R15 -> boolean:true | boolean:true
+rawequal R15 -> boolean:true | boolean:true
+rig.FromValue -> boolean:true | "function"
+rig.FromValue == rig.FromValue -> boolean:true | boolean:false
+rig.FromValue == Enum.Material.FromValue -> boolean:true | boolean:false
+FromValue(1) -> boolean:true | EnumItem:Enum.HumanoidRigType.R15
+FromValue(0) -> boolean:true | EnumItem:Enum.HumanoidRigType.R6
+FromValue(999) -> boolean:true | nil:nil
+FromValue('1') -> boolean:false | "invalid argument #2 to 'FromValue' (number expected, got string)"
+FromValue('a') -> boolean:false | "invalid argument #2 to 'FromValue' (number expected, got string)"
+FromValue(1.5) -> boolean:true | EnumItem:Enum.HumanoidRigType.R15
+FromValue(nil) -> boolean:false | "invalid argument #2 to 'FromValue' (number expected, got nil)"
+FromValue() -> boolean:false | "missing argument #2 to 'FromValue' (number expected)"
+FromValue no self -> boolean:false | "invalid argument #1 to 'FromValue' (Enum expected, got number)"
+FromName('R6') -> boolean:true | EnumItem:Enum.HumanoidRigType.R6
+FromName('x') -> boolean:true | nil:nil
+FromName(1) -> boolean:false | "invalid argument #2 to 'FromName' (string expected, got number)"
+GetEnumItems count -> boolean:true | number:2
+GetEnumItems order -> boolean:true | "R6=0,R15=1"
+rig.Nope -> boolean:false | "Nope is not a valid member of \"Enum.HumanoidRigType\""
+rig.R15.Nope -> boolean:false | "Nope is not a valid member of \"Enum.HumanoidRigType.R15\""
+Enum.Nope -> boolean:false | "Nope is not a valid member of \"Enum\""
+Enum.HumanoidRigType set -> boolean:false | "HumanoidRigType is not a valid member of Enums"
+rig.R15 set -> boolean:false | "R15 is not a valid member of Enum"
+R15.Value set -> boolean:false | "Value is not a valid member of EnumItem"
+R15 compare -> boolean:true | boolean:false | boolean:false | boolean:false
+R15 < R6 -> boolean:false | "attempt to compare EnumItem < EnumItem"
+R15 + 1 -> boolean:false | "attempt to perform arithmetic (add) on EnumItem and number"
+R15 .. '' -> boolean:false | "attempt to concatenate EnumItem with string"
+#R15 -> boolean:false | "attempt to get length of a EnumItem value"
+EnumItem IsA -> boolean:true | boolean:false
+rig:IsA -> boolean:false | "IsA is not a valid member of \"Enum.HumanoidRigType\""
+Material Plastic Value -> boolean:true | number:256
+Material:FromValue(256) -> boolean:true | EnumItem:Enum.Material.Plastic
+Enum.KeyCode.A.EnumType -> boolean:true | Enum:KeyCode
+Enum.KeyCode:FromValue(97) -> boolean:true | EnumItem:Enum.KeyCode.A
+next(rig) -> boolean:false | "invalid argument #1 to 'next' (table expected, got Enum)"
+pairs(rig) count -> boolean:false | "invalid argument #1 to 'pairs' (table expected, got Enum)"
+getmetatable(rig) -> boolean:true | "The metatable is locked"
+getmetatable(R15) -> boolean:true | "The metatable is locked"
+typeof(Enum.KeyCode.A.EnumType) -> boolean:true | "Enum"

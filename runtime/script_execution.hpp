@@ -158,19 +158,22 @@ local stock = {}
 for name in string.gmatch("assert collectgarbage error gcinfo getfenv getmetatable ipairs loadstring newproxy next pairs pcall print "
     .. "printidentity rawequal rawget rawlen rawset require select setfenv setmetatable settings stats tonumber tostring type typeof "
     .. "unpack version xpcall bit32 buffer coroutine debug math os string table task utf8 vector delay elapsedTime game shared "
-    .. "spawn tick time wait warn workspace script plugin _G _VERSION", "%S+") do stock[name] = true end
+    .. "spawn tick time wait warn workspace script plugin ypcall _G _VERSION", "%S+") do stock[name] = true end
 local notStock = {Drawing=true, WebSocket=true}
 local base = {}
 for key,value in pristine do
     if type(key)=="string" and (stock[key] or (string.match(key, "^%u") and not notStock[key])) then base[key]=value end
 end
 if type(pristine.debug)=="table" then
+    -- The engine's debug library as a client script sees it: these twelve members and no executor additions.
     local stockDebug = {}
-    for _, name in {"info","traceback","profilebegin","profileend","setmemorycategory","resetmemorycategory","getmemorycategory"} do
+    for _, name in {"info","traceback","profilebegin","profileend","setmemorycategory","resetmemorycategory","getmemorycategory","dumpcodesize","dumpheap","dumprefs","tracerefs","loadmodule"} do
         stockDebug[name] = pristine.debug[name]
     end
     base.debug = table.freeze(stockDebug)
 end
+-- loadstring exists but is disabled in game scripts.
+base.loadstring = newcclosure(function() error("loadstring() is not available", 2) end, "loadstring")
 base._G={};base.shared=shared
 -- The executor scope keeps everything the engine root provides, as a copy that later removals cannot reveal.
 local full = {}
@@ -245,7 +248,8 @@ local function prepareTemplates()
     mirror(game:FindService("StarterPack"), player:FindFirstChildOfClass("Backpack"))
 end
 local function environmentFor(instance)
-    return setmetatable({script=instance}, {__index=base})
+    -- A game script's own environment holds exactly _G, script and shared; its metatable is locked.
+    return setmetatable({script=instance, _G=base._G, shared=shared}, {__index=base, __metatable="The metatable is locked"})
 end
 -- A module or script body runs directly as its thread's function, as in Roblox. A protected-call wrapper would cost one
 -- C-call level that protected scripts can measure (they nest coroutines until "C stack overflow" and use the depth), so
@@ -265,7 +269,7 @@ local function finishBroken(entry)
 end
 function require(module)
     if typeof(module) ~= "Instance" or not module:IsA("ModuleScript") then
-        error("require expects a ModuleScript Instance; asset IDs and file paths are unavailable", 2)
+        error("Attempted to call require with invalid argument(s).", 2)
     end
     local moduleId = identify(module)
     local entry = modules[moduleId]
@@ -292,7 +296,9 @@ function require(module)
     if entry.state == "failed" then error(entry.error, 2) end
     return entry.value
 end
-base.require=require;full.require=require
+-- require is a native function in Roblox (debug.info reports "[C]"); wrap the script-runtime version so it looks like one.
+local nativeRequire = newcclosure(require, "require")
+base.require=nativeRequire;full.require=nativeRequire
 executor.require=nil
 function getscriptclosure(instance)
     local fn,message=compile(instance,environmentFor(instance));assert(fn,message);return fn

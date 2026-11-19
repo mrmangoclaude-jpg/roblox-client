@@ -250,7 +250,7 @@ void install_tween_bindings(lua_State* L) {
     lua_pop(L, 1);
 
     lua_newtable(L);
-    lua_pushcfunction(L, tween_info_constructor, "TweenInfo.new");
+    lua_pushcfunction(L, tween_info_constructor, "new");
     lua_setfield(L, -2, "new");
     lua_setglobal(L, "TweenInfo");
 }

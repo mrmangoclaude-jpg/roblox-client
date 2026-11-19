@@ -132,9 +132,9 @@ int color_index(lua_State* L) {
     if (std::strcmp(key, "R") == 0) lua_pushnumber(L, color->r);
     else if (std::strcmp(key, "G") == 0) lua_pushnumber(L, color->g);
     else if (std::strcmp(key, "B") == 0) lua_pushnumber(L, color->b);
-    else if (std::strcmp(key, "Lerp") == 0) lua_pushcfunction(L, color_lerp, "Color3.Lerp");
-    else if (std::strcmp(key, "ToHSV") == 0) lua_pushcfunction(L, color_to_hsv, "Color3.ToHSV");
-    else if (std::strcmp(key, "ToHex") == 0) lua_pushcfunction(L, color_to_hex, "Color3.ToHex");
+    else if (std::strcmp(key, "Lerp") == 0) lua_pushcfunction(L, color_lerp, "Lerp");
+    else if (std::strcmp(key, "ToHSV") == 0) lua_pushcfunction(L, color_to_hsv, "ToHSV");
+    else if (std::strcmp(key, "ToHex") == 0) lua_pushcfunction(L, color_to_hex, "ToHex");
     else lua_pushnil(L);
     return 1;
 }

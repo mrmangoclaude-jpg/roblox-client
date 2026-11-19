@@ -55,7 +55,7 @@ void install_vector3_methods(lua_State* L) {
         if (!lua_isfunction(L, -1)) luaL_error(L, "missing pinned vector function %s", pair[1]);
         lua_setfield(L, methods, pair[0]);
     }
-    lua_pushcfunction(L,vector3_fuzzy_eq,"Vector3.FuzzyEq");
+    lua_pushcfunction(L,vector3_fuzzy_eq,"FuzzyEq");
     lua_setfield(L,methods,"FuzzyEq");
     lua_setreadonly(L, methods, true);
     lua_newtable(L);

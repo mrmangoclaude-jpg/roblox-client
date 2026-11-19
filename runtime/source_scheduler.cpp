@@ -366,6 +366,8 @@ std::string SourceScheduler::owner(lua_State* thread) const {
 lua_State* SourceScheduler::spawn_owned(lua_State* from,int index,const std::string& owner_name,bool report_errors) {
     index=lua_absindex(from,index);lua_State* child=lua_newthread(from);
     lua_pushvalue(from,index);lua_xmove(from,child,1);
+    // A script thread's globals are its own environment (getfenv(0) == getfenv()), as in the engine.
+    lua_getfenv(child,-1);lua_replace(child,LUA_GLOBALSINDEX);
     auto& task=track(child);set_owner(task,owner_name);task.state=Ready;task.report_errors=report_errors;
     // The engine starts a script or module thread from its own scheduler, not from another Lua thread, so the body begins
     // at the base C-call depth. Passing the requiring thread would charge it for the depth of every caller, and protected

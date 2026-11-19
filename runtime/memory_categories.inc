@@ -1,3 +1,4 @@
+#include <cstring>
 // Named tags backed by Luau's actual per-thread allocation categories.
 // Registry storage belongs to this VM; no process-global category state.
 namespace {
@@ -13,8 +14,13 @@ void memory_category_push_current(lua_State* L) {
         lua_pop(L,1);
     }
     lua_pop(L,1);
+    // A thread that never set one reports the name of the script it runs in ("ReplicatedFirst.Guard" -> "Guard").
     lua_Debug frame{};
-    if(lua_getinfo(L,1,"s",&frame)&&frame.source)lua_pushstring(L,frame.source);else lua_pushstring(L,"=");
+    if(lua_getinfo(L,1,"s",&frame)&&frame.source) {
+        const char* name=frame.source+(frame.source[0]=='='?1:0);
+        const char* dot=std::strrchr(name,'.');
+        lua_pushstring(L,dot?dot+1:name);
+    } else lua_pushstring(L,"");
 }
 // Stores the value at `index` as the running thread's tag.
 void memory_category_store_current(lua_State* L,int index) {
@@ -65,9 +71,17 @@ int profile_begin(lua_State* L) {
     return 0;
 }
 int profile_end(lua_State*){return 0;}
+// Members the engine's debug library has but game scripts cannot use; they raise the engine's own messages.
+int debug_dump_code_size(lua_State* L){return luaL_error(L,"dumpcodesize can only be called from CommandBar"),0;}
+int debug_not_enabled(lua_State* L){
+    lua_Debug frame{};const char* name=lua_getinfo(L,0,"n",&frame)&&frame.name?frame.name:"?";
+    return luaL_error(L,"debug.%s is not enabled.",name),0;
+}
 void install_memory_category_bindings(lua_State* L) {
     lua_pushcfunction(L,profile_begin,"profilebegin");lua_setfield(L,-2,"profilebegin");
     lua_pushcfunction(L,profile_end,"profileend");lua_setfield(L,-2,"profileend");
+    lua_pushcfunction(L,debug_dump_code_size,"dumpcodesize");lua_setfield(L,-2,"dumpcodesize");
+    for(const char* name:{"dumpheap","dumprefs","tracerefs","loadmodule"}){lua_pushcfunction(L,debug_not_enabled,name);lua_setfield(L,-2,name);}
     lua_pushcfunction(L,memory_category_get,"getmemorycategory");lua_setfield(L,-2,"getmemorycategory");
     lua_pushcfunction(L,memory_category_set,"setmemorycategory");lua_setfield(L,-2,"setmemorycategory");
     lua_pushcfunction(L,memory_category_reset,"resetmemorycategory");lua_setfield(L,-2,"resetmemorycategory");
