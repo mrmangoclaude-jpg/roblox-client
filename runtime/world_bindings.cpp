@@ -19,6 +19,7 @@
 #include <array>
 #include <cassert>
 #include <cstring>
+#include <chrono>
 #include <climits>
 #include <cstdlib>
 #include <cmath>
@@ -1161,6 +1162,12 @@ int generate_guid(lua_State* L) {
     if(braces)result[cursor++]='}';
     lua_pushlstring(L,result,cursor);return 1;
 }
+// Server time is UTC-based, so the synchronized clock reads as seconds since the Unix epoch.
+int workspace_get_server_time_now(lua_State* L) {
+    Handle* h=checked_handle(L,1);
+    if(h->node->class_name!="Workspace"){luaL_error(L,"Workspace receiver required");return 0;}
+    lua_pushnumber(L,std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count());return 1;
+}
 int is_loaded(lua_State* L) {
     Handle* h=checked_handle(L,1);
     if(h->node->id!=h->world->game_id){luaL_error(L,"IsLoaded requires DataModel");return 0;}
@@ -1312,6 +1319,7 @@ int instance_index(lua_State* L) {
         lua_pushlstring(L,content->data(),content->size());return 1;
     }
     if(textbox_focus_index(L,w,n,key))return 1;
+    if(n.class_name=="Workspace"&&key=="GetServerTimeNow"){lua_pushcfunction(L,workspace_get_server_time_now,"GetServerTimeNow");return 1;}
     if(n.class_name=="Path2D"&&path2d_index(L,w,n,key))return 1;
     if(n.class_name=="TextService"&&(key=="GetFamilyInfoAsync"||key=="GetTextBoundsAsync")) {
         lua_pushboolean(L,key=="GetTextBoundsAsync");lua_pushcclosurek(L,text_service_request,key.c_str(),1,text_service_continue);return 1;

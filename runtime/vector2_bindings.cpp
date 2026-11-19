@@ -46,10 +46,7 @@ int push_value(lua_State* L, double x, double y) {
     return push_raw(L,x,y);
 }
 int construct(lua_State* L) {
-    if (lua_gettop(L) > 2) {
-        luaL_error(L, "Vector2.new expects at most two numbers");
-        return 0;
-    }
+    // The engine reads only the first two arguments and ignores any extras.
     // Infinity represents an unbounded UISizeConstraint maximum. Keep the
     // existing NaN-input guard; property consumers validate allowed signs.
     // Authored serialization preserves infinity using explicit $number tags.
