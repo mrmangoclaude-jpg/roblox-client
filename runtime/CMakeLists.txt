@@ -43,6 +43,10 @@ set(HOST_SOURCES
     physical_properties.cpp color3_bindings.cpp vector2_bindings.cpp udim_bindings.cpp
     range_bindings.cpp brickcolor_bindings.cpp datetime_bindings.cpp sequence_bindings.cpp
     closure_bindings.cpp json_bindings.cpp movement_bindings.cpp)
+# Path2D results are hashed by protected scripts, so its float32 math must not be fused into FMA
+# (Clang/GCC contract a*b+c on ARM by default): every operation has to round exactly as written.
+set_source_files_properties(world_bindings.cpp PROPERTIES
+    COMPILE_OPTIONS "$<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-ffp-contract=off>")
 add_executable(luau-host ${HOST_SOURCES})
 add_library(headless_luau_bridge STATIC ${HOST_SOURCES})
 target_compile_definitions(headless_luau_bridge PRIVATE LOCAL_LUAU_FFI)

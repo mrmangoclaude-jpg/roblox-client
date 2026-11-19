@@ -10,6 +10,7 @@
 #include "json_bindings.hpp"
 #include "vector_math_compat.hpp"
 #include "vector2_bindings.hpp"
+#include "udim_bindings.hpp"
 #include "spatial_values.hpp"
 
 #include <lualib.h>
@@ -101,6 +102,16 @@ const Json* property_descriptor(const Node& node, const std::string& key) {
         if(node.class_name=="TextBox"&&key=="PlaceholderColor3") {
             static const Json placeholder{{"type","Color3"},{"writable",true},{"value",Json{{"$color3",{.7,.7,.7}}}}};
             return &placeholder;
+        }
+    }
+    if(node.class_name=="Path2D") {
+        if(key=="Color3") {
+            static const Json color{{"type","Color3"},{"writable",true},{"value",Json{{"$color3",{0,0,0}}}}};
+            return &color;
+        }
+        if(key=="SelectedControlPoint") {
+            static const Json selected{{"type","number"},{"writable",true},{"value",0}};
+            return &selected;
         }
     }
     if(node.class_name=="UIStroke") {
@@ -1213,6 +1224,7 @@ bool tween_playback_index(lua_State*,World&,Node&,const std::string&);
 int text_service_request(lua_State*);
 int text_service_continue(lua_State*,int);
 bool text_font_index(lua_State*,World&,Node&,const std::string&);
+#include "path2d_bindings.inc"
 int instance_index(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world; Node& n=*h->node; std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);
     if(n.class_name=="VirtualInputManager"&&virtual_input_index(L,key))return 1;
@@ -1300,6 +1312,7 @@ int instance_index(lua_State* L) {
         lua_pushlstring(L,content->data(),content->size());return 1;
     }
     if(textbox_focus_index(L,w,n,key))return 1;
+    if(n.class_name=="Path2D"&&path2d_index(L,w,n,key))return 1;
     if(n.class_name=="TextService"&&(key=="GetFamilyInfoAsync"||key=="GetTextBoundsAsync")) {
         lua_pushboolean(L,key=="GetTextBoundsAsync");lua_pushcclosurek(L,text_service_request,key.c_str(),1,text_service_continue);return 1;
     }
@@ -1425,7 +1438,8 @@ int instance_index(lua_State* L) {
        ||(class_is_a(w,n.class_name,"BasePart")&&(key=="Touched"||key=="TouchEnded"))) {push_signal(L,signal_for(w,n,key));return 1;}
     if((class_is_a(w,n.class_name,"GuiButton")&&(key=="Activated"||key=="MouseButton1Click"||key=="MouseButton1Down"||key=="MouseButton1Up"))
             ||(class_is_a(w,n.class_name,"GuiObject")&&(key=="InputBegan"||key=="InputChanged"||key=="InputEnded"||key=="MouseEnter"||key=="MouseLeave"||key=="MouseWheelForward"||key=="MouseWheelBackward"))
-            ||(n.class_name=="TextBox"&&(key=="Focused"||key=="FocusLost"))) {push_signal(L,signal_for(w,n,key));return 1;}
+            ||(n.class_name=="TextBox"&&(key=="Focused"||key=="FocusLost"))
+            ||(n.class_name=="Path2D"&&key=="ControlPointChanged")) {push_signal(L,signal_for(w,n,key));return 1;}
     if(n.class_name=="BindableEvent" && key=="Event") {push_signal(L,signal_for(w,n,"Event"));return 1;}
     if(n.class_name=="BindableEvent" && key=="Fire") {lua_pushcfunction(L,fire_bindable,"Fire");return 1;}
     if((n.class_name=="RemoteEvent"||n.class_name=="UnreliableRemoteEvent")&&key=="FireServer"){lua_pushcfunction(L,fire_remote_server,"FireServer");return 1;}
@@ -2079,6 +2093,7 @@ int instance_handle_tostring(lua_State* L) {
 }
 int instance_newindex(lua_State* L){
     Handle*h=checked_handle(L,1);World&w=*h->world;Node&n=*h->node;std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);Json value;
+    if(n.class_name=="Path2D"&&path2d_newindex(L,h,key))return 0;
     if(n.class_name=="Player") {
         if(key=="GameplayPaused"&&!SourceScheduler::has_capability(L,"RobloxScript"))return luaL_error(L,"GameplayPaused: lacking capability RobloxScript"),0;
         if((key=="Name"||key=="UserId")&&!SourceScheduler::has_capability(L,"WritePlayer"))return luaL_error(L,"Player identity: lacking capability WritePlayer"),0;
@@ -2703,6 +2718,7 @@ void install(lua_State*L,World&w){
     install_world_raycast(L,w);
     install_world_overlap(L,w);
     install_ussi_security_capabilities(L,LUA_GLOBALSINDEX);
+    install_path2d_bindings(L);
     luaL_newmetatable(L,kSignalMeta);lua_pushcfunction(L,signal_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,signal_newindex,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushcfunction(L,signal_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"RBXScriptSignal");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kConnectionMeta);lua_pushcfunction(L,connection_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,connection_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"RBXScriptConnection");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kInstanceHandleMeta);lua_pushcfunction(L,instance_handle_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,instance_handle_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,instance_handle_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushliteral(L,"InstanceHandle");lua_setfield(L,-2,"__type");lua_pushliteral(L,"headless InstanceHandle");lua_setfield(L,-2,"__metatable");lua_pop(L,1);

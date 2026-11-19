@@ -173,3 +173,13 @@ void install_udim_bindings(lua_State* L) {
     lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__type");lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     make_library(L,"UDim",udim_new);make_library(L,"UDim2",udim2_new,udim2_from_scale,udim2_from_offset);
 }
+
+bool read_udim2_raw(lua_State* L, int index, double& xs, int32_t& xo, double& ys, int32_t& yo) {
+    UDim2Value v{};
+    if (!read_udim2(L, index, &v)) return false;
+    xs = v.x.scale; xo = v.x.offset; ys = v.y.scale; yo = v.y.offset;
+    return true;
+}
+void push_udim2_raw(lua_State* L, double xs, int32_t xo, double ys, int32_t yo) {
+    push_udim2(L, {{xs, xo}, {ys, yo}});
+}
