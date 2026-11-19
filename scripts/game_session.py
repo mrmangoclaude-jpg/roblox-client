@@ -378,7 +378,11 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
         if early_sources and not early_scripts_ran and evidence['own_player_parented_to_players']:
             selected.extend(early_sources);early_scripts_ran=True
             client.report['luau_early_scripts_at_seconds']=round(time.monotonic()-client.started,3)
-        if sources and not scripts_ran and evidence['player_spawned'] and 13 in world.tags:
+        # A foreground execute drains the whole script catalog inside this packet handler, which
+        # starves the connection on large games; wait for background polling to stream it first.
+        catalog_ready = (not args.persistent_scripts or script_runtime.startup_catalog_streamed()
+                         or time.monotonic() - client.started > 120)
+        if sources and not scripts_ran and evidence['player_spawned'] and 13 in world.tags and catalog_ready:
             selected.extend(sources);scripts_ran=True
         for path, source in selected:
             try:

@@ -1075,6 +1075,15 @@ class PersistentClientScriptRuntime:
         self.synchronize(timeout_ms=10)
         return self._record(self.host.call({'op':'gui_action','action':action,'timeout_ms':20}))
 
+    def startup_catalog_streamed(self):
+        """True once background polling has delivered the whole initial script catalog.
+
+        execute() drains every pending catalog chunk before it runs, so calling it earlier
+        blocks the network loop for as long as that takes (tens of seconds on a large game).
+        """
+        return (self.host is not None and bool(self.initial_replication_complete)
+                and self._pending_script_catalog is None and not self._catalog_catchup_needed)
+
     def execute(self, source, *, timeout_ms=1000):
         if not isinstance(source, str) or len(source.encode('utf-8')) > MAX_SOURCE_BYTES:
             raise ValueError('Source must be UTF-8 Luau text up to 100 MiB')

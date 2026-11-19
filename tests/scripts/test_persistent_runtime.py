@@ -307,3 +307,18 @@ class PersistentStatusTests(unittest.TestCase):
         self.assertTrue(result['completed'])
         self.assertEqual(result['values'],['done'])
         runtime.poll.assert_called_once_with(force=True)
+
+
+class StartupCatalogGateTests(unittest.TestCase):
+    def streamed(self, **overrides):
+        state=dict(host=object(),initial_replication_complete=True,
+                   _pending_script_catalog=None,_catalog_catchup_needed=False)
+        state.update(overrides)
+        return PersistentClientScriptRuntime.startup_catalog_streamed(Mock(**state))
+
+    def test_ready_only_after_the_whole_catalog_has_streamed(self):
+        self.assertTrue(self.streamed())
+        self.assertFalse(self.streamed(host=None))
+        self.assertFalse(self.streamed(initial_replication_complete=False))
+        self.assertFalse(self.streamed(_pending_script_catalog={'1:1':{}}))
+        self.assertFalse(self.streamed(_catalog_catchup_needed=True))
