@@ -919,7 +919,7 @@ extern "C" int local_luau_source(const unsigned char* source, size_t source_len,
         SourceBindings bindings{codec,release};
         std::string result = run_vm(text, args, false, timeout_ms, memory_mb,
             nullptr, snapshot ? &world : nullptr, &bindings);
-        if (result.size() > 1024 * 1024) return 1;
+        if (result.size() > 8 * 1024 * 1024) return 1;
         auto* buffer = static_cast<char*>(std::malloc(result.size()));
         if (!buffer) return 1;
         std::memcpy(buffer, result.data(), result.size());
@@ -956,8 +956,8 @@ extern "C" int local_luau_session_request(void** handle,const unsigned char* inp
         }
         if(*handle)static_cast<PersistentSourceSession*>(*handle)->add_integrity_observations(response);
         std::string data=response.dump(-1,' ',false,Json::error_handler_t::replace);
-        if(data.size()>1024*1024) {
-            response=Json{{"ok",false},{"values",Json::array()},{"error","persistent response exceeds 1 MiB"}};
+        if(data.size()>8*1024*1024) {
+            response=Json{{"ok",false},{"values",Json::array()},{"error","persistent response exceeds 8 MiB"}};
             if(*handle)static_cast<PersistentSourceSession*>(*handle)->add_integrity_observations(response);
             data=response.dump();
         }
