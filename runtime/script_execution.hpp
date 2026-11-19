@@ -391,7 +391,7 @@ return {reconcile=reconcile, status=status}
                     &&hex.size()>=4&&hex.size()<512
                     &&(hex.compare(0,4,"0d03")==0||hex.compare(0,4,"0e03")==0);
                 if((!entry.value("signature_verified",false)&&!short_session_code)
-                   ||hex.size()>256*1024||hex.size()%2)
+                   ||hex.size()>2*1024*1024||hex.size()%2)
                     throw std::runtime_error("unverified or oversized script bytecode");
             }
         }

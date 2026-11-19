@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from session_integrity import bind_container_observer, container_candidate_probe
 
 MAX_CODE = 128 * 1024
+# Signed Roblox bytecode is far larger than source text: real games ship 300-600 KiB modules.
+MAX_BYTECODE = 1024 * 1024
 MAX_CATALOG = 32 * 1024 * 1024
 
 
@@ -72,7 +74,7 @@ def _candidates(value, shared, depth=0):
             yield from _candidates(raw, shared, depth + 1)
     elif isinstance(value, (tuple, list)):
         blocks = [item for item in value if isinstance(item, bytes) and item]
-        if len(blocks) == 2 and sum(map(len, blocks)) <= MAX_CODE:
+        if len(blocks) == 2 and sum(map(len, blocks)) <= MAX_BYTECODE:
             yield b''.join(blocks)
         for item in value:
             yield from _candidates(item, shared, depth + 1)
@@ -113,7 +115,7 @@ def prepare_script(properties, shared=None, *, verify=None, unpack=None, normali
     for raw in candidates[:8]:
         if not raw:
             continue
-        if len(raw) > MAX_CODE:
+        if len(raw) > MAX_BYTECODE:
             reason = 'bytecode_size_limit'
             continue
         reason = 'unsupported_protected_code'
@@ -151,7 +153,7 @@ def prepare_script(properties, shared=None, *, verify=None, unpack=None, normali
                 if verified.get('verification') is not True:
                     raise ValueError('signature_not_verified')
                 standard, metadata = normalize(original)
-                if len(standard) > MAX_CODE:
+                if len(standard) > MAX_BYTECODE:
                     raise ValueError('bytecode_size_limit')
                 return {'bytecode_hex': standard.hex(), 'signature_verified': True,
                         'provenance': 'verified_bytecode',

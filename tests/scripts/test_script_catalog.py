@@ -46,7 +46,32 @@ class ScriptCatalogTests(unittest.TestCase):
         self.assertEqual(prepare_script({}), {'reason': 'code_unavailable'})
         self.assertEqual(prepare_script({'Source': 'x' * (128*1024+1)})['reason'], 'source_size_limit')
         self.assertEqual(prepare_script({'Bytecode': b''})['reason'], 'code_unavailable')
-        self.assertEqual(prepare_script({'Bytecode': b'x' * (128*1024+1)})['reason'], 'bytecode_size_limit')
+        self.assertEqual(prepare_script({'Bytecode': b'x' * (1024*1024+1)})['reason'], 'bytecode_size_limit')
+
+    def test_large_signed_bytecode_is_admitted_after_verification(self):
+        big = b'\x0e\x03' + b'x' * (600 * 1024)
+        calls = []
+        def verify(raw): calls.append('verify'); return {'verification': True}
+        result = prepare_script({'Bytecode': b'container'}, unpack=lambda raw: big, verify=verify,
+                                normalize=lambda raw: (raw, {}))
+        self.assertTrue(result['signature_verified'])
+        self.assertEqual(len(bytes.fromhex(result['bytecode_hex'])), len(big))
+        self.assertEqual(calls, ['verify'])
+
+    def test_large_signed_bytecode_in_code_and_signature_blocks_is_a_candidate(self):
+        blocks = [1, 0, b'c' * (300 * 1024), b's' * 64]
+        seen = []
+        def unpack(raw): seen.append(len(raw)); return b'\x0e\x03' + raw
+        result = prepare_script({'Source': blocks}, unpack=unpack, verify=lambda raw: {'verification': True},
+                                normalize=lambda raw: (raw, {}))
+        self.assertTrue(result['signature_verified'])
+        self.assertEqual(seen, [300 * 1024 + 64])
+
+    def test_oversized_standard_bytecode_is_rejected_after_normalization(self):
+        result = prepare_script({'Bytecode': b'container'}, unpack=lambda raw: b'orig',
+                                verify=lambda raw: {'verification': True},
+                                normalize=lambda raw: (b'x' * (1024*1024+1), {}))
+        self.assertEqual(result, {'reason': 'invalid_script_bytecode'})
 
     def test_signature_verification_precedes_normalization(self):
         calls=[]
