@@ -120,7 +120,7 @@ void install(lua_State* L) {
         int op=0;for(const char* field:{"__add","__sub","__mul","__div"}){
             lua_pushinteger(L,op++);lua_pushcclosure(L,arithmetic,field,1);lua_setfield(L,-2,field);
         }
-        lua_pushstring(L,name);lua_setfield(L,-2,"__type");lua_pushstring(L,name);lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+        lua_pushstring(L,name);lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
         lua_newtable(L);lua_pushinteger(L,dimension);lua_pushcclosure(L,construct,"new",1);lua_setfield(L,-2,"new");
         lua_setreadonly(L,-1,true);lua_setglobal(L,name);
     }
@@ -129,7 +129,7 @@ void install(lua_State* L) {
         {"__index",region_index},{"__newindex",readonly},{"__eq",region_equal},{"__tostring",region_text}}){
         lua_pushcfunction(L,pair.second,pair.first);lua_setfield(L,-2,pair.first);
     }
-    lua_pushliteral(L,"Region3int16");lua_setfield(L,-2,"__type");lua_pushliteral(L,"Region3int16");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_pushliteral(L,"Region3int16");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     lua_newtable(L);lua_pushcfunction(L,region_new,"new");lua_setfield(L,-2,"new");lua_setreadonly(L,-1,true);lua_setglobal(L,"Region3int16");
 }
 } // namespace integer_values

@@ -166,11 +166,11 @@ void install_udim_bindings(lua_State* L) {
     luaL_newmetatable(L,kUDim);
     set_metamethod(L,"__index",udim_index);set_metamethod(L,"__add",udim_add);set_metamethod(L,"__sub",udim_sub);
     set_metamethod(L,"__eq",udim_equal);set_metamethod(L,"__tostring",udim_tostring);
-    lua_pushliteral(L,"UDim");lua_setfield(L,-2,"__type");lua_pushliteral(L,"UDim");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_pushliteral(L,"UDim");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kUDim2);
     set_metamethod(L,"__index",udim2_index);set_metamethod(L,"__add",udim2_add);set_metamethod(L,"__sub",udim2_sub);
     set_metamethod(L,"__eq",udim2_equal);set_metamethod(L,"__tostring",udim2_tostring);set_metamethod(L,"Lerp",udim2_lerp);
-    lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__type");lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     make_library(L,"UDim",udim_new);make_library(L,"UDim2",udim2_new,udim2_from_scale,udim2_from_offset);
 }
 

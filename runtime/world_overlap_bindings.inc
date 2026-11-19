@@ -135,7 +135,7 @@ void install_world_overlap(lua_State* L,World& w) {
     luaL_newmetatable(L,kOverlapParamsMeta);
     geometry_enum_method(L,"__index",overlap_params_index);geometry_enum_method(L,"__newindex",overlap_params_newindex);
     lua_pushliteral(L,"OverlapParams");lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"OverlapParams");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
     lua_newtable(L);lua_pushlightuserdata(L,&w);lua_pushcclosure(L,overlap_params_new,"OverlapParams.new",1);lua_setfield(L,-2,"new");
     lua_setreadonly(L,-1,true);lua_setglobal(L,"OverlapParams");
 }

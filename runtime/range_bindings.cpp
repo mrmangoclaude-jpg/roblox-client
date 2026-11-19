@@ -4,6 +4,7 @@
 #include <lua.h>
 #include <lualib.h>
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
@@ -26,7 +27,7 @@ bool has_metatable(lua_State* L, int index, const char* name) {
 
 float checked_component(lua_State* L, int index, const char* description) {
     double value = luaL_checknumber(L, index);
-    if (!std::isfinite(value) || std::abs(value) > 3.402823466e38) {
+    if (!std::isfinite(value) || std::abs(value) > static_cast<double>(std::numeric_limits<float>::max())) {
         luaL_error(L, "%s must be finite and representable as a float", description);
     }
     return static_cast<float>(value);
@@ -108,9 +109,10 @@ int rect_new(lua_State* L) {
             luaL_error(L, "Rect.new expects Vector2 min and max values");
             return 0;
         }
+        const double float_max = static_cast<double>(std::numeric_limits<float>::max());
         if (!std::isfinite(min_x) || !std::isfinite(min_y) || !std::isfinite(max_x) || !std::isfinite(max_y)
-            || std::abs(min_x) > 3.402823466e38 || std::abs(min_y) > 3.402823466e38
-            || std::abs(max_x) > 3.402823466e38 || std::abs(max_y) > 3.402823466e38) {
+            || std::abs(min_x) > float_max || std::abs(min_y) > float_max
+            || std::abs(max_x) > float_max || std::abs(max_y) > float_max) {
             luaL_error(L, "Rect coordinates must be finite and representable as floats");
             return 0;
         }
@@ -170,7 +172,7 @@ void install_meta(lua_State* L, const char* name, lua_CFunction index,
     lua_pushcfunction(L, equal, "datatype.__eq"); lua_setfield(L, -2, "__eq");
     lua_pushcfunction(L, tostring, "datatype.__tostring"); lua_setfield(L, -2, "__tostring");
     lua_pushstring(L, type_name); lua_setfield(L, -2, "__type");
-    lua_pushstring(L, type_name); lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
 }
 

@@ -245,8 +245,7 @@ void install_color3_bindings(lua_State* L) {
     lua_setfield(L, -2, "__tostring");
     lua_pushliteral(L, "Color3");
     lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "Color3");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_setreadonly(L, -1, true);
     lua_pop(L, 1);
 

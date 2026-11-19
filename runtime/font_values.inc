@@ -103,7 +103,7 @@ int text(lua_State* L) {
 void method(lua_State* L,const char* name,lua_CFunction fn){lua_pushcfunction(L,fn,name);lua_setfield(L,-2,name);}
 void install(lua_State* L) {
     luaL_newmetatable(L,meta);method(L,"__index",index);method(L,"__newindex",newindex);method(L,"__eq",equal);method(L,"__tostring",text);
-    lua_pushliteral(L,"Font");lua_setfield(L,-2,"__type");lua_pushliteral(L,"Font");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
+    lua_pushliteral(L,"Font");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
     lua_newtable(L);method(L,"new",construct);method(L,"fromEnum",from_enum);method(L,"fromName",from_name);method(L,"fromId",from_id);
     lua_setreadonly(L,-1,true);lua_setglobal(L,"Font");
 }

@@ -439,8 +439,7 @@ void install_sequence_bindings(lua_State* L) {
     method(L, "__tostring", keypoint_tostring);
     lua_pushliteral(L, "NumberSequenceKeypoint");
     lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable NumberSequenceKeypoint");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
 
     luaL_newmetatable(L, kSequenceMeta);
@@ -450,8 +449,7 @@ void install_sequence_bindings(lua_State* L) {
     method(L, "__tostring", sequence_tostring);
     lua_pushliteral(L, "NumberSequence");
     lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable NumberSequence");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
 
     lua_createtable(L, 0, 1);
@@ -470,8 +468,7 @@ void install_sequence_bindings(lua_State* L) {
     method(L, "__tostring", color_keypoint_tostring);
     lua_pushliteral(L, "ColorSequenceKeypoint");
     lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable ColorSequenceKeypoint");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
 
     luaL_newmetatable(L, kColorSequenceMeta);
@@ -481,8 +478,7 @@ void install_sequence_bindings(lua_State* L) {
     method(L, "__tostring", color_sequence_tostring);
     lua_pushliteral(L, "ColorSequence");
     lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable ColorSequence");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
 
     lua_createtable(L, 0, 1);

@@ -73,7 +73,7 @@ void install_ray_bindings(lua_State* L) {
     ray_method(L, "__index", ray_index); ray_method(L, "__newindex", ray_readonly);
     ray_method(L, "__eq", ray_equal); ray_method(L, "__tostring", ray_string);
     lua_pushliteral(L, "Ray"); lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable Ray"); lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_setreadonly(L, -1, true); lua_pop(L, 1);
     lua_newtable(L); ray_method(L, "new", ray_new);
     lua_setreadonly(L, -1, true); lua_setglobal(L, "Ray");

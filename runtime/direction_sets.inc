@@ -64,7 +64,7 @@ void install(lua_State* L) {
         const char* name=is_axes?"Axes":"Faces";
         luaL_newmetatable(L,is_axes?axes_meta:faces_meta);
         method(L,"__index",index);method(L,"__newindex",readonly);method(L,"__eq",equal);method(L,"__tostring",text);
-        lua_pushstring(L,name);lua_setfield(L,-2,"__type");lua_pushstring(L,name);lua_setfield(L,-2,"__metatable");
+        lua_pushstring(L,name);lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
         lua_setreadonly(L,-1,true);lua_pop(L,1);
         lua_newtable(L);lua_pushboolean(L,is_axes);lua_pushcclosure(L,construct,"new",1);lua_setfield(L,-2,"new");
         lua_setreadonly(L,-1,true);lua_setglobal(L,name);

@@ -186,8 +186,7 @@ void install_spatial_values(lua_State* L) {
     set_function(L, "__tostring", region_string);
     lua_pushliteral(L, "Region3");
     lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable Region3");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_setreadonly(L, -1, true);
     lua_pop(L, 1);
 

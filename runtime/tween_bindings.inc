@@ -246,7 +246,7 @@ void install_tween_bindings(lua_State* L) {
     lua_pushcfunction(L, tween_info_tostring, "__tostring"); lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, tween_info_equal, "__eq"); lua_setfield(L, -2, "__eq");
     lua_pushliteral(L, "TweenInfo"); lua_setfield(L, -2, "__type");
-    lua_pushliteral(L, "immutable TweenInfo"); lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
 
     lua_newtable(L);

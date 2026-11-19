@@ -205,8 +205,7 @@ void install_physical_properties(lua_State* L) {
     lua_setfield(L, -2, "__tostring");
     lua_pushstring(L, "PhysicalProperties");
     lua_setfield(L, -2, "__type");
-    lua_pushstring(L, "PhysicalProperties");
-    lua_setfield(L, -2, "__metatable");
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);
     install_constructor(L);
 }

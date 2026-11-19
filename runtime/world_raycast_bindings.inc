@@ -193,7 +193,7 @@ void install_world_raycast(lua_State* L,World& w) {
     luaL_newmetatable(L,kRaycastParamsMeta);
     geometry_enum_method(L,"__index",raycast_params_index);geometry_enum_method(L,"__newindex",raycast_params_newindex);
     lua_pushliteral(L,"RaycastParams");lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"RaycastParams");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_setreadonly(L,-1,true);lua_pop(L,1);
     luaL_newmetatable(L,kRaycastResultMeta);
     geometry_enum_method(L,"__index",raycast_result_index);geometry_enum_method(L,"__newindex",raycast_result_readonly);
     lua_pushliteral(L,"RaycastResult");lua_setfield(L,-2,"__type");

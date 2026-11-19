@@ -345,7 +345,7 @@ void install_brickcolor_bindings(lua_State* L) {
     lua_pushcfunction(L,tostring_value,"__tostring");lua_setfield(L,-2,"__tostring");
     lua_pushcfunction(L,equal,"__eq");lua_setfield(L,-2,"__eq");
     lua_pushliteral(L,"BrickColor");lua_setfield(L,-2,"__type");
-    lua_pushliteral(L,"BrickColor");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
+    lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     lua_createtable(L,0,11);
     lua_pushcfunction(L,create,"new");lua_setfield(L,-2,"new");
     lua_pushcfunction(L,palette,"palette");lua_setfield(L,-2,"palette");

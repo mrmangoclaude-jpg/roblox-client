@@ -47,11 +47,15 @@ int push_value(lua_State* L, double x, double y) {
 }
 int construct(lua_State* L) {
     // The engine reads only the first two arguments and ignores any extras.
-    // Infinity represents an unbounded UISizeConstraint maximum. Keep the
-    // existing NaN-input guard; property consumers validate allowed signs.
-    // Authored serialization preserves infinity using explicit $number tags.
-    double x=luaL_optnumber(L,1,0),y=luaL_optnumber(L,2,0);
-    if(std::isnan(x)||std::isnan(y)){luaL_error(L,"Vector2 components must not be NaN");return 0;}
+    // Infinity represents an unbounded UISizeConstraint maximum. Authored serialization preserves
+    // infinity using explicit $number tags; property consumers validate allowed values.
+    // The engine converts each component leniently: numbers and numeric strings convert, anything
+    // else (nil, booleans, tables, other strings) reads as 0, and NaN passes through.
+    auto component=[&](int index)->double {
+        const int type=lua_type(L,index);
+        return type==LUA_TNUMBER||(type==LUA_TSTRING&&lua_isnumber(L,index))?lua_tonumber(L,index):0.0;
+    };
+    const double x=component(1),y=component(2);
     return push_raw(L,x,y);
 }
 int index(lua_State* L) {
