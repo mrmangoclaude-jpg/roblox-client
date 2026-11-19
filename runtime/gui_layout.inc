@@ -261,7 +261,7 @@ bool validate_gui_assignment(lua_State* L,World& w,const Node& n,const std::stri
                 throw std::runtime_error("FillDirectionMaxCells requires a nonnegative integer");
         }
     } else if(!is_authored_value(L,3)||type!=luaL_typename(L,3))
-        throw std::runtime_error("incorrect datatype for GUI property");
+        throw std::runtime_error("Unable to assign property "+key+". "+type+" expected, got "+(lua_type(L,3)==LUA_TNONE?std::string("nil"):std::string(luaL_typename(L,3))));
     if((n.class_name=="UIStroke"&&key=="BorderOffset")||(n.class_name=="UIGradient"&&key=="Offset")) {
         Json supplied;capture_authored_value(L,3,supplied);
         for(const auto& value:supplied.at(key=="Offset"?"$vector2":"$udim"))

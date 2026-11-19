@@ -4,7 +4,7 @@ namespace property_defaults {
 struct Value { std::string key; Json value; bool writable; };
 
 Value read(lua_State* L,Node& node){
-    if(lua_gettop(L)!=2){luaL_error(L,"property-default method expects one property name");}
+    if(lua_gettop(L)<2||lua_isnil(L,2)){luaL_error(L,"Argument 1 missing or nil");}
     luaL_checktype(L,2,LUA_TSTRING);size_t length=0;const char* raw=lua_tolstring(L,2,&length);
     if(!length||length>256||std::memchr(raw,0,length)){
         luaL_error(L,"property name must contain 1 through 256 bytes without NUL");
@@ -19,7 +19,7 @@ Value read(lua_State* L,Node& node){
         return {key,nullptr,true};
     const Json* descriptor=property_descriptor(node,key);
     if(!descriptor||!descriptor->contains("value"))
-        throw std::runtime_error("code-instantiated default is unavailable for this property");
+        throw std::runtime_error("Invalid argument to IsPropertyModified(): Class "+node.class_name+" has no property named `"+key+"`");
     return {key,descriptor->at("value"),descriptor->value("writable",false)};
 }
 
@@ -42,7 +42,7 @@ int is_property_modified(lua_State* L){
         push_json(L,*h->world,reference.value);
         const Json expected=convert_lua_value(L,*h->world,-1);lua_pop(L,1);
         lua_pushboolean(L,current!=expected);return 1;
-    }catch(const std::exception& error){luaL_error(L,"IsPropertyModified failed: %s",error.what());return 0;}
+    }catch(const std::runtime_error& error){luaL_error(L,"%s",error.what());return 0;}
 }
 
 int reset_property_to_default(lua_State* L){

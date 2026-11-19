@@ -2395,6 +2395,7 @@ int instance_newindex(lua_State* L){
             Node& parent=*static_cast<Handle*>(lua_touserdata(L,3))->node;
             luaL_error(L,"Attempt to set parent of %s to %s would result in circular reference",instance_name(w,n).c_str(),instance_full_name(w,parent).c_str());
         }
+        if(message.rfind("Unable to assign property ",0)==0)luaL_error(L,"%s",message.c_str());
         luaL_error(L,"local property write failed for %s.%s: %s",n.class_name.c_str(),key.c_str(),message.c_str());return 0;
     }
     return 0;
@@ -2414,7 +2415,7 @@ int instance_from_existing(lua_State* L) {
 }
 int instance_new(lua_State*L){
     auto*w=static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1)));
-    if(lua_gettop(L)<1||lua_gettop(L)>2){luaL_error(L,"Instance.new expects a class name and optional Parent");return 0;}
+    if(lua_gettop(L)<1){luaL_error(L,"missing argument #1 to 'new' (string expected)");return 0;}
     size_t class_len=0;const char*raw=luaL_checklstring(L,1,&class_len);std::string cls(raw,class_len);
     if(api_trace_enabled())api_trace(L,"new",cls);
     const auto& classes=constructors();
@@ -2431,7 +2432,7 @@ int instance_new(lua_State*L){
     }
     if(!constructor || !constructor->value("creatable",false)){luaL_error(L,"Unable to create an Instance of type \"%s\"",cls.c_str());return 0;}
     Handle*parent=nullptr;
-    if(lua_gettop(L)==2&&!lua_isnil(L,2)){parent=checked_handle(L,2);if(parent->world!=w){luaL_error(L,"Parent belongs to a different world snapshot");return 0;}}
+    if(lua_gettop(L)>=2&&!lua_isnil(L,2)){if(lua_type(L,2)!=LUA_TUSERDATA||!has_meta(L,2,kInstanceMeta))luaL_typeerror(L,2,"Instance");parent=checked_handle(L,2);if(parent->world!=w){luaL_error(L,"Parent belongs to a different world snapshot");return 0;}}
     if(w->nodes.size()>=kMaxNodes+1000){luaL_error(L,"local instance limit exceeded");return 0;}
     Node node;node.attributes_known=true;node.collection_tags_known=true;node.server_owned=false;do{node.id="local:"+std::to_string(w->next_local_id++);}while(w->nodes.count(node.id));node.class_name=cls;node.name=constructor->at("name").get<std::string>();
     for(auto property=constructor->at("properties").begin();property!=constructor->at("properties").end();++property) {
