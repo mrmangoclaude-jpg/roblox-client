@@ -11,6 +11,7 @@
 #include "vector_math_compat.hpp"
 #include "vector2_bindings.hpp"
 #include "udim_bindings.hpp"
+#include "api_trace.hpp"
 #include "spatial_values.hpp"
 
 #include <lualib.h>
@@ -1234,6 +1235,7 @@ bool text_font_index(lua_State*,World&,Node&,const std::string&);
 #include "path2d_bindings.inc"
 int instance_index(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world; Node& n=*h->node; std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);
+    if(api_trace_enabled())api_trace(L,"get",n.class_name+"."+key);
     if(n.class_name=="VirtualInputManager"&&virtual_input_index(L,key))return 1;
     if(n.class_name=="UserInputService"&&virtual_input_device_index(L,w,n,key))return 1;
     if(key=="DataCost"&&!SourceScheduler::has_capability(L,"LocalUser"))return luaL_error(L,"DataCost: lacking capability LocalUser"),0;
@@ -2101,6 +2103,7 @@ int instance_handle_tostring(lua_State* L) {
 }
 int instance_newindex(lua_State* L){
     Handle*h=checked_handle(L,1);World&w=*h->world;Node&n=*h->node;std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);Json value;
+    if(api_trace_enabled())api_trace(L,"set",n.class_name+"."+key);
     if(n.class_name=="Player") {
         if(key=="GameplayPaused"&&!SourceScheduler::has_capability(L,"RobloxScript"))return luaL_error(L,"GameplayPaused: lacking capability RobloxScript"),0;
         if((key=="Name"||key=="UserId")&&!SourceScheduler::has_capability(L,"WritePlayer"))return luaL_error(L,"Player identity: lacking capability WritePlayer"),0;
@@ -2294,6 +2297,7 @@ int instance_new(lua_State*L){
     auto*w=static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1)));
     if(lua_gettop(L)<1||lua_gettop(L)>2){luaL_error(L,"Instance.new expects a class name and optional Parent");return 0;}
     size_t class_len=0;const char*raw=luaL_checklstring(L,1,&class_len);std::string cls(raw,class_len);
+    if(api_trace_enabled())api_trace(L,"new",cls);
     const auto& classes=constructors();
     auto found=classes.find(cls);
     const Json* constructor=found==classes.end()?nullptr:&*found;

@@ -1,6 +1,7 @@
 #include "source_scheduler.hpp"
 #include "local_test_limits.hpp"
 #include "closure_bindings.hpp"
+#include "api_trace.hpp"
 #include <algorithm>
 #include <lualib.h>
 #include <cmath>
@@ -237,6 +238,7 @@ int SourceScheduler::legacy_wait_continue(lua_State* L,int) {
 }
 int SourceScheduler::legacy_wait_api(lua_State* L) {
     auto& self=*static_cast<SourceScheduler*>(lua_touserdata(L,lua_upvalueindex(1)));
+    if(api_trace_enabled())api_trace(L,"wait","wait");
     double duration=luaL_optnumber(L,1,.03);
     if(!std::isfinite(duration)||duration>86400){luaL_error(L,"invalid wait duration");return 0;}
     if(!lua_isyieldable(L)){luaL_error(L,"wait requires a yieldable thread");return 0;}
@@ -254,6 +256,7 @@ int SourceScheduler::task_api_inner(lua_State* L) {
     auto& self=*static_cast<SourceScheduler*>(lua_touserdata(L,lua_upvalueindex(1)));
     int operation=lua_tointeger(L,lua_upvalueindex(2));
     if(operation==3) {
+        if(api_trace_enabled())api_trace(L,"wait","task.wait");
         double duration=luaL_optnumber(L,1,0);
         if(!std::isfinite(duration)||duration>86400){luaL_error(L,"invalid task.wait duration");return 0;}
         if(!lua_isyieldable(L)){luaL_error(L,"task.wait requires a yieldable thread");return 0;}

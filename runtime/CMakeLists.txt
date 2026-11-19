@@ -42,7 +42,7 @@ set(HOST_SOURCES
     source_bindings.cpp source_scheduler.cpp authored_bindings.cpp spatial_values.cpp
     physical_properties.cpp color3_bindings.cpp vector2_bindings.cpp udim_bindings.cpp
     range_bindings.cpp brickcolor_bindings.cpp datetime_bindings.cpp sequence_bindings.cpp
-    closure_bindings.cpp json_bindings.cpp movement_bindings.cpp)
+    closure_bindings.cpp json_bindings.cpp movement_bindings.cpp api_trace.cpp)
 # Path2D results are hashed by protected scripts, so its float32 math must not be fused into FMA
 # (Clang/GCC contract a*b+c on ARM by default): every operation has to round exactly as written.
 set_source_files_properties(world_bindings.cpp PROPERTIES
