@@ -363,11 +363,14 @@ std::string SourceScheduler::owner(lua_State* thread) const {
     if(context&&context->scheduler==this)return context->owner;
     auto found=tasks_.find(thread);return found==tasks_.end()?"":found->second.owner;
 }
-lua_State* SourceScheduler::spawn_owned(lua_State* from,int index,const std::string& owner_name) {
+lua_State* SourceScheduler::spawn_owned(lua_State* from,int index,const std::string& owner_name,bool report_errors) {
     index=lua_absindex(from,index);lua_State* child=lua_newthread(from);
     lua_pushvalue(from,index);lua_xmove(from,child,1);
-    auto& task=track(child);set_owner(task,owner_name);task.state=Ready;
-    resume(task,from);return child;
+    auto& task=track(child);set_owner(task,owner_name);task.state=Ready;task.report_errors=report_errors;
+    // The engine starts a script or module thread from its own scheduler, not from another Lua thread, so the body begins
+    // at the base C-call depth. Passing the requiring thread would charge it for the depth of every caller, and protected
+    // scripts measure how many coroutines they can nest.
+    resume(task,nullptr);return child;
 }
 void SourceScheduler::cancel_owner(const std::string& owner_name) {
     for(auto& [thread,task]:tasks_)if(task.owner==owner_name&&task.state!=Running) {

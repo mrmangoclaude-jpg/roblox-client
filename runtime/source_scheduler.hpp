@@ -45,7 +45,7 @@ public:
     static int identity(lua_State* thread);
     static void set_identity(lua_State* thread,int identity);
     static bool has_capability(lua_State* thread,const std::string& capability);
-    lua_State* spawn_owned(lua_State* from,int function_index,const std::string& owner);
+    lua_State* spawn_owned(lua_State* from,int function_index,const std::string& owner,bool report_errors=true);
     void cancel_owner(const std::string& owner);
     lua_State* invoke_callback(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,const std::string& owner,int identity=-1);
     void release_invocation(lua_State* thread);

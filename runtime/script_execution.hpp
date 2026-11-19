@@ -83,7 +83,18 @@ class ScriptExecution {
             if(world.load_script(L,name.c_str(),code,source)!=0){lua_pushnil(L);lua_insert(L,-2);lua_pushboolean(L,1);return 3;}
             lua_pushvalue(L,2);lua_setfenv(L,-2);return 1;
         }
-        if(operation==2) {luaL_checktype(L,1,LUA_TFUNCTION);std::string owner=luaL_checkstring(L,2);scheduler.spawn_owned(L,1,owner);return 1;}
+        if(operation==2) {luaL_checktype(L,1,LUA_TFUNCTION);std::string owner=luaL_checkstring(L,2);scheduler.spawn_owned(L,1,owner,false);return 1;}
+        if(operation==13) {
+            // Outcome of a finished body thread: true plus its return values, false plus its error, or nothing when it did not finish normally.
+            luaL_checktype(L,1,LUA_TTHREAD);lua_State* body=lua_tothread(L,1);
+            // lua_costatus only calls a thread finished once its stack is empty, but the return values stay on it, so read the raw state.
+            const int status=lua_status(body);
+            if(status==LUA_YIELD||status==LUA_BREAK)return 0;
+            if(status!=LUA_OK){lua_pushboolean(L,0);lua_xpush(body,L,-1);return 2;}
+            lua_Debug frame{};if(lua_getinfo(body,0,"s",&frame))return 0; // still has frames: not finished
+            const int count=lua_gettop(body);luaL_checkstack(L,count+2,"too many body results");
+            lua_pushboolean(L,1);for(int i=1;i<=count;++i)lua_xpush(body,L,i);return count+1;
+        }
         if(operation==3) {std::string owner=luaL_checkstring(L,1);world_bindings::stop_script_tasks(L,world,owner);return 0;}
         if(operation==4) {luaL_checktype(L,1,LUA_TTHREAD);lua_pushboolean(L,scheduler.completion(lua_tothread(L,1))!=LUA_YIELD);return 1;}
         if(operation==5) {
@@ -133,7 +144,7 @@ public:
         }
         update(snapshot.value("script_sources",Json::object()));
         static constexpr const char* bootstrap=R"SCRIPTS(
-local scan, compile, spawn, stop, ended, identify, playerScripts, codeReady, initialReady, cloneTemplate, builtinScripts, registerSource = ...
+local scan, compile, spawn, stop, ended, identify, playerScripts, codeReady, initialReady, cloneTemplate, builtinScripts, registerSource, threadResult = ...
 local executor = getfenv()
 -- Copy the engine root once and make it the actual fallback for authored and
 -- game scopes. Removing a global must not reveal it again through a fallback.
@@ -236,9 +247,20 @@ end
 local function environmentFor(instance)
     return setmetatable({script=instance}, {__index=base})
 end
+-- A module or script body runs directly as its thread's function, as in Roblox. A protected-call wrapper would cost one
+-- C-call level that protected scripts can measure (they nest coroutines until "C stack overflow" and use the depth), so
+-- the outcome is read off the finished thread instead.
 local function finishBroken(entry)
     if entry.state == "loading" and entry.thread and ended(entry.thread) then
-        entry.state, entry.error, entry.thread = "failed", "Module task terminated before returning", nil
+        local result = table.pack(threadResult(entry.thread))
+        if result[1] == true then
+            if result.n ~= 2 then entry.state, entry.error = "failed", "Module code must return exactly one value"
+            else entry.state, entry.value = "loaded", result[2] end
+        elseif result[1] == false then
+            entry.state, entry.error = "failed", tostring(result[2])
+        else
+            entry.state, entry.error, entry.thread = "failed", "Module task terminated before returning", nil
+        end
     end
 end
 function require(module)
@@ -261,16 +283,7 @@ function require(module)
         end
         entry = {state="loading", id=moduleId,instance=module,scope=scope}
         modules[moduleId] = entry
-        entry.thread = spawn(function()
-            local result = table.pack(pcall(fn))
-            if not result[1] then
-                entry.state, entry.error = "failed", tostring(result[2])
-            elseif result.n ~= 2 then
-                entry.state, entry.error = "failed", "Module code must return exactly one value"
-            else
-                entry.state, entry.value = "loaded", result[2]
-            end
-        end, "module:" .. entry.id)
+        entry.thread = spawn(fn, "module:" .. entry.id)
     end
     while entry.state == "loading" do
         finishBroken(entry)
@@ -286,7 +299,7 @@ function getscriptclosure(instance)
 end
 getscriptfunction=getscriptclosure
 function getloadedmodules()
-    local result={};for _,entry in modules do if entry.state=="loaded" then table.insert(result,entry.instance) end end;return result
+    local result={};for _,entry in modules do finishBroken(entry);if entry.state=="loaded" then table.insert(result,entry.instance) end end;return result
 end
 function getrunningscripts()
     local result={};for instance,entry in scripts do if entry.active and entry.thread and entry.state~="failed" then table.insert(result,instance) end end
@@ -368,15 +381,18 @@ local function reconcile()
                     entry.scope=scope
                     entry.active, entry.state, entry.error = true, "running", nil
                     starts += 1
-                    entry.thread = spawn(function()
-                        local ok, message = pcall(fn)
-                        entry.state = ok and "completed" or "failed"
-                        entry.error = not ok and tostring(message) or nil
-                        if not ok then warn(instance.Name .. ": " .. tostring(message)) end
-                    end, "script:" .. entry.id)
+                    entry.thread = spawn(fn, "script:" .. entry.id)
                 end
             elseif entry and entry.state == "running" and entry.thread and ended(entry.thread) then
-                entry.state, entry.error = "failed", "Script task terminated before completing"
+                local result = table.pack(threadResult(entry.thread))
+                if result[1] == true then
+                    entry.state, entry.error = "completed", nil
+                elseif result[1] == false then
+                    entry.state, entry.error = "failed", tostring(result[2])
+                    warn(instance.Name .. ": " .. tostring(result[2]))
+                else
+                    entry.state, entry.error = "failed", "Script task terminated before completing"
+                end
             end
         end
     end
@@ -392,8 +408,8 @@ return {reconcile=reconcile, status=status}
 )SCRIPTS";
         std::string code=Luau::compile(bootstrap);
         if(world.load_script(L,"=script-runtime",code,bootstrap)!=0)throw std::runtime_error("cannot load script runtime");
-        for(int operation:{0,1,2,3,4,7,8,9,10,11,12,5})push_bridge(L,operation);
-        if(lua_pcall(L,12,1,0)!=0)throw std::runtime_error(lua_tostring(L,-1));
+        for(int operation:{0,1,2,3,4,7,8,9,10,11,12,5,13})push_bridge(L,operation);
+        if(lua_pcall(L,13,1,0)!=0)throw std::runtime_error(lua_tostring(L,-1));
         interface_ref=lua_ref(L,-1);lua_pop(L,1);
         for(const char* name:{"getrenv","getscriptclosure","getscriptfunction","getloadedmodules","getrunningscripts","getsenv"}) {
             lua_getglobal(L,name);mark_executor_closure(L,-1);lua_pop(L,1);
