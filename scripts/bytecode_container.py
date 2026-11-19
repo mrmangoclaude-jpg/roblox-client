@@ -13,7 +13,7 @@ from login_packets import ticket_hash
 from session_integrity import observe_container_checksum
 
 
-MAX_BYTES = 128 * 1024
+MAX_BYTES = 1024 * 1024  # real games ship 300-600 KiB signed modules; keep equal to script_catalog.MAX_BYTECODE
 
 
 def unpack_container(blob):

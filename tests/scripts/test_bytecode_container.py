@@ -28,6 +28,14 @@ class ContainerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             unpack_container(container_fixture(data, extra=b'garbage'))
 
+    def test_modules_larger_than_128_kib_unpack(self):
+        data = bytes(range(256)) * 1600
+        self.assertGreater(len(data), 128 * 1024)
+        self.assertEqual(unpack_container(container_fixture(data)), data)
+        stored = container_fixture(data[:200 * 1024], compressed=False)
+        self.assertGreater(len(stored), 128 * 1024)
+        self.assertEqual(unpack_container(stored), data[:200 * 1024])
+
     def test_checksum_truncation_and_expansion_limits(self):
         encoded = container_fixture(b'owned local fixture')
         for cut in range(len(encoded)):
