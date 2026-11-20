@@ -455,7 +455,7 @@ class NativeSessionFairnessTests(unittest.TestCase):
 
         client.quic.close = close
         client.quic.datagrams_to_send = datagrams_to_send
-        client.report["datagrams_sent"] = 9998
+        client.report["datagrams_sent"] = 59998
 
         def select_wait(read, write, error, timeout):
             clock[0] += timeout
@@ -475,7 +475,7 @@ class NativeSessionFairnessTests(unittest.TestCase):
 
         sent = [packet[len(client.header):] for packet, _ in fake_socket.sent]
         self.assertEqual(sent, [b"app-0", b"app-1", b"close"])
-        self.assertEqual(client.report["datagrams_sent"], 10001)
+        self.assertEqual(client.report["datagrams_sent"], 60001)
         self.assertTrue(client.report["traffic_limit_reached"])
         self.assertTrue(client.finished)
 
