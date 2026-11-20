@@ -630,10 +630,43 @@ PyObject* encode_method(PyObject*, PyObject* args) {
     }
 }
 
+// scripts/runtime_diagnostics.py _valid_json_value: plain JSON-ready data only (exact types, str keys, at most 64 levels). Pure
+// C-API reads of exact builtin types, so no Python code runs and the answer cannot change while it walks.
+bool valid_json(PyObject* value, int depth) {
+    if (depth > 64) return false;
+    if (value == Py_None || PyUnicode_CheckExact(value) || PyLong_CheckExact(value) || PyFloat_CheckExact(value) || PyBool_Check(value)) return true;
+    if (PyList_CheckExact(value)) {
+        const Py_ssize_t n = PyList_Size(value);
+        for (Py_ssize_t i = 0; i < n; ++i)
+            if (!valid_json(PyList_GetItem(value, i), depth + 1)) return false;
+        return true;
+    }
+    if (PyTuple_CheckExact(value)) {
+        const Py_ssize_t n = PyTuple_Size(value);
+        for (Py_ssize_t i = 0; i < n; ++i)
+            if (!valid_json(PyTuple_GetItem(value, i), depth + 1)) return false;
+        return true;
+    }
+    if (PyDict_CheckExact(value)) {
+        Py_ssize_t position = 0;
+        PyObject *key, *item;
+        while (PyDict_Next(value, &position, &key, &item))
+            if (!PyUnicode_CheckExact(key) || !valid_json(item, depth + 1)) return false;
+        return true;
+    }
+    return false;
+}
+
+PyObject* valid_json_method(PyObject*, PyObject* arg) {
+    if (valid_json(arg, 0)) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
 PyMethodDef methods[] = {
     {"property_list", property_list, METH_VARARGS, "Decode one replicated property list; raises Fallback to defer to Python."},
     {"copy_tree", copy_tree_method, METH_O, "Deep copy of plain data; raises Fallback for any other type."},
     {"encode", encode_method, METH_VARARGS, "world_snapshot._encode for the common value shapes; raises Fallback otherwise."},
+    {"valid_json", valid_json_method, METH_O, "runtime_diagnostics._valid_json_value: True for plain JSON-ready data."},
     {nullptr, nullptr, 0, nullptr},
 };
 

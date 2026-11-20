@@ -194,6 +194,57 @@ class NativeWireTests(unittest.TestCase):
             accepted += reference[0] == 'ok'
         self.assertGreater(accepted, 3000)
 
+    def test_valid_json_matches_python_validator(self):
+        import runtime_diagnostics
+        rng = random.Random(1717)
+
+        class DictSub(dict):
+            pass
+
+        class IntSub(int):
+            pass
+
+        def build(depth):
+            kind = rng.randrange(14 if depth < 5 else 6)
+            if kind == 0: return None
+            if kind == 1: return rng.choice([True, False])
+            if kind == 2: return rng.randrange(-10**30, 10**30)
+            if kind == 3: return rng.choice([0.5, float('nan'), float('inf'), -0.0])
+            if kind == 4: return rng.choice(['', 'abc', 'café'])
+            if kind == 5: return rng.choice([b'x', object(), IntSub(3), DictSub(), {1, 2}, complex(1, 2), bytearray(b'a')])
+            if kind in (6, 7): return [build(depth + 1) for _ in range(rng.randrange(4))]
+            if kind == 8: return tuple(build(depth + 1) for _ in range(rng.randrange(4)))
+            if kind in (9, 10): return {rng.choice(['a', 'b', 'c']): build(depth + 1) for _ in range(rng.randrange(4))}
+            if kind == 11: return {rng.choice([1, b'k', None, (1, 2)]): build(depth + 1)}
+            if kind == 12: return DictSub(a=build(depth + 1))
+            return {'k': build(depth + 1)}
+
+        def reference(value):
+            saved = runtime_diagnostics._native_valid_json
+            runtime_diagnostics._native_valid_json = None
+            try:
+                return runtime_diagnostics._valid_json_value(value)
+            finally:
+                runtime_diagnostics._native_valid_json = saved
+
+        seen = [0, 0]
+        for _ in range(20000):
+            value = build(0)
+            expected = reference(value)
+            self.assertEqual(NATIVE.valid_json(value), expected, repr(value)[:200])
+            seen[expected] += 1
+        self.assertGreater(min(seen), 500)  # both outcomes really occur
+
+        for levels in (63, 64, 65, 66):  # the depth limit is shared: a leaf at depth 64 is fine, at 65 is not
+            nested = None
+            for _ in range(levels):
+                nested = [nested]
+            self.assertEqual(NATIVE.valid_json(nested), reference(nested), levels)
+        loop = []
+        loop.append(loop)
+        self.assertEqual(NATIVE.valid_json(loop), reference(loop))
+        self.assertFalse(NATIVE.valid_json(loop))
+
 
 if __name__ == '__main__':
     unittest.main()

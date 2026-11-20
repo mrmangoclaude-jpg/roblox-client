@@ -12,6 +12,11 @@ import re
 import threading
 from typing import Any, Callable, Iterable
 
+try:  # optional native validator (scripts/build_native_wire.py); the Python walk below is the reference implementation
+    from _wire_native import valid_json as _native_valid_json  # ImportError too for a stale build without it
+except ImportError:
+    _native_valid_json = None
+
 
 Batch = tuple[tuple[Path, Any], ...]
 Writer = Callable[[Path, Any], None]
@@ -25,6 +30,8 @@ def _load_private_writer() -> Writer:
 
 def _valid_json_value(value: Any, depth: int = 0) -> bool:
     """Reject host/runtime objects before they can cross into the worker."""
+    if depth == 0 and _native_valid_json is not None:
+        return _native_valid_json(value)
     if depth > 64:
         return False
     if value is None or type(value) in (str, int, float, bool):
