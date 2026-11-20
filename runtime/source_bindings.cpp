@@ -65,6 +65,10 @@ int loadstring(lua_State* L) {
     if(status!=0) {
         lua_pushnil(L); lua_insert(L,-2); return 2;
     }
+    // Executor loadstring chunks run in the shared executor globals, so
+    // getfenv(chunk) == getgenv() as in real executors.
+    lua_getfield(L,LUA_REGISTRYINDEX,"Headless.ExecutorEnvironment");
+    lua_setfenv(L,-2);
     mark_executor_closure(L,-1);
     return 1;
 }
