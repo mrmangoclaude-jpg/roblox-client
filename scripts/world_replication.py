@@ -9,6 +9,22 @@ from replication_ping import read_ping
 from received_attributes import attribute_update
 from world_action_journal import WorldActionJournal
 
+try:  # optional native decoder (scripts/build_native_wire.py); the Python decoder below is the reference implementation
+    import _wire_native as _native
+except ImportError:
+    _native = None
+
+
+def _copy(value):
+    """copy.deepcopy for the plain data the decoder produces; the native copy defers to deepcopy for anything unusual."""
+    native = _native
+    if native is not None:
+        try:
+            return native.copy_tree(value)
+        except native.Fallback:
+            pass
+    return copy.deepcopy(value)
+
 
 class World:
     def __init__(self, schema):
@@ -19,6 +35,7 @@ class World:
         self.shared = {}
         self.items = collections.Counter()
         self.context = None
+        self._native_props = {}
         self.tags = []
         self.guid_batches = []
         self.replication_foci = {}
@@ -70,13 +87,13 @@ class World:
         action = {'sequence': self.revision, 'key': key,
                   'kind': 'remove' if deleted else 'create' if created else 'set'}
         if created:
-            action['instance'] = copy.deepcopy(self.instances[key])
+            action['instance'] = _copy(self.instances[key])
             action['creation'] = dict(self.creation.get(key, {}))
             action['property_revisions'] = dict(self.property_versions.get(key, {}))
         elif not deleted:
             instance = self.instances[key]
             action['class'] = instance['class']
-            action['fields'] = {name: copy.deepcopy(instance.get('parent') if name == 'Parent'
+            action['fields'] = {name: _copy(instance.get('parent') if name == 'Parent'
                                                        else instance['properties'].get(name)) for name in fields}
         self.actions.append(action)
 
@@ -383,6 +400,28 @@ class World:
 
     def property_list(self, r, instance, deferred, compressed=False):
         cls = self.schema['classes'][instance['class']]
+        native = _native
+        if native is not None:
+            # One native call decodes the whole list. Anything it does not handle exactly (malformed data, rare property types)
+            # raises Fallback and the Python code below decodes the same bytes, producing the original errors.
+            try:
+                props = self._native_props.get(instance['class'])
+                if props is None:
+                    props = tuple((p['name'], p['type']) for p in (self.schema['properties'][i] for i in cls['properties']))
+                    self._native_props[instance['class']] = props
+                names, strings = self.schema.get('names', []), self.schema.get('strings', [])
+            except (KeyError, IndexError, TypeError):
+                props = None
+            if props is not None:
+                try:
+                    position, values, found = native.property_list(r.data, r.pos, props, names, strings, self.shared, compressed)
+                except native.Fallback:
+                    pass
+                else:
+                    r.pos = position
+                    instance['properties'].update(values)
+                    deferred.update(found)
+                    return
         last = -1
         while True:
             index = r.u8()

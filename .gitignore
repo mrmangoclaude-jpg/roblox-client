@@ -29,3 +29,7 @@ __pycache__/
 /tests/fixtures/sunc/suite.luau
 
 /.rove-platform.json
+
+# optional native replication decoder (python scripts/build_native_wire.py)
+scripts/_wire_native.pyd
+scripts/_wire_native.off
