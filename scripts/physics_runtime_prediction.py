@@ -10,10 +10,10 @@ from simulation_step_clock import SimulationStepClock
 from physics_character_states import extract_environment
 from physics_platforms import platform_poses_from_world
 from world_snapshot import _node_snapshot, instance_id
+from world_replication import _copy  # native deep copy of plain data, falls back to copy.deepcopy
 from types import SimpleNamespace
 from mesh_asset_decoder import MeshAssetQueue, visual_meshes_from_world
 from collections import OrderedDict
-import copy
 import weakref
 
 _ENVIRONMENT_CLASSES = frozenset((
@@ -188,7 +188,7 @@ def _cached_node_snapshots(world, keys, *, read_only=False):
                 entry['frozen_nodes'][key] = frozen
             result.append(frozen)
         else:
-            result.append(copy.deepcopy(snapshot))
+            result.append(_copy(snapshot))
     while len(entry['nodes']) > _SNAPSHOT_NODE_CACHE_MAX_NODES:
         removed, _ = entry['nodes'].popitem(last=False)
         entry['frozen_nodes'].pop(removed, None)
