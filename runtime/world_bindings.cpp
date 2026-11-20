@@ -783,7 +783,11 @@ int is_descendant(lua_State* L) {
 int get_full_name(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world;
     std::vector<std::string> parts; Node* n=h->node; size_t hops=0;
-    while(n && hops++<=w.nodes.size()) { parts.push_back(instance_name(w,*n)); std::string p=parent_id(w,*n); n=p.empty()?nullptr:find_node(w,p); }
+    while(n && hops++<=w.nodes.size()) {
+        // The DataModel is the root of every path but is not part of it: "Workspace.Model.Part", never "Game.Workspace...".
+        if(n->id==w.game_id&&!parts.empty())break;
+        parts.push_back(instance_name(w,*n)); std::string p=parent_id(w,*n); n=p.empty()?nullptr:find_node(w,p);
+    }
     std::string out; for(auto it=parts.rbegin();it!=parts.rend();++it){if(!out.empty())out+='.';out+=*it;}
     lua_pushlstring(L,out.data(),out.size()); return 1;
 }
