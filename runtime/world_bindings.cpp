@@ -1563,6 +1563,11 @@ int instance_index_raw(lua_State* L) {
     if(n.class_name=="RunService" && (key=="IsStudio" || key=="IsServer" || key=="IsEdit" || key=="IsRunMode")){lua_pushcfunction(L,run_service_false,key.c_str());return 1;}
     if(n.class_name=="RunService" && (key=="IsRunning" || key=="IsClient")){lua_pushcfunction(L,run_service_true,key.c_str());return 1;}
     const Json* value=property_value(w,n,key);
+    // Workspace-level place settings are engine-owned and are not sent as instance
+    // properties. The real client always exposes them; use the Roblox defaults when
+    // the replication stream omits them, so scripts can read them in any game.
+    if(!value&&n.class_name=="Workspace"&&key=="StreamingEnabled"){lua_pushboolean(L,1);return 1;}
+    if(!value&&n.class_name=="Workspace"&&key=="FilteringEnabled"){lua_pushboolean(L,1);return 1;}
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
     if(!value)for(const auto& id:direct_children(w,n.id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
     if(!value) {
