@@ -35,6 +35,33 @@ void api_trace_stack(lua_State* L) {
         line += std::string(ar.short_src ? ar.short_src : "?") + ":" + std::to_string(ar.currentline);
         if (ar.name) line += std::string("(") + ar.name + ")";
     }
+    // A C function on top (string.gsub, string.find, ...) is what a hot loop is chewing on: show its arguments (string lengths with a
+    // short escaped prefix, numbers, other types). Only strings are read; lua_tolstring would convert a number in place.
+    {
+        lua_Debug top{};
+        if (lua_getinfo(L, 0, "s", &top) && top.short_src && std::strcmp(top.short_src, "[C]") == 0) {
+            const int count = lua_gettop(L);
+            for (int i = 1; i <= count && i <= 4; ++i) {
+                const int type = lua_type(L, i);
+                line += " | a" + std::to_string(i) + "=";
+                if (type == LUA_TSTRING) {
+                    size_t length = 0;
+                    const char* text = lua_tolstring(L, i, &length);
+                    line += "str(" + std::to_string(length) + ")'";
+                    for (size_t k = 0; k < length && k < 24; ++k) {
+                        const unsigned char c = static_cast<unsigned char>(text[k]);
+                        if (c >= 32 && c < 127 && c != '\'') line += static_cast<char>(c);
+                        else { char hex[8]; std::snprintf(hex, sizeof hex, "\\x%02x", c); line += hex; }
+                    }
+                    line += "'";
+                } else if (type == LUA_TNUMBER) {
+                    line += "num(" + std::to_string(lua_tonumber(L, i)) + ")";
+                } else {
+                    line += lua_typename(L, type);
+                }
+            }
+        }
+    }
     std::fprintf(file, "stack %s\n", line.c_str());
     std::fflush(file);
 }
