@@ -642,7 +642,12 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                     last_feed_log = now
                     current().emit('runtime.feed', world_revision=getattr(script_runtime.world, 'revision', None),
                                    host_revision=script_runtime.revision,
-                                   catalog_streamed=script_runtime.startup_catalog_streamed())
+                                   catalog_streamed=script_runtime.startup_catalog_streamed(),
+                                   initial_replication_complete=bool(script_runtime.initial_replication_complete),
+                                   catalog_pending=script_runtime._pending_script_catalog is not None,
+                                   catalog_catchup_needed=bool(script_runtime._catalog_catchup_needed),
+                                   catalog_entries=len(script_runtime.script_catalog or ()),
+                                   initial_tag_seen=13 in getattr(script_runtime.world, 'tags', ()))
                 if locomotion_animation is not None and locomotion_source_token is not None:
                     animation_result = script_runtime.take_background_source_result(
                         locomotion_source_token)
