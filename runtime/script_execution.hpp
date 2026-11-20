@@ -422,6 +422,7 @@ local function reconcile()
                     warn(instance.Name .. ": " .. tostring(result[2]))
                 else
                     entry.state, entry.error = "failed", "Script task terminated before completing"
+                    warn(instance.Name .. ": " .. entry.error) -- a task stopped by the CPU cap would otherwise vanish silently
                 end
             end
         end
