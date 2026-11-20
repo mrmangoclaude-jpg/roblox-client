@@ -25,7 +25,7 @@ from chat_protocol import delivery_error
 
 
 class PersistentLuauHost:
-    def __init__(self, snapshot, *, memory_mb=None, text_service_factory=None):
+    def __init__(self, snapshot, *, memory_mb=None, text_service_factory=None, task_cpu_limit_ms=None):
         if memory_mb is None:
             memory_mb = 512
         self.memory_mb = memory_mb
@@ -44,7 +44,10 @@ class PersistentLuauHost:
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
         try:
-            result = self.call({'op': 'init', 'snapshot': snapshot, 'memory_mb': memory_mb})
+            init = {'op': 'init', 'snapshot': snapshot, 'memory_mb': memory_mb}
+            if task_cpu_limit_ms is not None:
+                init['task_cpu_limit_ms'] = task_cpu_limit_ms
+            result = self.call(init)
             self.initial_result = result
             if not result['ok']: raise RuntimeError(result.get('error', 'persistent initialization failed'))
         except BaseException:
@@ -196,11 +199,15 @@ class PersistentClientScriptRuntime:
                  input_capabilities=None, viewport=None, display=None,
                  session_stats_provider=None,
                  allow_visual_mesh_approximation=False,
-                 place_id=None, game_id=None):
+                 place_id=None, game_id=None, task_cpu_limit_ms=None, cpu_burst_ms=None):
         if type(background_budget_ms) is not int or not 1 <= background_budget_ms <= 50:
             raise ValueError('Background budget must be 1..50 ms')
         if type(memory_mb) is not int or not 8 <= memory_mb <= 512:
             raise ValueError('VM memory cap must be 8..512 MiB')
+        if task_cpu_limit_ms is not None and (type(task_cpu_limit_ms) is not int or not 1000 <= task_cpu_limit_ms <= 3600000):
+            raise ValueError('Task CPU limit must be 1000..3600000 ms')
+        if cpu_burst_ms is not None and (type(cpu_burst_ms) is not int or not background_budget_ms < cpu_burst_ms <= 2000):
+            raise ValueError('CPU burst slice must be above the background budget and at most 2000 ms')
         if type(allow_visual_mesh_approximation) is not bool:
             raise ValueError('Visual mesh approximation opt-in must be a boolean')
         self.world_provider, self.user_id, self.job_id = world_provider, user_id, job_id
@@ -208,6 +215,10 @@ class PersistentClientScriptRuntime:
         self.game_id = game_id
         self.background_budget_ms = background_budget_ms
         self.memory_mb = memory_mb
+        # A live game runs protected scripts that need seconds of CPU before their first yield. The ordinary profile
+        # stops a background task after 2 s of non-yielding CPU and gives it one short slice per network tick.
+        self.task_cpu_limit_ms = task_cpu_limit_ms
+        self.cpu_burst_ms = cpu_burst_ms
         if session_stats_provider is not None and not callable(session_stats_provider):
             raise TypeError('Session statistics provider must be callable')
         self.session_stats_provider = session_stats_provider
@@ -331,7 +342,7 @@ class PersistentClientScriptRuntime:
         if 'active_remote_server_requests' in result:
             self.active_remote_server_requests = set(result['active_remote_server_requests'])
         self.stats.update({key: result[key] for key in ('active_jobs', 'pending_tasks', 'pending_events', 'pending_event_kinds', 'world_revision',
-                           'server_actions', 'server_events', 'unresolved_server_events') if key in result})
+                           'server_actions', 'server_events', 'unresolved_server_events', 'slice_exhausted') if key in result})
         self.stats['task_errors_total'] = (self.stats.get('task_errors_total', 0)
                                            + len(result.get('task_errors', [])))
         if self.movement_preview is not None:
@@ -487,6 +498,14 @@ class PersistentClientScriptRuntime:
         raise RuntimeError(response.get('error', fallback))
 
     def _background_step_budget(self):
+        budget = self._ordinary_background_budget()
+        if self.cpu_burst_ms is not None and self.stats.get('slice_exhausted') is True:
+            # The host used its whole slice, so scripts are CPU-bound. The host is a separate process and the network
+            # loop does not wait for it, so a longer turn costs no packets and lets protected scripts finish starting.
+            return max(budget, self.cpu_burst_ms)
+        return budget
+
+    def _ordinary_background_budget(self):
         """Choose the test-profile slice from current authored-job states.
 
         Large local tests need longer turns while authored roots are runnable,
@@ -772,7 +791,7 @@ class PersistentClientScriptRuntime:
             if not snapshot['local_player'] or not snapshot['services']:
                 raise ValueError('Local Player and services must be replicated before starting persistent scripts')
             try:
-                self.host = PersistentLuauHost(snapshot, memory_mb=self.memory_mb)
+                self.host = PersistentLuauHost(snapshot, memory_mb=self.memory_mb, task_cpu_limit_ms=self.task_cpu_limit_ms)
             except BaseException:
                 world._script_preparation_queue.close()
                 del world._script_preparation_queue

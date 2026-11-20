@@ -12,6 +12,8 @@ class SourceScheduler {
 public:
     using Clock=std::chrono::steady_clock;
     SourceScheduler(lua_State* main,Clock::time_point deadline,bool persistent=false):main_(main),deadline_(deadline),persistent_(persistent){}
+    // Cumulative non-yielding CPU one background task may use before it is stopped; 0 keeps the process default.
+    void set_task_cpu_limit_ms(int milliseconds){task_cpu_limit_ms_=milliseconds;}
     void install(lua_State* thread);
     int run(lua_State* root,int arguments,std::function<void()> pump={});
     lua_State* callback(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,std::function<bool()> guard={},const std::string& owner="",int identity=-1);
@@ -84,6 +86,7 @@ private:
     Clock::time_point deadline_;
     Clock::time_point started_=Clock::now();
     bool persistent_;
+    int task_cpu_limit_ms_=0;
     std::unordered_map<lua_State*,Task> tasks_;
     std::deque<Task*> ready_;
     bool prefer_authored_=true;

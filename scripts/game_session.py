@@ -83,9 +83,17 @@ def parse_args(argv=None):
                         help='Start a persistent source file once the own Player is replicated')
     parser.add_argument('--memory-mb', type=int, default=512,
                         help='Persistent Luau VM memory cap in MiB (8..512, default 512)')
+    parser.add_argument('--task-cpu-limit-ms', type=int, default=30000,
+                        help='CPU one script may use without yielding before it is stopped (1000..3600000, default 30000)')
+    parser.add_argument('--cpu-burst-ms', type=int, default=400,
+                        help='Longer host turn used while scripts are CPU-bound (51..2000, default 400)')
     args = parser.parse_args(argv)
     if not 8 <= args.memory_mb <= 512:
         parser.error('--memory-mb must be between 8 and 512')
+    if not 1000 <= args.task_cpu_limit_ms <= 3600000:
+        parser.error('--task-cpu-limit-ms must be between 1000 and 3600000')
+    if not 51 <= args.cpu_burst_ms <= 2000:
+        parser.error('--cpu-burst-ms must be between 51 and 2000')
     if args.ticket:
         args.chat_console = True
         args.persistent_scripts = True
@@ -227,7 +235,8 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
             memory_mb=args.memory_mb,
             session_stats_provider=(clock.runtime_statistics if clock is not None else None),
             allow_visual_mesh_approximation=args.visual_mesh_collisions,
-            place_id=join.get('PlaceId'), game_id=join.get('UniverseId'))
+            place_id=join.get('PlaceId'), game_id=join.get('UniverseId'),
+            task_cpu_limit_ms=args.task_cpu_limit_ms, cpu_burst_ms=args.cpu_burst_ms)
     else:
         script_runtime = runtime_type(lambda: world, join['UserId'], join['GameId'])
     script_results = []

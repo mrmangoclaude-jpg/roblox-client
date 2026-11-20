@@ -141,7 +141,7 @@ void SourceScheduler::resume(Task& task,lua_State* from) {
     // lifetime limit for a callback. Rotate interrupted work through the ready
     // queue so another task can run, retaining the cumulative non-yielding cap.
     if(status==LUA_BREAK&&persistent_&&(!task.root||large_local_test())&&
-       task.uninterrupted_cpu<std::chrono::milliseconds(local_test_time_limit())) {
+       task.uninterrupted_cpu<std::chrono::milliseconds(task_cpu_limit_ms_>0?task_cpu_limit_ms_:local_test_time_limit())) {
         // Bound the response boost separately from the larger task lifetime
         // cap, so a CPU-heavy continuation cannot stay in the priority lane.
         if(task.response_ready&&task.response_priority_cpu>=std::chrono::milliseconds(32)) {

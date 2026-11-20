@@ -41,6 +41,7 @@ class ScriptExecution {
                     auto origin=world.nodes.find(node.script_origin);if(origin!=world.nodes.end()&&origin->second.script_code.is_object())node.script_code=origin->second.script_code;
                 }
             }
+            if(lua_toboolean(L,1))return 0; // refresh only: the caller discards the rows
             Json rows=world_bindings::script_nodes(world);lua_createtable(L,rows.size(),0);int table=lua_gettop(L),index=0;
             for(const auto& row:rows) {
                 lua_createtable(L,0,7);auto id=row.at("id").get<std::string>();
@@ -379,7 +380,7 @@ local function status()
     return result
 end
 local function reconcile()
-    scan() -- Refresh code retained by cloned script instances.
+    scan(true) -- Refresh code retained by cloned script instances (rows are not needed).
     prepareTemplates()
     -- Script starts are queued, so this context stays stable during the scan.
     -- Resolve it once: a missing Character can otherwise scan the whole world
@@ -431,7 +432,10 @@ local function reconcile()
             entry.active, entry.state, entry.thread = false, "stopped", nil
         end
     end
-    return status()
+    local result = status()
+    -- Starts are capped per pass: the host must call again while eligible scripts are still waiting to start.
+    result.more_pending = starts >= 8
+    return result
 end
 return {reconcile=reconcile, status=status}
 )SCRIPTS";

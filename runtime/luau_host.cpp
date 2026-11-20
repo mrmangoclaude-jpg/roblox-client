@@ -350,6 +350,9 @@ class PersistentSourceSession {
     std::unique_ptr<ScriptExecution> script_execution;
     uint64_t next_job=1;
     std::string request_operation,request_stage;
+    // Result of the last full script reconcile, valid while nothing has changed what is eligible to run.
+    world_bindings::Json last_script_status_;
+    bool reconcile_clean_=false;
 
     Json job_diagnostics() const {
         Json output=Json::array();
@@ -402,6 +405,7 @@ class PersistentSourceSession {
         return completed;
     }
 public:
+    void set_task_cpu_limit_ms(int milliseconds){scheduler->set_task_cpu_limit_ms(milliseconds);}
     Json failure_context() const {
         return {{"operation",request_operation},{"stage",request_stage}};
     }
@@ -461,7 +465,10 @@ public:
             return Json{{"ok",true},{"values",Json::array()},{"persistent",true}};
         }
         request_stage="script_reconcile_before";
-        Json script_status=script_execution->reconcile();
+        // The previous request ended with a full reconcile; nothing can change what is eligible between requests,
+        // so repeating it would only rebuild the same script list (tens of milliseconds in a large world).
+        Json script_status=(reconcile_clean_&&last_script_status_.is_object())?last_script_status_:script_execution->reconcile();
+        if(operation=="execute"||operation=="update")reconcile_clean_=false;
         uint64_t started=0;
         const Json* engine_poses=nullptr;
         Json engine_pose_result=nullptr;
@@ -499,7 +506,7 @@ public:
             world_bindings::render_gui_action(*world,command.at("action"));
         } else if(operation!="poll"&&operation!="init")throw std::runtime_error("unknown persistent source operation");
         request_stage="script_reconcile_after";
-        script_status=script_execution->reconcile();
+        if(!reconcile_clean_)script_status=script_execution->reconcile();
         if(engine_poses)engine_pose_result=world_bindings::apply_engine_poses(*world,*engine_poses);
         if(engine_owned_parts)engine_owned_part_result=world_bindings::apply_engine_owned_parts(*world,*engine_owned_parts);
         // World updates and script reconciliation are non-yielding host work.
@@ -523,6 +530,9 @@ public:
                         });
         request_stage="script_reconcile_final";
         script_status=script_execution->reconcile();
+        {const bool more_pending=script_status.is_object()&&script_status.value("more_pending",false);
+         if(script_status.is_object())script_status.erase("more_pending");
+         last_script_status_=script_status;reconcile_clean_=!more_pending;}
         request_stage="collect_jobs";
         Json completed=collect_jobs();
         Json response{{"ok",true},{"values",Json::array()},{"persistent",true},{"completed_jobs",completed},
@@ -533,6 +543,7 @@ public:
             {"output",world->output},{"output_truncated",world->output_truncated},{"mutations",world->mutations},
             {"task_errors",scheduler->errors()},{"active_jobs",jobs.size()},
             {"pending_tasks",scheduler->pending()+world->events.size()},{"pending_events",world->events.size()},
+            {"slice_exhausted",limits.timed_out||Clock::now()>=limits.deadline},
             {"world_revision",world->sequence},{"server_actions",world->server_actions},
             {"server_events",world->server_events},{"unresolved_server_events",world->unresolved_server_events}};
         if(engine_pose_result.is_object()) {
@@ -945,6 +956,9 @@ extern "C" int local_luau_session_request(void** handle,const unsigned char* inp
             if(!*handle) {
                 if(command.value("op","")!="init")throw std::runtime_error("persistent VM requires init first");
                 auto session=std::make_unique<PersistentSourceSession>(command.at("snapshot").dump(),command.value("memory_mb",512),SourceBindings{codec,release});
+                const int task_cpu_limit_ms=command.value("task_cpu_limit_ms",0);
+                if(task_cpu_limit_ms!=0&&(task_cpu_limit_ms<1000||task_cpu_limit_ms>3600000))throw std::runtime_error("task CPU limit must be 1000..3600000 ms");
+                session->set_task_cpu_limit_ms(task_cpu_limit_ms);
                 response=session->request(Json{{"op","init"}});*handle=session.release();
             } else {
                 if(command.value("op","")=="init")throw std::runtime_error("persistent VM is already initialized");
