@@ -595,6 +595,26 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                 if evidence['movement_ready'] and 'movement_ready_at_seconds' not in client.report:
                     client.report['movement_ready_at_seconds'] = round(now - client.started, 3)
 
+    physics_defer_lag = int(os.environ.get('ROVE_PHYSICS_DEFER_LAG', '20000'))
+    physics_defer_interval = float(os.environ.get('ROVE_PHYSICS_DEFER_INTERVAL', '1.0'))
+    physics_defer_window = float(os.environ.get('ROVE_PHYSICS_DEFER_WINDOW', '150'))
+
+    def physics_deferred(now, client):
+        """While the VM is far behind the world (the join's bulk load), run physics once per interval instead of every tick.
+
+        Physics took about 40% of the network thread during a large join, which slowed the world feed; a character standing at
+        spawn does not need ground prediction every 300 ms. Bounded by a window so a server that never lets the VM catch up
+        still gets normal physics afterwards.
+        """
+        if not args.persistent_scripts or physics_last_tick is None:
+            return False
+        world_now = getattr(script_runtime, 'world', None)
+        if world_now is None or now - client.started >= physics_defer_window:
+            return False
+        if world_now.revision - script_runtime.revision <= physics_defer_lag:
+            return False
+        return now - physics_last_tick < physics_defer_interval
+
     def tick(client, now):
         nonlocal startup_scripts_ok, physics_last_tick, last_runtime_diagnostics
         nonlocal locomotion_source_token, last_feed_log
@@ -698,7 +718,8 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
             property_acks.flush(client.send)
             client.report['property_acknowledgments'] = property_acks.summary()
 
-        if physics_trial is not None and wire_clock.replicator_initialized:
+        if (physics_trial is not None and wire_clock.replicator_initialized
+                and not physics_deferred(time.monotonic(), client)):
             now = time.monotonic()
             delta = min(.25, max(0., now-physics_last_tick)) if physics_last_tick is not None else 0.
             physics_last_tick = now
