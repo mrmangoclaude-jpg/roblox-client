@@ -38,6 +38,25 @@ int vector3_index(lua_State* L) {
     return 1;
 }
 
+// The engine's Vector3 methods are native functions named in PascalCase (debug.info(v.Abs, "n") == "Abs"), while the pinned Luau
+// vector library names them in lowercase. Forward the PascalCase entries so the names match and share the pinned behavior.
+int vector3_forward(lua_State* L) {
+    const int count = lua_gettop(L);
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_call(L, count, LUA_MULTRET);
+    return lua_gettop(L);
+}
+// Vector3:Angle returns a single-precision number in the engine; the pinned library returns the double it computed.
+int vector3_angle_forward(lua_State* L) {
+    const int count = lua_gettop(L);
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_call(L, count, 1);
+    lua_pushnumber(L, static_cast<double>(static_cast<float>(luaL_checknumber(L, -1))));
+    return 1;
+}
+
 void install_vector3_methods(lua_State* L) {
     const int base = lua_gettop(L);
     lua_getglobal(L, "vector");
@@ -53,6 +72,9 @@ void install_vector3_methods(lua_State* L) {
     for (const auto& pair : pairs) {
         lua_getfield(L, library, pair[1]);
         if (!lua_isfunction(L, -1)) luaL_error(L, "missing pinned vector function %s", pair[1]);
+        if (pair[0][0] >= 'A' && pair[0][0] <= 'Z') {
+            lua_pushcclosurek(L, std::strcmp(pair[0], "Angle") ? vector3_forward : vector3_angle_forward, pair[0], 1, nullptr);
+        }
         lua_setfield(L, methods, pair[0]);
     }
     lua_pushcfunction(L,vector3_fuzzy_eq,"FuzzyEq");

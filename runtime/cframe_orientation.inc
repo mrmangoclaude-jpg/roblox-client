@@ -24,6 +24,12 @@ FrameVector finite_frame_vector(lua_State* L, int index) {
 FrameMatrix frame_columns(const FrameVector& x, const FrameVector& y, const FrameVector& z) {
     return {x[0],y[0],z[0], x[1],y[1],z[1], x[2],y[2],z[2]};
 }
+// A CFrame stores its rotation in single precision; constructors computed in double must round the result the way the engine
+// does (lookAt/lookAlong verified bit for bit against the live client with this plain rounding).
+FrameMatrix round_frame_matrix_to_float(FrameMatrix m) {
+    for (double& v : m) v = static_cast<double>(static_cast<float>(v));
+    return m;
+}
 
 FrameQuaternion frame_quaternion_unit(lua_State* L, FrameQuaternion q) {
     double scale = 0;
@@ -95,7 +101,7 @@ int cframe_look(lua_State* L, bool target_point) {
     right=frame_unit(L, right);
     up=frame_cross(right, forward);
     FrameVector back{-forward[0],-forward[1],-forward[2]};
-    return push_frame_value(L, p, frame_columns(right, up, back));
+    return push_frame_value(L, p, round_frame_matrix_to_float(frame_columns(right, up, back)));
 }
 int cframe_look_at(lua_State* L) { return cframe_look(L, true); }
 int cframe_look_along(lua_State* L) { return cframe_look(L, false); }
@@ -122,8 +128,15 @@ int cframe_lerp(lua_State* L) {
     FrameQuaternion q;
     for (int i=0; i<4; ++i) q[i]=wa*qa[i]+wb*qb[i];
     FrameVector p;
-    for (int i=0; i<3; ++i) p[i]=a->p[i]+alpha*(b->p[i]-a->p[i]);
-    return push_frame_value(L, p, frame_quaternion_matrix(frame_quaternion_unit(L, q)));
+    // Position interpolates in single precision with a float alpha (verified against the live client).
+    const float alpha_f=static_cast<float>(alpha);
+    for (int i=0; i<3; ++i) {
+        const float from=static_cast<float>(a->p[i]), to=static_cast<float>(b->p[i]);
+        const float delta=to-from;
+        const float step=delta*alpha_f;
+        p[i]=static_cast<double>(from+step);
+    }
+    return push_frame_value(L, p, round_frame_matrix_to_float(frame_quaternion_matrix(frame_quaternion_unit(L, q))));
 }
 
 int cframe_to_axis_angle(lua_State* L) {
@@ -153,24 +166,50 @@ int cframe_angle_between(lua_State* L) {
     return 1;
 }
 
+using FrameF3 = std::array<float, 3>;
+float f3_dot(const FrameF3& a, const FrameF3& b) { float s=a[0]*b[0]; s=s+a[1]*b[1]; s=s+a[2]*b[2]; return s; }
+FrameF3 f3_cross(const FrameF3& a, const FrameF3& b) {
+    return {a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]};
+}
+float f3_length(const FrameF3& a) { return static_cast<float>(std::sqrt(static_cast<double>(f3_dot(a, a)))); }
+FrameF3 f3_unit(const FrameF3& a) { const float l=f3_length(a); return {a[0]/l, a[1]/l, a[2]/l}; }
+
 int cframe_rotation_between(lua_State* L) {
-    auto from=frame_unit(L, finite_frame_vector(L, 1));
-    auto to=frame_unit(L, finite_frame_vector(L, 2));
-    auto axis=frame_cross(from, to);
-    double sine=std::hypot(axis[0],axis[1],axis[2]);
-    double cosine=std::clamp(frame_dot(from, to), -1.0, 1.0);
-    if (sine < 1e-12 && cosine > 0)
+    // Validate like before (finite, nonzero), then work in single precision as the engine does: float unit vectors, a float
+    // half-angle quaternion that is renormalized in float, and the standard quaternion matrix in float. This reproduces the live
+    // client's result for perpendicular unit vectors bit for bit (its quaternion components come out one ulp above 1/sqrt(2));
+    // for general inputs it agrees to within a few ulps.
+    frame_unit(L, finite_frame_vector(L, 1));
+    frame_unit(L, finite_frame_vector(L, 2));
+    auto v1=finite_frame_vector(L, 1), v2=finite_frame_vector(L, 2);
+    FrameF3 from=f3_unit({static_cast<float>(v1[0]),static_cast<float>(v1[1]),static_cast<float>(v1[2])});
+    FrameF3 to=f3_unit({static_cast<float>(v2[0]),static_cast<float>(v2[1]),static_cast<float>(v2[2])});
+    FrameF3 axis=f3_cross(from, to);
+    const float sine=f3_length(axis);
+    const float cosine=std::clamp(f3_dot(from, to), -1.0f, 1.0f);
+    if (sine < 1e-12f && cosine > 0)
         return push_frame_value(L, {}, {1,0,0,0,1,0,0,0,1});
-    if (sine < 1e-12) {
+    if (sine < 1e-12f) {
         int least=0;
         for (int i=1; i<3; ++i) if (std::fabs(from[i]) < std::fabs(from[least])) least=i;
-        FrameVector basis{}; basis[least]=1;
-        axis=frame_cross(from, basis);
+        FrameF3 basis{}; basis[least]=1;
+        axis=f3_cross(from, basis);
     }
-    axis=frame_unit(L, axis);
-    double half=std::atan2(sine, cosine)/2;
-    double s=std::sin(half);
-    return push_frame_value(L, {}, frame_quaternion_matrix({axis[0]*s,axis[1]*s,axis[2]*s,std::cos(half)}));
+    axis=f3_unit(axis);
+    const float angle=static_cast<float>(std::atan2(static_cast<double>(sine), static_cast<double>(cosine)));
+    const float half=angle/2;
+    const float s=static_cast<float>(std::sin(static_cast<double>(half))), w0=static_cast<float>(std::cos(static_cast<double>(half)));
+    float x=axis[0]*s, y=axis[1]*s, z=axis[2]*s, w=w0;
+    float n2=(x*x+y*y)+(z*z+w*w);
+    const float n=static_cast<float>(std::sqrt(static_cast<double>(n2)));
+    x=x/n; y=y/n; z=z/n; w=w/n;
+    float m[9];
+    m[0]=1.0f-2.0f*(y*y+z*z); m[1]=2.0f*(x*y-z*w);      m[2]=2.0f*(x*z+y*w);
+    m[3]=2.0f*(x*y+z*w);      m[4]=1.0f-2.0f*(x*x+z*z); m[5]=2.0f*(y*z-x*w);
+    m[6]=2.0f*(x*z-y*w);      m[7]=2.0f*(y*z+x*w);      m[8]=1.0f-2.0f*(x*x+y*y);
+    FrameMatrix r{};
+    for(int i=0;i<9;++i)r[i]=static_cast<double>(m[i]);
+    return push_frame_value(L, {}, r);
 }
 
 FrameVector frame_euler_angles(const FrameMatrix& r,bool yxz) {
@@ -209,15 +248,10 @@ int geometry_rotation_order(lua_State* L,int index) {
     return lua_isnoneornil(L,index)?0:checked_geometry_value(L,index,kGeometryRotationOrder);
 }
 int cframe_from_euler_general(lua_State* L) {
-    double x=finite_frame_angle(L,1),y=finite_frame_angle(L,2),z=finite_frame_angle(L,3);
+    float x=static_cast<float>(finite_frame_angle(L,1)),y=static_cast<float>(finite_frame_angle(L,2)),z=static_cast<float>(finite_frame_angle(L,3));
     int order=geometry_rotation_order(L,4);
-    double cx=std::cos(x),sx=std::sin(x),cy=std::cos(y),sy=std::sin(y),cz=std::cos(z),sz=std::sin(z);
-    FrameMatrix rotations[3]={{1,0,0,0,cx,-sx,0,sx,cx},
-        {cy,0,sy,0,1,0,-sy,0,cy},{cz,-sz,0,sz,cz,0,0,0,1}};
-    FrameMatrix result{1,0,0,0,1,0,0,0,1};
-    const char* axes=kGeometryEnums[kGeometryRotationOrder].names[order];
-    for(int i=0;i<3;++i)result=frame_product(result,rotations[axes[i]-'X']);
-    return push_frame_value(L,{},result);
+    // Same single-precision pipeline as CFrame.Angles (the live client returns identical values for fromEulerAngles(x,y,z,XYZ)).
+    return push_frame_value(L,{},euler_float_matrix(x,y,z,kGeometryEnums[kGeometryRotationOrder].names[order]));
 }
 int cframe_to_euler_general(lua_State* L) {
     const auto& r=checked_cframe(L,1)->r;

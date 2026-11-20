@@ -143,17 +143,14 @@ int cframe_point_object(lua_State* L) { return cframe_space(L, true, true, true)
 int cframe_vector_world(lua_State* L) { return cframe_space(L, false, true, false); }
 int cframe_vector_object(lua_State* L) { return cframe_space(L, true, true, false); }
 
-int cframe_euler(lua_State* L, bool yxz) {
-    float x = static_cast<float>(finite_frame_angle(L, 1));
-    float y = static_cast<float>(finite_frame_angle(L, 2));
-    float z = static_cast<float>(finite_frame_angle(L, 3));
+// The engine builds Euler rotations in single precision: float-rounded angles, cos/sin rounded to float, and float products
+// accumulated left to right. axes names the order, e.g. "XYZ" gives Rx*Ry*Rz (verified bit for bit against the live client for XYZ and YXZ).
+FrameMatrix euler_float_matrix(float x, float y, float z, const char* axes) {
     float cx=static_cast<float>(std::cos(double(x))), sx=static_cast<float>(std::sin(double(x)));
     float cy=static_cast<float>(std::cos(double(y))), sy=static_cast<float>(std::sin(double(y)));
     float cz=static_cast<float>(std::cos(double(z))), sz=static_cast<float>(std::sin(double(z)));
     using FM = std::array<float, 9>;
-    FM rx{1,0,0, 0,cx,-sx, 0,sx,cx};
-    FM ry{cy,0,sy, 0,1,0, -sy,0,cy};
-    FM rz{cz,-sz,0, sz,cz,0, 0,0,1};
+    const FM rotations[3]={{1,0,0, 0,cx,-sx, 0,sx,cx}, {cy,0,sy, 0,1,0, -sy,0,cy}, {cz,-sz,0, sz,cz,0, 0,0,1}};
     auto mul=[](const FM& a, const FM& b){
         FM r{};
         for(int i=0;i<3;++i)for(int j=0;j<3;++j){
@@ -163,10 +160,16 @@ int cframe_euler(lua_State* L, bool yxz) {
         }
         return r;
     };
-    FM rot = mul(mul(yxz ? ry : rx, yxz ? rx : ry), rz);
+    FM rot = mul(mul(rotations[axes[0]-'X'], rotations[axes[1]-'X']), rotations[axes[2]-'X']);
     FrameMatrix r{};
     for(int i=0;i<9;++i)r[i]=static_cast<double>(rot[i]);
-    return push_frame_value(L, {}, r);
+    return r;
+}
+int cframe_euler(lua_State* L, bool yxz) {
+    float x = static_cast<float>(finite_frame_angle(L, 1));
+    float y = static_cast<float>(finite_frame_angle(L, 2));
+    float z = static_cast<float>(finite_frame_angle(L, 3));
+    return push_frame_value(L, {}, euler_float_matrix(x, y, z, yxz ? "YXZ" : "XYZ"));
 }
 int cframe_euler_xyz(lua_State* L) { return cframe_euler(L, false); }
 int cframe_euler_yxz(lua_State* L) { return cframe_euler(L, true); }
@@ -177,12 +180,23 @@ int cframe_axis_angle(lua_State* L) {
     double length = std::hypot(axis[0], axis[1], axis[2]);
     if (!std::isfinite(length) || length == 0)
         luaL_error(L, "CFrame axis must be finite and nonzero");
-    double x=axis[0]/length, y=axis[1]/length, z=axis[2]/length;
-    double c=std::cos(angle), s=std::sin(angle), t=1-c;
-    return push_frame_value(L, {}, {
-        c+x*x*t, x*y*t-z*s, x*z*t+y*s,
-        y*x*t+z*s, c+y*y*t, y*z*t-x*s,
-        z*x*t-y*s, z*y*t+x*s, c+z*z*t});
+    // Single precision end to end, as in the engine (all nine components verified bit for bit against the live client): float
+    // angle, float axis normalized by a float length, cos/sin rounded to float, then float products in this exact grouping.
+    const float fa=static_cast<float>(angle);
+    const float ax=static_cast<float>(axis[0]), ay=static_cast<float>(axis[1]), az=static_cast<float>(axis[2]);
+    float sum=ax*ax; sum=sum+ay*ay; sum=sum+az*az;
+    const float len=static_cast<float>(std::sqrt(static_cast<double>(sum)));
+    const float x=ax/len, y=ay/len, z=az/len;
+    const float c=static_cast<float>(std::cos(static_cast<double>(fa))), s=static_cast<float>(std::sin(static_cast<double>(fa)));
+    const float t=1.0f-c;
+    float xx=x*x, yy=y*y, zz=z*z, xy=x*y, xz=x*z, yx=y*x, yz=y*z, zx=z*x, zy=z*y;
+    float m[9];
+    m[0]=c+xx*t;        m[1]=xy*t-z*s;      m[2]=xz*t+y*s;
+    m[3]=yx*t+z*s;      m[4]=c+yy*t;        m[5]=yz*t-x*s;
+    m[6]=zx*t-y*s;      m[7]=zy*t+x*s;      m[8]=c+zz*t;
+    FrameMatrix r{};
+    for(int i=0;i<9;++i)r[i]=static_cast<double>(m[i]);
+    return push_frame_value(L, {}, r);
 }
 
 void frame_method(lua_State* L, const char* name, lua_CFunction function) {

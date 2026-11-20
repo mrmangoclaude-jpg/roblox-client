@@ -239,7 +239,8 @@ int utf8_graphemes(lua_State* L) {
     lua_pushvalue(L, 1);
     lua_pushinteger(L, first - 1);
     lua_pushinteger(L, last - 1);
-    lua_pushcclosurek(L, graphemes_step, "graphemes_iterator", 3, nullptr);
+    // The engine's iterator closure has no debug name (debug.info(it, "n") is empty).
+    lua_pushcclosurek(L, graphemes_step, nullptr, 3, nullptr);
     return 1;
 }
 }  // namespace
