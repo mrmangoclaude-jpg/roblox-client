@@ -72,7 +72,8 @@ class BoundedDeltaTests(unittest.TestCase):
         runtime.execute('return 7')
         updates = [call['delta'] for call in host.calls if call['op'] == 'update']
         self.assertEqual([len(d['actions']) for d in updates], [2048, 2048, 104])
-        self.assertEqual([d['initial_replication_complete'] for d in updates], [False, False, True])
+        # Tag 13 alone marks the initial replication complete (a streaming server never lets the host catch up first).
+        self.assertEqual([d['initial_replication_complete'] for d in updates], [True, True, True])
         self.assertEqual(runtime.revision, world.revision)
         self.assertEqual(host.calls[-1]['op'], 'execute')
         self.assertFalse(runtime._catalog_catchup_needed)

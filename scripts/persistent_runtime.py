@@ -276,6 +276,7 @@ class PersistentClientScriptRuntime:
         self._background_source_next_token = 1
         self._catalog_catchup_needed = False
         self._catalog_deferrals = 0
+        self._catalog_cost = 0.
         self._vm_pruned_ids = set()
         self._vm_rs_key = None
         self._vm_protected_ancestors = None
@@ -1003,8 +1004,13 @@ class PersistentClientScriptRuntime:
             # delta we just built, so caught_up can stay false forever. Once the
             # initial replication is ready, a catalog catch-up must still go out;
             # otherwise no game script ever receives its code (verification_pending).
+            # Rebuilding the catalog hashes every script's code. While the host lags that would run on every tick and starve
+            # the world feed, so a catch-up rebuild waits a multiple of the last one's cost.
+            catchup_due = (self._catalog_catchup_needed
+                           and (not coalesce_queue  # foreground drains (synchronize) never wait
+                                or time.monotonic() - self._last_catalog_queue_refresh >= max(1.0, 4 * self._catalog_cost)))
             refresh = initial_ready and (
-                self._catalog_catchup_needed
+                catchup_due
                 or (caught_up and self._catalog_needs_refresh(
                     world, delta, initial_ready, coalesce_queue=coalesce_queue)))
         if not caught_up and initial_ready:
@@ -1020,6 +1026,13 @@ class PersistentClientScriptRuntime:
         """Attach at most one bounded script_sources chunk, deferring large world batches."""
         defer_scripts = (self._is_pruning_world(world) and len(delta['actions']) >= 64
                          and self._catalog_deferrals < self._MAX_CATALOG_DEFERRALS)
+        entered = time.monotonic()
+        if entered - getattr(self, '_catalog_entry_log_at', 0.) >= 1.:
+            self._catalog_entry_log_at = entered
+            from session_diagnostics import current
+            current().emit('catalog.enter', refresh=bool(refresh), pending=bool(has_pending_scripts), defer=bool(defer_scripts),
+                           deferrals=self._catalog_deferrals, actions=len(delta['actions']),
+                           pruning=bool(self._is_pruning_world(world)))
         if defer_scripts and (refresh or has_pending_scripts):
             self._catalog_deferrals += 1
             return (
@@ -1031,8 +1044,10 @@ class PersistentClientScriptRuntime:
             )
         self._catalog_deferrals = 0
         if refresh:
-            self._last_catalog_queue_refresh = time.monotonic()
+            started = time.monotonic()
+            self._last_catalog_queue_refresh = started
             target_catalog = script_catalog(world)
+            self._catalog_cost = time.monotonic() - started
             chunk, is_final, next_catalog = self._next_script_chunk(target_catalog)
         elif has_pending_scripts:
             target_catalog = self._pending_script_catalog
@@ -1042,6 +1057,13 @@ class PersistentClientScriptRuntime:
         effective_initial_ready = initial_ready if is_final else self.initial_replication_complete
         if chunk is not None:
             delta['script_sources'] = chunk
+        now = time.monotonic()
+        if now - getattr(self, '_catalog_log_at', 0.) >= 1.:
+            self._catalog_log_at = now
+            from session_diagnostics import current
+            current().emit('catalog.step', refresh=bool(refresh), target=len(target_catalog or ()),
+                           chunk=len(chunk or ()), final=bool(is_final), delivered=len(self.script_catalog or ()),
+                           actions=len(delta['actions']))
         return target_catalog, is_final, next_catalog, effective_initial_ready, False
 
     def synchronize(self, *, timeout_ms=20):
