@@ -157,7 +157,7 @@ void SourceScheduler::resume(Task& task,lua_State* from) {
     task.state=Done;
     task.result=status;
     // A finished task.spawn/defer/delay thread discards its return values, so coroutine.status reads "dead" (not "suspended").
-    if(status==LUA_OK&&!task.root)lua_settop(task.thread,0);
+    if(status==LUA_OK&&task.discard_results)lua_settop(task.thread,0);
     if(task.root)root_status_=status;
     else if(status!=0 && task.report_errors && errors_.size()<64) {
         if(status==LUA_BREAK){errors_.push_back("background task exceeded CPU step budget");return;}
@@ -318,7 +318,7 @@ int SourceScheduler::task_api_inner(lua_State* L) {
     }
     for(int i=0;i<count;i++)lua_pushvalue(L,function_index+1+i);
     lua_xmove(L,child,count);
-    auto& task=self.track(child);task.arguments=count;task.elapsed=false;self.set_owner(task,self.owner(child));
+    auto& task=self.track(child);task.arguments=count;task.elapsed=false;task.discard_results=true;self.set_owner(task,self.owner(child));
     if(operation==2) {
         task.state=Sleeping;task.sleeping_frame=self.frame_;task.due=Clock::now()+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(std::max(0.0,duration)));
     } else {

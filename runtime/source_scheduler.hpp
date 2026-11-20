@@ -80,6 +80,9 @@ private:
         Clock::duration uninterrupted_cpu{};
         Progress progress;
         bool retained=false;
+        // Only task.spawn/defer/delay threads drop their results on completion,
+        // as Roblox does. Callback invocations must keep theirs for the caller.
+        bool discard_results=false;
         bool response_ready=false;
         Clock::duration response_priority_cpu{};
         bool report_errors=true;
