@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the recovered normal game-handshake stages with the authorized alt."""
 import argparse
+from collections import deque
 from contextlib import nullcontext, redirect_stdout
 import io
 import json
@@ -259,6 +260,11 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
     physics_last_tick = None
     locomotion_animation = None
     locomotion_source_token = None
+    # Persistent sessions never run startup sources inside a packet handler: a foreground execute first drains the
+    # whole world and script catalog, which blocks the transport loop for tens of seconds on a large game and the
+    # server then drops the idle connection. The sources go through the background lane one at a time instead.
+    startup_queue = deque()
+    startup_inflight = None
     animation_joint_model = None
     animation_updates = None
     animation_update_counts = {}
@@ -381,6 +387,29 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
             locomotion_source_token = token
         return token
 
+    def pump_startup_sources():
+        """Advance the queued startup sources by one background-lane step (never blocks)."""
+        nonlocal startup_inflight, startup_scripts_ok
+        if startup_inflight is not None:
+            token, path = startup_inflight
+            result = script_runtime.take_background_source_result(token)
+            if result is None:
+                return
+            startup_inflight = None
+            script_results.append({'script': path, **result})
+            del script_results[:-32]
+            startup_scripts_ok = startup_scripts_ok and result['ok']
+            update_script_report()
+            if not startup_queue:
+                milestone('luau_source_files_submitted')
+        if startup_queue and startup_inflight is None:
+            path, source = startup_queue[0]
+            token = script_runtime.queue_background_source(
+                source, label=Path(path).name[:128] or 'startup', timeout_ms=args.script_timeout_ms)
+            if token is not None:
+                startup_queue.popleft()
+                startup_inflight = (token, path)
+
     def run_scripts(client, evidence):
         nonlocal scripts_ran, early_scripts_ran, startup_scripts_ok
         selected=[]
@@ -393,6 +422,10 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                          or time.monotonic() - client.started > 120)
         if sources and not scripts_ran and evidence['player_spawned'] and 13 in world.tags and catalog_ready:
             selected.extend(sources);scripts_ran=True
+        if args.persistent_scripts:
+            startup_queue.extend(selected)
+            pump_startup_sources()
+            return
         for path, source in selected:
             try:
                 script_result = execute_source(source, timeout_ms=args.script_timeout_ms, label=path)
@@ -602,6 +635,7 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                             and (script_runtime.world.revision > script_runtime.revision
                                  or script_runtime._pending_script_catalog is not None)):
                         script_runtime.poll_background()
+                pump_startup_sources()
                 if locomotion_animation is not None and locomotion_source_token is not None:
                     animation_result = script_runtime.take_background_source_result(
                         locomotion_source_token)
