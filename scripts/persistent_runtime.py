@@ -996,10 +996,14 @@ class PersistentClientScriptRuntime:
             finally:
                 self.initial_replication_complete = orig_init
         else:
-            refresh = caught_up and initial_ready and (
+            # A continuously streaming server keeps advancing world.revision past the
+            # delta we just built, so caught_up can stay false forever. Once the
+            # initial replication is ready, a catalog catch-up must still go out;
+            # otherwise no game script ever receives its code (verification_pending).
+            refresh = initial_ready and (
                 self._catalog_catchup_needed
-                or self._catalog_needs_refresh(
-                    world, delta, initial_ready, coalesce_queue=coalesce_queue))
+                or (caught_up and self._catalog_needs_refresh(
+                    world, delta, initial_ready, coalesce_queue=coalesce_queue)))
         if not caught_up and initial_ready:
             self._catalog_catchup_needed = True
         return delta, initial_ready, refresh, caught_up
@@ -1057,7 +1061,9 @@ class PersistentClientScriptRuntime:
         animations = self.animation_assets.drain() if self.animation_assets else []
         engine_poses=self._take_engine_poses(world) if caught_up else None
         engine_owned_parts=self._take_engine_owned_parts(world) if caught_up else None
-        has_pending_scripts = self._pending_script_catalog is not None and caught_up
+        # Keep delivering the remaining catalog chunks even while the host is
+        # catching up on replication; gating them on caught_up stalls every script.
+        has_pending_scripts = self._pending_script_catalog is not None
         if (not delta['actions'] and 'session_stats' not in delta and not refresh_catalog
                 and not has_pending_scripts and not animations
                 and engine_poses is None and engine_owned_parts is None
@@ -1083,7 +1089,8 @@ class PersistentClientScriptRuntime:
         self._acknowledge_world(delta['sequence'])
         if defer_refresh:
             self._catalog_catchup_needed = True
-        elif caught_up and is_final:
+        elif is_final:
+            # The whole catalog reached the VM; caught_up is irrelevant here.
             self._catalog_catchup_needed = False
         self._pending_script_catalog = None if is_final else target_catalog
         self.script_catalog = next_catalog
@@ -1428,7 +1435,7 @@ class PersistentClientScriptRuntime:
                     animations = self.animation_assets.drain() if self.animation_assets else []
                     engine_poses=self._take_engine_poses(world) if caught_up else None
                     engine_owned_parts=self._take_engine_owned_parts(world) if caught_up else None
-                    has_pending_scripts = self._pending_script_catalog is not None and caught_up
+                    has_pending_scripts = self._pending_script_catalog is not None
                     needs_update = (bool(delta['actions']) or refresh or has_pending_scripts
                                     or bool(animations)
                                     or 'session_stats' in delta
@@ -1454,7 +1461,7 @@ class PersistentClientScriptRuntime:
                                    'timeout_ms': step_timeout}
                         context = {'op': 'update', 'revision': revision,
                                    'catalog': next_catalog, 'initial_ready': effective_initial_ready,
-                                   'catalog_caught_up': caught_up and is_final and not defer_refresh,
+                                   'catalog_caught_up': is_final and not defer_refresh,
                                    'defer_catalog_refresh': defer_refresh,
                                    'pending_script_catalog': (None if is_final else target_catalog),
                                    'shared_entry_count': len(getattr(world, 'shared', {}))}

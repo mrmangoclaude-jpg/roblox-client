@@ -259,6 +259,37 @@ class OversizedWorldSupportTests(unittest.TestCase):
         finally:
             runtime.close()
 
+    def test_catalog_streams_while_host_never_catches_up(self):
+        # On a live game the server advances world.revision past the delta we just
+        # built, so caught_up stays false for the whole session. Catalog catch-up
+        # must still be delivered or every script stays verification_pending.
+        action = {'sequence': 10, 'kind': 'set', 'id': 'scope:part', 'fields': {'Name': 'X'}}
+        world = fake_world(revision=5, tags=[])
+        runtime = ready_runtime(world, budget=30)
+        runtime._vm_pruned_ids = {'1:99'}
+        world.revision = 10
+        world.tags.append(13)
+        runtime.initial_replication_complete = True
+        runtime._catalog_catchup_needed = True
+
+        def lagging_delta(w, seq, **kw):
+            w.revision += 70
+            return {'version': 1, 'delta': True, 'sequence': 10, 'actions': [dict(action)] * 70}
+
+        try:
+            with patch.object(persistent_runtime, 'make_world_delta', side_effect=lagging_delta), \
+                 patch.object(persistent_runtime, 'script_catalog',
+                              return_value={'scope:script': {'source': 'return 1'}}):
+                for _ in range(3):
+                    runtime.last_poll = 0.0
+                    runtime.poll_background()
+                    runtime._finish_background(wait=True)
+            updates = [c['delta'] for c in runtime.host.calls if c['op'] == 'update']
+            self.assertTrue(any('script_sources' in u for u in updates), updates)
+            self.assertFalse(runtime._catalog_catchup_needed)
+        finally:
+            runtime.close()
+
     def test_world_update_bounds_pruned_batch_to_384_once_scripts_active(self):
         world = _schema_world()
         world.revision = 10
