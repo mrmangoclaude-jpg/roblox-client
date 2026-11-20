@@ -215,7 +215,7 @@ bool tween_info_capture_fields(lua_State* L, int index, double& time, int& style
 
 void tween_info_push_fields(lua_State* L, double time, int style, int direction,
                             lua_Integer repeats, bool reverses, double delay) {
-    if (!std::isfinite(time) || time < 0 || style < 0 || style > 10
+    if (!std::isfinite(time) || time < 0 || style < 0 || style > 12
         || direction < 0 || direction > 2 || repeats < -2147483648LL || repeats > 2147483647LL
         || !std::isfinite(delay) || delay < 0) {
         luaL_error(L, "invalid serialized TweenInfo");

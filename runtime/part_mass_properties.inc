@@ -225,7 +225,7 @@ bool part_mass_index(lua_State* L,World& w,Node& n,const std::string& key) {
     if(key=="GetMass"||key=="getMass"){lua_pushcfunction(L,part_get_mass,"GetMass");return true;}
     if(part_mass_key(key)){push_json(L,w,part_mass_value(w,n,key));return true;}
     if(key=="Shape"&&class_is_a(w,n.class_name,"Part")) {
-        int value=part_mass_enum(w,n,"Shape","PartType");if(value<0||value>4)throw std::runtime_error("invalid PartType");
+        int value=part_mass_enum(w,n,"Shape","PartType");if(value<0||value>5)throw std::runtime_error("invalid PartType");
         push_geometry_item(L,kPartType,value);return true;
     }
     if(key=="Material") {

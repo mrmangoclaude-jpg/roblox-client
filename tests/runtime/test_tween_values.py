@@ -39,7 +39,7 @@ class TweenValueTests(unittest.TestCase):
     def test_easing_enum_names_and_values_match_creator_docs(self):
         result = self.execute('''
 local styles={"Linear","Sine","Back","Quad","Quart","Quint","Bounce",
-               "Elastic","Exponential","Circular","Cubic"}
+               "Elastic","Exponential","Circular","Cubic","Bezier","Spring"} -- the docs list 11; the engine (client, Studio) has these 13
 local directions={"In","Out","InOut"}
 local gotStyles=Enum.EasingStyle:GetEnumItems()
 local gotDirections=Enum.EasingDirection:GetEnumItems()
