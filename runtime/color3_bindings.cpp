@@ -36,9 +36,10 @@ int push_color_value(lua_State* L, double r, double g, double b) {
         return 0;
     }
     auto* color = static_cast<Color*>(lua_newuserdatadtor(L, sizeof(Color), nullptr));
-    color->r = r;
-    color->g = g;
-    color->b = b;
+    // Roblox stores Color3 components as 32-bit floats: Color3.new(0.36002, 0, 0).R reads back 0.36002001166343689, not 0.36002.
+    color->r = static_cast<double>(static_cast<float>(r));
+    color->g = static_cast<double>(static_cast<float>(g));
+    color->b = static_cast<double>(static_cast<float>(b));
     luaL_getmetatable(L, kColorMeta);
     lua_setmetatable(L, -2);
     return 1;
