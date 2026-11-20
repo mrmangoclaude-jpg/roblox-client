@@ -229,6 +229,36 @@ class OversizedWorldSupportTests(unittest.TestCase):
             finally:
                 runtime.close()
 
+    def test_catalog_is_delivered_while_a_streaming_server_keeps_every_delta_large(self):
+        # Every transaction finds 70 new actions, as on a live game. Deferring the catalog on each of them would
+        # keep it (and every script in it) from ever reaching the VM.
+        action = {'sequence': 10, 'kind': 'set', 'id': 'scope:part', 'fields': {'Name': 'X'}}
+        world = fake_world(revision=5, tags=[])
+        runtime = ready_runtime(world, budget=30)
+        runtime._vm_pruned_ids = {'1:99'}
+        world.revision = 10
+        world.tags.append(13)
+
+        def streaming_delta(w, seq, **kw):
+            w.revision += 70
+            return {'version': 1, 'delta': True, 'sequence': w.revision, 'actions': [dict(action)] * 70}
+
+        try:
+            with patch.object(persistent_runtime, 'make_world_delta', side_effect=streaming_delta), \
+                 patch.object(persistent_runtime, 'script_catalog',
+                              return_value={'scope:script': {'source': 'return 1'}}):
+                for _ in range(3):
+                    runtime.last_poll = 0.0
+                    runtime.poll_background()
+                    runtime._finish_background(wait=True)
+            updates = [c['delta'] for c in runtime.host.calls if c['op'] == 'update']
+            self.assertNotIn('script_sources', updates[0])
+            self.assertEqual(updates[1]['script_sources'], {'scope:script': {'source': 'return 1'}})
+            self.assertTrue(updates[1]['initial_replication_complete'])
+            self.assertTrue(runtime.initial_replication_complete)
+        finally:
+            runtime.close()
+
     def test_world_update_bounds_pruned_batch_to_384_once_scripts_active(self):
         world = _schema_world()
         world.revision = 10

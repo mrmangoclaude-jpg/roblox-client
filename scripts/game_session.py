@@ -265,6 +265,7 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
     # server then drops the idle connection. The sources go through the background lane one at a time instead.
     startup_queue = deque()
     startup_inflight = None
+    last_feed_log = 0.
     animation_joint_model = None
     animation_updates = None
     animation_update_counts = {}
@@ -596,7 +597,7 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
 
     def tick(client, now):
         nonlocal startup_scripts_ok, physics_last_tick, last_runtime_diagnostics
-        nonlocal locomotion_source_token
+        nonlocal locomotion_source_token, last_feed_log
         remote_event_budget = 16
         with current().stage('game.ping_flush'):
             ping_handler.flush(client)
@@ -636,6 +637,12 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                                  or script_runtime._pending_script_catalog is not None)):
                         script_runtime.poll_background()
                 pump_startup_sources()
+                if now - last_feed_log >= 1.:
+                    # How far the VM's copy of the world trails what the server has sent (revisions are replicated actions).
+                    last_feed_log = now
+                    current().emit('runtime.feed', world_revision=getattr(script_runtime.world, 'revision', None),
+                                   host_revision=script_runtime.revision,
+                                   catalog_streamed=script_runtime.startup_catalog_streamed())
                 if locomotion_animation is not None and locomotion_source_token is not None:
                     animation_result = script_runtime.take_background_source_result(
                         locomotion_source_token)

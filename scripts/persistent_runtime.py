@@ -275,6 +275,7 @@ class PersistentClientScriptRuntime:
         self._background_source_results = {}
         self._background_source_next_token = 1
         self._catalog_catchup_needed = False
+        self._catalog_deferrals = 0
         self._vm_pruned_ids = set()
         self._vm_rs_key = None
         self._vm_protected_ancestors = None
@@ -1003,10 +1004,17 @@ class PersistentClientScriptRuntime:
             self._catalog_catchup_needed = True
         return delta, initial_ready, refresh, caught_up
 
+    # A large world batch goes out without catalog work so the VM applies it in one short transaction. The deferral lasts
+    # one transaction: a streaming server keeps every later delta above the threshold too, and deferring on each of
+    # them kept the catalog (and so every game script) from ever being delivered.
+    _MAX_CATALOG_DEFERRALS = 1
+
     def _prepare_script_catalog_delta(self, world, delta, initial_ready, refresh, has_pending_scripts):
         """Attach at most one bounded script_sources chunk, deferring large world batches."""
-        defer_scripts = self._is_pruning_world(world) and len(delta['actions']) >= 64
+        defer_scripts = (self._is_pruning_world(world) and len(delta['actions']) >= 64
+                         and self._catalog_deferrals < self._MAX_CATALOG_DEFERRALS)
         if defer_scripts and (refresh or has_pending_scripts):
+            self._catalog_deferrals += 1
             return (
                 self._pending_script_catalog,
                 False,
@@ -1014,6 +1022,7 @@ class PersistentClientScriptRuntime:
                 self.initial_replication_complete,
                 refresh,
             )
+        self._catalog_deferrals = 0
         if refresh:
             self._last_catalog_queue_refresh = time.monotonic()
             target_catalog = script_catalog(world)
