@@ -5,6 +5,8 @@ revisions supersede older local edits, while unrelated receipts preserve them.
 """
 import copy
 
+from world_replication import _copy  # native deep copy of plain data, falls back to copy.deepcopy
+
 _FIELDS = {
     'NoCollisionConstraint': frozenset(('Enabled','Part0','Part1','Parent','Name')),
     'BodyForce': frozenset(('Force','force','Parent','Name')),
@@ -200,11 +202,11 @@ class AuthoredForceState:
 
     def snapshot(self,received,*,node_ids=None,properties=None):
         if node_ids is None:
-            result=copy.deepcopy(received)
+            result=_copy(received)
         else:
             # Animation needs only the own rig, not environment mesh payloads,
             # script data, or the controller's full collision projection.
-            result={'nodes':[copy.deepcopy({**n,'properties':{
+            result={'nodes':[_copy({**n,'properties':{
                 k:v for k,v in n.get('properties',{}).items()
                 if properties is None or k in properties}})
                 for n in received.get('nodes',[]) if n.get('id') in node_ids]}
@@ -213,7 +215,7 @@ class AuthoredForceState:
             if identifier in nodes and (properties is None or key in properties or key in ('Parent','Name')):
                 self._put(nodes[identifier],key,entry['value'])
         result['nodes']=[n for n in result['nodes'] if n.get('id') not in self.removed]
-        result['nodes'].extend(copy.deepcopy([n for n in self.local_nodes.values()
+        result['nodes'].extend(_copy([n for n in self.local_nodes.values()
             if node_ids is None or n['id'] in node_ids]))
         for node in result['nodes']:
             if node.get('class_name') in _MASS_PARTS and any((node['id'],key) in self.overrides for key in _POSE_FIELDS):

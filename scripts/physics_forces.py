@@ -69,6 +69,21 @@ def _vector3(value, field):
     return tuple(result)
 
 
+_CLASS_PARENTS = None
+
+
+def _class_parents():
+    """Pinned class ancestry from runtime/class-parents-745.json, read once. A failed read is retried, never cached."""
+    global _CLASS_PARENTS
+    if _CLASS_PARENTS is None:
+        path = Path(__file__).resolve().parents[1] / 'runtime/class-parents-745.json'
+        try:
+            _CLASS_PARENTS = json.loads(path.read_text()).get('parents', {})
+        except (OSError, ValueError, TypeError):
+            return {}
+    return _CLASS_PARENTS
+
+
 def received_assembly_mass(snapshot, root_id=None, *, motion_members=None, allow_authored=False):
     """Return mass and provenance from received assembly or member evidence.
 
@@ -100,11 +115,7 @@ def received_assembly_mass(snapshot, root_id=None, *, motion_members=None, allow
     if (root_id is None or not isinstance(snapshot, dict)
             or (motion_members is None and snapshot.get('initial_replication_complete') is not True)):
         return None, None
-    parent_path = Path(__file__).resolve().parents[1] / 'runtime/class-parents-745.json'
-    try:
-        parents = json.loads(parent_path.read_text()).get('parents', {})
-    except (OSError, ValueError, TypeError):
-        parents = {}
+    parents = _class_parents()
 
     def is_base_part(node):
         name, seen = node.get('class_name'), set()
