@@ -52,6 +52,32 @@ def instance_id(key):
     return None if key is None else f'{key[0]}:{key[1]}'
 
 
+def _selector_is_identity(type_id, selector):
+    """True when a type 27/51/57 rotation selector expands to the identity basis."""
+    if type_id == 27:
+        field = RotationField(selector, 'selector', None)
+    elif type_id == 51:
+        field = RotationField(0x80 | selector, 'selector', selector)
+    else:
+        field = RotationField(selector, 'selector', selector)
+    return rotation_is_identity(field, 'type%d' % type_id) is True
+
+
+if _native is not None and hasattr(_native, 'set_identity_callback'):
+    _native.set_identity_callback(_selector_is_identity)
+
+
+def _action_json_size(action):
+    """len(json.dumps(action, ensure_ascii=True, allow_nan=False)), which also validates the action."""
+    native = _native
+    if native is not None and hasattr(native, 'json_size'):
+        try:
+            return native.json_size(action)
+        except native.Fallback:
+            pass
+    return len(json.dumps(action, ensure_ascii=True, allow_nan=False).encode())
+
+
 def _encode(value, type_id=None, depth=0):
     native = _native
     if native is not None and depth == 0:
@@ -144,13 +170,7 @@ def _encode_python(value, type_id=None, depth=0):
         frame = dict(value)
         selector = frame.get('rotation_id') if type_id == 27 else frame.get('rotation')
         if type(selector) is int:
-            if type_id == 27:
-                field = RotationField(selector, 'selector', None)
-            elif type_id == 51:
-                field = RotationField(0x80 | selector, 'selector', selector)
-            else:
-                field = RotationField(selector, 'selector', selector)
-            if rotation_is_identity(field, 'type%d' % type_id) is True:
+            if _selector_is_identity(type_id, selector):
                 frame['rotation_selector'] = selector
                 frame['rotation'] = [1., 0., 0., 0., 1., 0., 0., 0., 1.]
                 frame['rotation_mapping'] = 'native_745_identity'
@@ -394,7 +414,7 @@ def make_world_delta(world, since_revision, *, max_actions=None, max_bytes=None,
                 if len(action['arguments']) != 1 or not isinstance(action['arguments'][0], list):
                     raise ValueError('Invalid OnClientEvent tuple')
                 action['arguments'] = action['arguments'][0]
-        size = len(json.dumps(action, ensure_ascii=True, allow_nan=False).encode()) + 2 if max_bytes is not None else 0
+        size = _action_json_size(action) + 2 if max_bytes is not None else 0
         if max_bytes is not None and used_bytes + size > max_bytes:
             if not actions:
                 raise ValueError('One world action exceeds the delta byte budget')

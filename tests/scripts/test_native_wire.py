@@ -7,6 +7,7 @@ must fall back to Python and so produce the identical result or error. Skipped w
 """
 import collections
 import copy
+import json
 import random
 import unittest
 
@@ -174,9 +175,18 @@ class NativeWireTests(unittest.TestCase):
             if kind == 6: return [build(depth + 1) for _ in range(rng.randrange(4))]
             if kind == 7: return {rng.choice(['a', 'b', 'position', 'rotation_id']): build(depth + 1) for _ in range(rng.randrange(4))}
             if kind == 8: return {'$remote_variant': {'type': rng.choice([30, 31, 27, 11, 99]), 'value': build(depth + 1)}}
-            if kind == 9: return {'position': [rng.random() for _ in range(3)], 'rotation_id': rng.randrange(0, 40), 'packed_rotation': None}
+            if kind == 9:
+                return {'position': [rng.random() for _ in range(3)], 'rotation_id': rng.randrange(0, 40),
+                        'rotation': rng.choice([None, 0, 1, 2, 3, 130, 300, True, [1.0] * 9, [0.5, 0.25, 0.125]]),
+                        'packed_rotation': None}
             if kind == 10: return {rng.choice([1, b'k', (1, 2)]): scalar()}
-            return [[rng.random() for _ in range(rng.choice([3, 5]))] for _ in range(rng.randrange(3))]
+            frames = []
+            for _ in range(rng.choice([0, 1, 2, 3, 21])):  # 21 keypoints is over the engine limit
+                length = rng.choice([3, 5])
+                frame = [rng.choice([0.0, 0.5, 1, 0.25, float('nan')]) if rng.random() < .3 else rng.random() for _ in range(length)]
+                if length == 5 and rng.random() < .7: frame[4] = rng.choice([0, 0.0, -0.0])  # a ColorSequence envelope must be zero
+                frames.append(frame)
+            return frames
 
         def run(fn, value, type_id):
             try:
@@ -193,6 +203,31 @@ class NativeWireTests(unittest.TestCase):
             self.assertEqual(native, reference, (value, type_id))
             accepted += reference[0] == 'ok'
         self.assertGreater(accepted, 3000)
+
+    def test_json_size_matches_json_dumps(self):
+        rng = random.Random(2468)
+        texts = ['', 'abc', 'café', 'a"b\\c', 'line\nbreak\ttab\r\b\f', '\x00\x1f\x7f', '€中', '\U0001f600 x', 'ḿ']
+        numbers = [0, -1, 7, 10, 99, 100, -100, 2**31, -2**31, 2**63 - 1, -2**63, 0.0, -0.0, 0.1, 1.5, 1e16, 1e-7, 1.7976931348623157e308,
+                   5e-324, 123456789.125, -2.5e-10]
+
+        def build(depth):
+            kind = rng.randrange(8 if depth < 4 else 4)
+            if kind == 0: return rng.choice([None, True, False])
+            if kind == 1: return rng.choice(numbers) if rng.random() < .5 else rng.random() * rng.choice([1, 1e-9, 1e9, 1e20])
+            if kind == 2: return rng.choice(texts)
+            if kind == 3: return rng.randrange(-10**6, 10**6)
+            if kind == 4: return [build(depth + 1) for _ in range(rng.randrange(5))]
+            if kind == 5: return tuple(build(depth + 1) for _ in range(rng.randrange(4)))
+            return {rng.choice(texts + ['k%d' % rng.randrange(50)]): build(depth + 1) for _ in range(rng.randrange(5))}
+
+        for _ in range(8000):
+            value = build(0)
+            expected = len(json.dumps(value, ensure_ascii=True, allow_nan=False))
+            self.assertEqual(NATIVE.json_size(value), expected, value)
+        for value in (float('nan'), float('inf'), [float('-inf')], {1: 2}, b'x', 2**64, -2**70, '\ud800', object(), {'a': {3}},
+                      collections.OrderedDict(a=1), type('IntSub', (int,), {})(3), type('StrSub', (str,), {})('x')):
+            with self.assertRaises(NATIVE.Fallback, msg=repr(value)):
+                NATIVE.json_size(value)
 
     def test_valid_json_matches_python_validator(self):
         import runtime_diagnostics

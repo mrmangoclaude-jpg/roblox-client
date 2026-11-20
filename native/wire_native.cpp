@@ -522,6 +522,73 @@ Obj ref_text(PyObject* a, PyObject* b) {
     return Obj(PyUnicode_FromFormat("%U:%U", ra.p, rb.p));
 }
 
+// world_snapshot._selector_is_identity(type_id, selector), registered by Python. Selectors are single bytes, so the answers for
+// the three CFrame property types fit a tiny table; a miss asks Python once.
+PyObject* g_identity_callback = nullptr;
+signed char g_identity_cache[3][256];
+bool g_identity_cache_ready = false;
+
+bool selector_is_identity(long type_id, long selector) {
+    if (!g_identity_callback || selector < 0 || selector > 255) throw Fallback{};
+    if (!g_identity_cache_ready) { std::memset(g_identity_cache, -1, sizeof g_identity_cache); g_identity_cache_ready = true; }
+    signed char& slot = g_identity_cache[type_id == 27 ? 0 : type_id == 51 ? 1 : 2][selector];
+    if (slot < 0) {
+        Obj answer(PyObject_CallFunction(g_identity_callback, "ll", type_id, selector));
+        const int truth = PyObject_IsTrue(answer.p);
+        if (truth < 0) throw Fallback{};
+        slot = truth ? 1 : 0;
+    }
+    return slot == 1;
+}
+
+// world_snapshot._encode_python for NumberSequence (35, keypoints of 3 numbers) and ColorSequence (38, keypoints of 5 numbers whose
+// envelope must be 0). Anything the Python code rejects with ValueError raises Fallback so Python reports it.
+Obj encode_sequence(PyObject* value, long type_id) {
+    const bool is_list = PyList_CheckExact(value);
+    if (!is_list && !PyTuple_CheckExact(value)) throw Fallback{};
+    const Py_ssize_t n = is_list ? PyList_Size(value) : PyTuple_Size(value);
+    if (n > 20) throw Fallback{};
+    const size_t count = type_id == 35 ? 3 : 5;
+    Obj keyframes = make_list(static_cast<size_t>(n));
+    for (Py_ssize_t i = 0; i < n; ++i) {
+        PyObject* keyframe = is_list ? PyList_GetItem(value, i) : PyTuple_GetItem(value, i);
+        Obj values = encode_components(keyframe, count);
+        if (type_id == 35) {
+            list_set(keyframes, static_cast<size_t>(i), dict1("$number_keypoint", std::move(values)));
+            continue;
+        }
+        PyObject* envelope = PyList_CheckExact(keyframe) ? PyList_GetItem(keyframe, 4) : PyTuple_GetItem(keyframe, 4);
+        const double envelope_value = PyFloat_AsDouble(envelope);
+        if (envelope_value == -1.0 && PyErr_Occurred()) throw Fallback{};
+        if (envelope_value != 0.0) throw Fallback{};
+        PyObject* first = PyList_GetItem(values.p, 0);
+        Py_INCREF(first);
+        Obj pair = make_list(2);
+        list_set(pair, 0, Obj(first));
+        list_set(pair, 1, dict1("$color3", slice_copy(values.p, 1, 4)));
+        list_set(keyframes, static_cast<size_t>(i), dict1("$color_keypoint", std::move(pair)));
+    }
+    return dict1(type_id == 35 ? "$number_sequence" : "$color_sequence", std::move(keyframes));
+}
+
+// world_snapshot._encode_python for type 27/51/57 dict values: {'$cframe': <the frame, with the identity selector expanded>}.
+Obj encode_cframe(PyObject* value, long type_id, int depth) {
+    if (!PyDict_CheckExact(value)) throw Fallback{};
+    PyObject* selector = PyDict_GetItemString(value, type_id == 27 ? "rotation_id" : "rotation");  // borrowed; null if absent
+    if (!selector || !PyLong_CheckExact(selector)) return dict1("$cframe", encode_value(value, -1, depth + 1));
+    const long chosen = PyLong_AsLong(selector);
+    if (chosen == -1 && PyErr_Occurred()) throw Fallback{};
+    if (!selector_is_identity(type_id, chosen)) return dict1("$cframe", encode_value(value, -1, depth + 1));
+    Obj frame(PyDict_Copy(value));
+    Py_INCREF(selector);
+    dict_set(frame, "rotation_selector", Obj(selector));
+    Obj identity = make_list(9);
+    for (size_t i = 0; i < 9; ++i) list_set(identity, i, make_float(i % 4 == 0 ? 1.0 : 0.0));
+    dict_set(frame, "rotation", std::move(identity));
+    dict_set(frame, "rotation_mapping", Obj(PyUnicode_FromString("native_745_identity")));
+    return dict1("$cframe", encode_value(frame.p, -1, depth + 1));
+}
+
 Obj encode_value(PyObject* value, long type_id, int depth) {
     if (depth > 16) throw Fallback{};
     if (PyDict_CheckExact(value) && PyDict_Size(value) == 1) {
@@ -578,8 +645,8 @@ Obj encode_value(PyObject* value, long type_id, int depth) {
             return dict1("$rect", std::move(pair));
         }
         case 22: return dict1("$vector3", encode_components(value, 3));
-        case 35: case 38: throw Fallback{};
-        case 27: case 51: case 57: if (PyDict_Check(value)) throw Fallback{}; break;
+        case 35: case 38: return encode_sequence(value, type_id);
+        case 27: case 51: case 57: if (PyDict_Check(value)) return encode_cframe(value, type_id, depth); break;
         default: break;
     }
     if (PyTuple_CheckExact(value) && PyTuple_Size(value) == 2 && PyLong_CheckExact(PyTuple_GetItem(value, 0)) && PyLong_CheckExact(PyTuple_GetItem(value, 1)))
@@ -662,7 +729,100 @@ PyObject* valid_json_method(PyObject*, PyObject* arg) {
     Py_RETURN_FALSE;
 }
 
+PyObject* set_identity_callback_method(PyObject*, PyObject* callback) {
+    if (!PyCallable_Check(callback)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable");
+        return nullptr;
+    }
+    Py_INCREF(callback);
+    PyObject* previous = g_identity_callback;
+    g_identity_callback = callback;
+    Py_XDECREF(previous);
+    g_identity_cache_ready = false;
+    Py_RETURN_NONE;
+}
+
+// len(json.dumps(value, ensure_ascii=True, allow_nan=False)) with the default ", " / ": " separators, without building the
+// string. world_snapshot.make_world_delta only needs the size of every action to honour its byte budget. Anything the
+// encoder would treat specially (non-str keys, odd types, non-finite floats, lone surrogates) raises Fallback.
+size_t json_string_size(PyObject* text) {
+    Py_ssize_t length = 0;
+    const char* utf8 = PyUnicode_AsUTF8AndSize(text, &length);
+    if (!utf8) throw Fallback{};
+    size_t size = 2;  // quotes
+    for (Py_ssize_t i = 0; i < length;) {
+        const unsigned char c = static_cast<unsigned char>(utf8[i]);
+        if (c < 0x80) {
+            if (c == '"' || c == '\\' || c == '\n' || c == '\r' || c == '\t' || c == '\b' || c == '\f') size += 2;
+            else if (c < 0x20 || c == 0x7f) size += 6;
+            else size += 1;
+            i += 1;
+        } else if (c < 0xE0) { size += 6; i += 2; }
+        else if (c < 0xF0) { size += 6; i += 3; }
+        else { size += 12; i += 4; }  // astral code points become a surrogate pair
+    }
+    return size;
+}
+
+size_t json_size(PyObject* value, int depth) {
+    if (depth > 100) throw Fallback{};
+    if (value == Py_None) return 4;
+    if (PyBool_Check(value)) return value == Py_True ? 4 : 5;
+    if (PyLong_CheckExact(value)) {
+        int overflow = 0;
+        const long long v = PyLong_AsLongLongAndOverflow(value, &overflow);
+        if (overflow != 0 || (v == -1 && PyErr_Occurred())) throw Fallback{};
+        unsigned long long magnitude = v < 0 ? 0ULL - static_cast<unsigned long long>(v) : static_cast<unsigned long long>(v);
+        size_t digits = 1;
+        while (magnitude >= 10) { magnitude /= 10; ++digits; }
+        return digits + (v < 0 ? 1 : 0);
+    }
+    if (PyFloat_CheckExact(value)) {
+        const double d = PyFloat_AsDouble(value);
+        if (!std::isfinite(d)) throw Fallback{};
+        constexpr int add_dot_0 = 0x02;  // Py_DTSF_ADD_DOT_0 (not exported by the limited API headers)
+        char* text = PyOS_double_to_string(d, 'r', 0, add_dot_0, nullptr);
+        if (!text) throw Fallback{};
+        const size_t size = std::strlen(text);
+        PyMem_Free(text);
+        return size;
+    }
+    if (PyUnicode_CheckExact(value)) return json_string_size(value);
+    if (PyList_CheckExact(value) || PyTuple_CheckExact(value)) {
+        const bool is_list = PyList_CheckExact(value);
+        const Py_ssize_t n = is_list ? PyList_Size(value) : PyTuple_Size(value);
+        size_t size = 2 + (n > 1 ? static_cast<size_t>(n - 1) * 2 : 0);
+        for (Py_ssize_t i = 0; i < n; ++i)
+            size += json_size(is_list ? PyList_GetItem(value, i) : PyTuple_GetItem(value, i), depth + 1);
+        return size;
+    }
+    if (PyDict_CheckExact(value)) {
+        const Py_ssize_t n = PyDict_Size(value);
+        size_t size = 2 + (n > 1 ? static_cast<size_t>(n - 1) * 2 : 0);
+        Py_ssize_t position = 0;
+        PyObject *key, *item;
+        while (PyDict_Next(value, &position, &key, &item)) {
+            if (!PyUnicode_CheckExact(key)) throw Fallback{};
+            size += json_string_size(key) + 2 + json_size(item, depth + 1);
+        }
+        return size;
+    }
+    throw Fallback{};
+}
+
+PyObject* json_size_method(PyObject*, PyObject* value) {
+    try {
+        return PyLong_FromSize_t(json_size(value, 0));
+    } catch (const Fallback&) {
+        PyErr_Clear();
+        PyErr_SetString(g_fallback, "json_size defers to json.dumps");
+        return nullptr;
+    }
+}
+
 PyMethodDef methods[] = {
+    {"set_identity_callback", set_identity_callback_method, METH_O, "Register world_snapshot._selector_is_identity for native CFrame encoding."},
+    {"json_size", json_size_method, METH_O, "len(json.dumps(value, ensure_ascii=True, allow_nan=False)); raises Fallback for unusual values."},
     {"property_list", property_list, METH_VARARGS, "Decode one replicated property list; raises Fallback to defer to Python."},
     {"copy_tree", copy_tree_method, METH_O, "Deep copy of plain data; raises Fallback for any other type."},
     {"encode", encode_method, METH_VARARGS, "world_snapshot._encode for the common value shapes; raises Fallback otherwise."},
