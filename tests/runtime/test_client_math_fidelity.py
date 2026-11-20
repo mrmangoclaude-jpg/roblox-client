@@ -38,6 +38,18 @@ same("lookAlong", CFrame.lookAlong(P, D, Vector3.new(0, 1, 0)), P.X, P.Y, P.Z,
 	0.95755904912948608, -0.10188764333724976, -0.26962852478027344)
 ''')
 
+    def test_position_look_at_constructor_differs_from_look_at(self):
+        # CFrame.new(position, lookAt) normalizes with reciprocal lengths and derives y last (live client, bit for bit).
+        self.run_lua('''
+same("new(position, lookAt)", CFrame.new(P, T), P.X, P.Y, P.Z,
+	-0.28823709487915039, -0.33848327398300171, -0.89573907852172852, 7.4505814851022478e-09, 0.93544012308120728,
+	-0.35348549485206604, 0.95755916833877563, -0.10188763588666916, -0.26962849497795105)
+local q = CFrame.new(Vector3.new(-30.97917366027832, -25.80569839477539, -46.99174118041992),
+	Vector3.new(-3.606553792953491, -5.946888446807861, 34.242713928222656))
+assert(string.format("%08x", string.unpack("<I4", string.pack("<f", select(4, q:GetComponents())))) == "bf72990c")
+assert(string.format("%08x", string.unpack("<I4", string.pack("<f", select(5, q:GetComponents())))) == "bd939762")
+''')
+
     def test_axis_angle_is_a_single_precision_pipeline(self):
         self.run_lua('''
 same("fromAxisAngle", CFrame.fromAxisAngle(Vector3.new(0.89573907852172852, 0.35348552465438843, 0.26962852478027344), 0.94195141839591945),

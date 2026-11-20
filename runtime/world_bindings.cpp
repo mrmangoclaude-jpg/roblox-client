@@ -914,10 +914,11 @@ int vector3_new(lua_State*L){
 }
 #include "vector3_methods.inc"
 int cframe_look_at(lua_State* L);
+int cframe_position_look_at(lua_State* L);
 int cframe_quaternion_new(lua_State* L);
 int cframe_new(lua_State*L){
     int n=lua_gettop(L);
-    if(n==2&&lua_isvector(L,1)&&lua_isvector(L,2))return cframe_look_at(L);
+    if(n==2&&lua_isvector(L,1)&&lua_isvector(L,2))return cframe_position_look_at(L);
     if(n==7)return cframe_quaternion_new(L);
     auto*cf=new_cframe(L);
     if(n==0){}
