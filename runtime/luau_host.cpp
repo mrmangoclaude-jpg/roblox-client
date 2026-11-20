@@ -57,7 +57,19 @@ struct Limits {
     Clock::time_point deadline;
     bool timed_out = false;
     unsigned interrupts_until_clock_check = 0;
+    // First time the deadline passed while the running thread could not be broken (inside a metamethod or other C-call boundary).
+    Clock::time_point stuck_since{};
 };
+// Roblox never preempts script code; Rove's time slices must not break code that cannot be suspended. Such code runs on, but is
+// bounded by the engine's own "script timeout" error once it has overrun for this long.
+std::chrono::milliseconds unbreakable_overrun_limit() {
+    static const std::chrono::milliseconds value = [] {
+        const char* text = std::getenv("ROVE_UNBREAKABLE_OVERRUN_MS"); // test hook
+        const long ms = text ? std::atol(text) : 0;
+        return std::chrono::milliseconds(ms > 0 ? ms : 15000);
+    }();
+    return value;
+}
 
 struct alignas(std::max_align_t) AllocationHeader { size_t size; };
 
@@ -92,10 +104,19 @@ void interrupt(lua_State* L, int gc) {
     // lasts microseconds, far below any time slice.
     if (lim->interrupts_until_clock_check > 0) { --lim->interrupts_until_clock_check; return; }
     lim->interrupts_until_clock_check = 255;
-    if (Clock::now() >= lim->deadline) {
+    const auto now = Clock::now();
+    if (now >= lim->deadline) {
         lim->timed_out = true;
         if (api_trace_enabled()) api_trace_stack(L);
-        if (lua_isyieldable(L)) lua_break(L);
+        if (lua_isyieldable(L)) {
+            lim->stuck_since = Clock::time_point{};
+            lua_break(L);
+        } else if (lim->stuck_since == Clock::time_point{}) {
+            lim->stuck_since = now;
+        } else if (now - lim->stuck_since > unbreakable_overrun_limit()) {
+            lim->stuck_since = Clock::time_point{};
+            luaL_error(L, "Script timeout: exhausted allowed execution time");
+        }
     }
 }
 
@@ -455,7 +476,7 @@ public:
         const std::string operation=command.at("op").get<std::string>();
         int budget=command.value("timeout_ms",operation=="execute"?250:10);
         if(budget<1||budget>2000)throw std::runtime_error("CPU step budget must be 1..2000 ms");
-        limits.timed_out=false;limits.deadline=Clock::now()+std::chrono::milliseconds(budget);
+        limits.timed_out=false;limits.stuck_since={};limits.deadline=Clock::now()+std::chrono::milliseconds(budget);
         if(command.contains("text_service_responses"))world_bindings::complete_text_service(environment,*world,command.at("text_service_responses"));
         if(operation=="host_io") {
             return Json{{"ok",true},{"values",Json::array()},{"persistent",true},
@@ -519,7 +540,7 @@ public:
         limits.deadline=std::max(limits.deadline,Clock::now()+std::chrono::milliseconds(std::min(budget,5)));
         request_stage="scheduler";
         scheduler->step(limits.deadline,[&](){world_bindings::dispatch_events(environment,*world);},256,
-                        [&](Clock::time_point deadline){limits.deadline=deadline;},
+                        [&](Clock::time_point deadline){limits.deadline=deadline;limits.stuck_since={};},
                         [&](){world_bindings::progress_invocations(environment,*world);},
                         [&](){
                             // Deliver work awaiting the host as soon as a task

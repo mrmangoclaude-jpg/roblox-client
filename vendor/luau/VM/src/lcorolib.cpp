@@ -197,6 +197,26 @@ static int auxresumecont(lua_State* L, lua_State* co)
     }
 }
 
+// ROVE: preemption (lua_break) is only a scheduling aid. When the thread that called coroutine.resume/wrap sits inside a metamethod or
+// another C-call boundary it cannot be suspended, and propagating the child's break would raise "attempt to break across
+// metamethod/C-call boundary" inside code that real Roblox never interrupts (protected scripts run coroutine tests inside metamethods
+// and compare the outcome). Let the child run on instead. Returns CO_STATUS_BREAK when the parent can be suspended too (propagate as
+// before), otherwise the finished resume result like auxresume.
+static int settleBreak(lua_State* L, lua_State* co)
+{
+    if (L->nCcalls <= L->baseCcalls)
+        return CO_STATUS_BREAK;
+
+    double started = lua_clock();
+    while (co->status == LUA_BREAK)
+    {
+        if (lua_clock() - started > 20.0)
+            luaL_error(L, "Script timeout: exhausted allowed execution time");
+        lua_resume(co, L, 0);
+    }
+    return auxresumecont(L, co);
+}
+
 static int coresumefinish(lua_State* L, int r)
 {
     LUAU_ASSERT(!FFlag::LuauCoroutineFinally);
@@ -230,7 +250,11 @@ static int coresumey(lua_State* L)
         int r = auxresume<false>(L, co, narg);
 
         if (r == CO_STATUS_BREAK)
-            return interruptThread(L, co);
+        {
+            r = settleBreak(L, co);
+            if (r == CO_STATUS_BREAK)
+                return interruptThread(L, co);
+        }
 
         return coresumefinish(L, r);
     }
@@ -303,7 +327,11 @@ static int auxwrapy(lua_State* L)
         int r = auxresume<true>(L, co, narg);
 
         if (r == CO_STATUS_BREAK)
-            return interruptThread(L, co);
+        {
+            r = settleBreak(L, co);
+            if (r == CO_STATUS_BREAK)
+                return interruptThread(L, co);
+        }
 
         return auxwrapfinish(L, r);
     }

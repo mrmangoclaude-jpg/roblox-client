@@ -13,6 +13,9 @@ from platform_process import group_options, stop_group
 from local_runtime import RUST_HOST, MAX_SOURCE_BYTES
 # Script results carry every local instance a run created; protected games create a few thousand, so allow 8 MiB per frame.
 RESPONSE_LIMIT = 8 * 1024 * 1024
+# How long one host transaction may take before the worker is declared dead. A script that computes inside a metamethod or other
+# C-call boundary cannot be preempted (as in Roblox), so a transaction can legitimately run long; raise this for such work.
+RESPONSE_DEADLINE_S = float(os.environ.get('ROVE_HOST_RESPONSE_DEADLINE_S', '45'))
 from world_snapshot import make_world_snapshot, make_world_delta
 from script_catalog import script_catalog, CodePreparationQueue
 from session_integrity import observe_runtime_thread_report, observe_runtime_protected_report
@@ -80,7 +83,7 @@ class PersistentLuauHost:
             try:
                 self.process.stdin.write(data)
                 self.process.stdin.flush()
-                result = self.responses.get(timeout=7)
+                result = self.responses.get(timeout=RESPONSE_DEADLINE_S)
                 if isinstance(result, Exception): raise result
                 if (not isinstance(result, dict) or type(result.get('ok')) is not bool
                         or not isinstance(result.get('values'), list)):
@@ -96,7 +99,7 @@ class PersistentLuauHost:
             except Exception as error:
                 # queue.Empty has an empty string. Retaining that as a runtime
                 # failure makes callers retry a dead worker and lose the cause.
-                reason = ('Persistent worker response deadline exceeded (7 seconds)'
+                reason = (f'Persistent worker response deadline exceeded ({RESPONSE_DEADLINE_S:g} seconds)'
                           if isinstance(error, queue.Empty) else str(error) or type(error).__name__)
                 self.failure_reason = reason
                 self.failure_context = {
