@@ -156,6 +156,8 @@ void SourceScheduler::resume(Task& task,lua_State* from) {
     task.response_priority_cpu=Clock::duration{};
     task.state=Done;
     task.result=status;
+    // A finished task.spawn/defer/delay thread discards its return values, so coroutine.status reads "dead" (not "suspended").
+    if(status==LUA_OK&&!task.root)lua_settop(task.thread,0);
     if(task.root)root_status_=status;
     else if(status!=0 && task.report_errors && errors_.size()<64) {
         if(status==LUA_BREAK){errors_.push_back("background task exceeded CPU step budget");return;}
@@ -321,7 +323,11 @@ int SourceScheduler::task_api_inner(lua_State* L) {
         task.state=Sleeping;task.sleeping_frame=self.frame_;task.due=Clock::now()+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(std::max(0.0,duration)));
     } else {
         task.state=Ready;
-        if(operation==0)self.resume(task,L);else self.enqueue(task);
+        if(operation==0) {
+            ++unbreakable_spawn_depth();
+            try{self.resume(task,L);}catch(...) {--unbreakable_spawn_depth();throw;}
+            --unbreakable_spawn_depth();
+        } else self.enqueue(task);
     }
     return 1; // The new/existing thread was retained on this caller's stack.
 }

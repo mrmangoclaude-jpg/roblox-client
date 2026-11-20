@@ -537,15 +537,20 @@ int path2d_get_bounding_rect(lua_State* L) {
         path2d_sync_spline(w,n);
         double width=0,height=0;
         path2d_canvas_size(w,n,width,height);
-        min_x=max_x=points[0].px*width+static_cast<double>(points[0].pxo);
-        min_y=max_y=points[0].py*height+static_cast<double>(points[0].pyo);
+        // The engine places a control point in single precision: float(scale * canvas) first, then the float offset
+        // (live client: a point's y of 0.0509576946*507+12 comes out one float below the all-double result).
+        auto place=[](double scale,double canvas,float offset) {
+            return static_cast<double>(static_cast<float>(static_cast<double>(static_cast<float>(scale*canvas))+static_cast<double>(offset)));
+        };
+        min_x=max_x=place(points[0].px,width,points[0].pxo);
+        min_y=max_y=place(points[0].py,height,points[0].pyo);
         auto expand=[&](double x,double y) {
             if(x<min_x)min_x=x;
             if(x>max_x)max_x=x;
             if(y<min_y)min_y=y;
             if(y>max_y)max_y=y;
         };
-        for(const auto& point:points)expand(point.px*width+static_cast<double>(point.pxo),point.py*height+static_cast<double>(point.pyo));
+        for(const auto& point:points)expand(place(point.px,width,point.pxo),place(point.py,height,point.pyo));
         const auto segments=p2d_segments(points,count,width,height);
         for(const auto& segment:segments) {
             auto check_axis=[&](float c1,float c2,float c3) {
@@ -576,7 +581,10 @@ int path2d_get_bounding_rect(lua_State* L) {
         double thickness=1.0;
         if(const auto* value=property_value(w,n,"Thickness");value&&value->is_number())thickness=value->get<double>();
         const double padding=thickness>0.0?0.5*thickness+0.5:0.0;
-        min_x-=padding;min_y-=padding;max_x+=padding;max_y+=padding;
+        const auto padded=[padding](double value,double sign) {
+            return static_cast<double>(static_cast<float>(static_cast<double>(static_cast<float>(value))+sign*static_cast<double>(static_cast<float>(padding))));
+        };
+        min_x=padded(min_x,-1);min_y=padded(min_y,-1);max_x=padded(max_x,1);max_y=padded(max_y,1);
     }
     auto f32=[](double v){return static_cast<double>(static_cast<float>(v));};
     push_authored_value(L,Json{{"$rect",Json::array({Json{{"$vector2",Json::array({f32(min_x),f32(min_y)})}},Json{{"$vector2",Json::array({f32(max_x),f32(max_y)})}}})}});

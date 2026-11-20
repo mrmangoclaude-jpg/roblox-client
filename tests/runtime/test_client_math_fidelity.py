@@ -50,6 +50,26 @@ assert(string.format("%08x", string.unpack("<I4", string.pack("<f", select(4, q:
 assert(string.format("%08x", string.unpack("<I4", string.pack("<f", select(5, q:GetComponents())))) == "bd939762")
 ''')
 
+    def test_look_at_and_look_along_for_a_second_protected_script(self):
+        # ToolActivationController's own constants (live client 2.747.1486): the lookAt result differs from CFrame.new(position, target)
+        # in the last float bits, and new() carries a negative zero.
+        self.run_lua('''
+local P = Vector3.new(0.79655808210372925, 0.8175201416015625, 0.88387930393218994)
+local T = Vector3.new(1.0799827575683594, 1.5631644725799561, 0.95900756120681763)
+local D = Vector3.new(0.28342464566230774, 0.74564433097839355, 0.075128279626369476)
+same("lookAt B", CFrame.lookAt(P, T, Vector3.new(0, 1, 0)), P.X, P.Y, P.Z,
+	-0.25622427463531494, -0.89956516027450562, -0.35373982787132263, 0, 0.36595642566680908, -0.93063205480575562,
+	0.9666174054145813, -0.23845052719116211, -0.093766912817955017)
+same("lookAlong B", CFrame.lookAlong(P, D, Vector3.new(0, 1, 0)), P.X, P.Y, P.Z,
+	-0.2562243640422821, -0.89956504106521606, -0.35373976826667786, 0, 0.36595636606216431, -0.93063205480575562,
+	0.96661728620529175, -0.23845060169696808, -0.093766935169696808)
+local q = CFrame.new(P, T)
+same("new(position, target) B", q, P.X, P.Y, P.Z,
+	-0.25622427463531494, -0.89956510066986084, -0.35373982787132263, 0, 0.36595639586448669, -0.93063205480575562,
+	0.96661734580993652, -0.23845052719116211, -0.093766912817955017)
+assert(1 / select(7, q:GetComponents()) == -math.huge, "R10 must be negative zero")
+''')
+
     def test_axis_angle_is_a_single_precision_pipeline(self):
         self.run_lua('''
 same("fromAxisAngle", CFrame.fromAxisAngle(Vector3.new(0.89573907852172852, 0.35348552465438843, 0.26962852478027344), 0.94195141839591945),

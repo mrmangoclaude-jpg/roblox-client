@@ -84,24 +84,47 @@ int cframe_quaternion_new(lua_State* L) {
     return push_frame_value(L, p, frame_quaternion_matrix(frame_quaternion_unit(L, q)));
 }
 
+using FrameF3 = std::array<float, 3>;
+float f3_dot(const FrameF3& a, const FrameF3& b) { float s=a[0]*b[0]; s=s+a[1]*b[1]; s=s+a[2]*b[2]; return s; }
+FrameF3 f3_cross(const FrameF3& a, const FrameF3& b) {
+    return {a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]};
+}
+float f3_length(const FrameF3& a) { return static_cast<float>(std::sqrt(static_cast<double>(f3_dot(a, a)))); }
+FrameF3 f3_unit_reciprocal(const FrameF3& a) {
+    const float l=f3_length(a);
+    const float r=1.0f/l;
+    return {a[0]*r, a[1]*r, a[2]*r};
+}
+
+// CFrame.lookAt / lookAlong in single precision (fitted to four live-client results, all 36 components bit for bit):
+//   forward = (target - position, in float) * (1/|.|);  right = unit(forward x up);  up' = right x forward;  back = -forward
+// with |.| = sqrtf(left-to-right float dot) and 1/|.| a float reciprocal. No renormalization of up'.
 int cframe_look(lua_State* L, bool target_point) {
     auto p=finite_frame_vector(L, 1);
     auto direction=finite_frame_vector(L, 2);
+    FrameF3 d{static_cast<float>(direction[0]),static_cast<float>(direction[1]),static_cast<float>(direction[2])};
     if (target_point)
-        for (int i=0; i<3; ++i) direction[i]-=p[i];
-    auto forward=frame_unit(L, direction);
-    auto up=lua_isnoneornil(L, 3) ? FrameVector{0,1,0} : frame_unit(L, finite_frame_vector(L, 3));
-    auto right=frame_cross(forward, up);
-    if (std::hypot(right[0], right[1], right[2]) < 1e-12) {
+        for (int i=0; i<3; ++i) d[i]=d[i]-static_cast<float>(p[i]);
+    const float d_length=f3_length(d);
+    if (!std::isfinite(d_length) || d_length == 0)
+        luaL_error(L, "CFrame direction must be finite and nonzero");
+    const FrameF3 forward=f3_unit_reciprocal(d);
+    FrameF3 up{0,1,0};
+    if (!lua_isnoneornil(L, 3)) {
+        auto u=frame_unit(L, finite_frame_vector(L, 3));
+        up={static_cast<float>(u[0]),static_cast<float>(u[1]),static_cast<float>(u[2])};
+    }
+    FrameF3 right=f3_cross(forward, up);
+    if (!(f3_length(right) >= 1e-6f)) {
         // The up direction cannot determine roll when parallel to the view.
         // Use X at the vertical pole, and Z if X is itself parallel.
-        up=std::fabs(forward[0]) < .9 ? FrameVector{1,0,0} : FrameVector{0,0,1};
-        right=frame_cross(forward, up);
+        up=std::fabs(forward[0]) < .9f ? FrameF3{1,0,0} : FrameF3{0,0,1};
+        right=f3_cross(forward, up);
     }
-    right=frame_unit(L, right);
-    up=frame_cross(right, forward);
-    FrameVector back{-forward[0],-forward[1],-forward[2]};
-    return push_frame_value(L, p, round_frame_matrix_to_float(frame_columns(right, up, back)));
+    right=f3_unit_reciprocal(right);
+    const FrameF3 up_out=f3_cross(right, forward);
+    FrameMatrix r{right[0],up_out[0],-forward[0], right[1],up_out[1],-forward[1], right[2],up_out[2],-forward[2]};
+    return push_frame_value(L, p, r);
 }
 int cframe_look_at(lua_State* L) { return cframe_look(L, true); }
 int cframe_look_along(lua_State* L) { return cframe_look(L, false); }
@@ -166,23 +189,12 @@ int cframe_angle_between(lua_State* L) {
     return 1;
 }
 
-using FrameF3 = std::array<float, 3>;
-float f3_dot(const FrameF3& a, const FrameF3& b) { float s=a[0]*b[0]; s=s+a[1]*b[1]; s=s+a[2]*b[2]; return s; }
-FrameF3 f3_cross(const FrameF3& a, const FrameF3& b) {
-    return {a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]};
-}
-float f3_length(const FrameF3& a) { return static_cast<float>(std::sqrt(static_cast<double>(f3_dot(a, a)))); }
 FrameF3 f3_unit(const FrameF3& a) { const float l=f3_length(a); return {a[0]/l, a[1]/l, a[2]/l}; }
 
 // CFrame.new(position, lookAt) is built differently from CFrame.lookAt, in single precision with reciprocal-length normalization
 // (verified against the live client: seven random cases plus a protected script's call, all 63 components bit for bit):
 //   z = (position - lookAt) * (1/|.|);  y' = unit(up - z*(up.z));  x = unit(y' x z);  y = z x x
-// Looking straight along up degenerates y'; that case keeps the double-precision look-at path.
-FrameF3 f3_unit_reciprocal(const FrameF3& a) {
-    const float l=f3_length(a);
-    const float r=1.0f/l;
-    return {a[0]*r, a[1]*r, a[2]*r};
-}
+// Looking straight along up degenerates y'; that case uses the look-at path.
 int cframe_position_look_at(lua_State* L) {
     const auto p=finite_frame_vector(L, 1);
     const auto target=finite_frame_vector(L, 2);
@@ -199,7 +211,11 @@ int cframe_position_look_at(lua_State* L) {
     const float gs_length=f3_length(gs);
     if (!std::isfinite(gs_length) || gs_length < 1e-6f) return cframe_look(L, true);
     const FrameF3 y_seed=f3_unit_reciprocal(gs);
-    const FrameF3 x=f3_unit_reciprocal(f3_cross(y_seed, z));
+    // The engine builds x from z x y' and scales by a negated reciprocal, so an exactly-zero component comes out as -0
+    // (live client, protected script call): same bits as unit(y' x z) everywhere else.
+    const FrameF3 x_raw=f3_cross(z, y_seed);
+    const float x_scale=-(1.0f/f3_length(x_raw));
+    const FrameF3 x{x_raw[0]*x_scale, x_raw[1]*x_scale, x_raw[2]*x_scale};
     const FrameF3 y=f3_cross(z, x);
     FrameMatrix r{x[0],y[0],z[0], x[1],y[1],z[1], x[2],y[2],z[2]};
     return push_frame_value(L, p, r);

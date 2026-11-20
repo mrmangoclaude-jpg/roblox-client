@@ -7,6 +7,10 @@
 #include <vector>
 #include <string>
 
+// Number of task.spawn calls whose child is currently running inline. Roblox runs a spawned function until it yields or ends;
+// the time-slice interrupt must not break it, or the spawner is handed a thread that reads as "normal" (not closable).
+inline int& unbreakable_spawn_depth() { static int depth=0; return depth; }
+
 // A bounded cooperative scheduler shared by authored source jobs and callbacks.
 class SourceScheduler {
 public:

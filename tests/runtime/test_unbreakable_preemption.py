@@ -64,6 +64,15 @@ class UnbreakablePreemptionTests(unittest.TestCase):
                 self.assertTrue(ok, 'the slice broke a coroutine whose parent cannot be suspended: %s' % value)
                 self.assertIn(value, (HEAVY_RESULT, 'sorted'))
 
+    def test_task_spawn_runs_the_child_to_its_end_and_the_thread_is_closable(self):
+        # A protected script closes the thread task.spawn returns. Roblox never preempts the spawned function, so the thread is
+        # finished (not "normal", which coroutine.close rejects) by the time spawn returns.
+        body = ('local co = task.spawn(function() %s end) '
+                'return coroutine.status(co) .. ":" .. tostring(coroutine.close(co))') % HEAVY
+        ok, value = self.outcome(scenario(body))
+        self.assertTrue(ok, value)
+        self.assertEqual(value, 'dead:true')
+
     def test_a_runaway_inside_a_metamethod_is_bounded_by_the_script_timeout_error(self):
         started = time.monotonic()
         source = scenario('local t = setmetatable({}, {__index = function() while true do end end}) return t.x')

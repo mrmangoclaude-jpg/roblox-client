@@ -108,7 +108,7 @@ void interrupt(lua_State* L, int gc) {
     if (now >= lim->deadline) {
         lim->timed_out = true;
         if (api_trace_enabled()) api_trace_stack(L);
-        if (lua_isyieldable(L)) {
+        if (lua_isyieldable(L) && unbreakable_spawn_depth() == 0) {
             lim->stuck_since = Clock::time_point{};
             lua_break(L);
         } else if (lim->stuck_since == Clock::time_point{}) {
