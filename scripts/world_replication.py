@@ -36,6 +36,7 @@ class World:
         self.items = collections.Counter()
         self.context = None
         self._native_props = {}
+        self._avatar_cache = {}
         self.tags = []
         self.guid_batches = []
         self.replication_foci = {}
@@ -162,15 +163,34 @@ class World:
         """Return evidence plus private references; callers publish evidence only."""
         def cls(instance):
             return self.schema['classes'][instance['class']]['name'] if instance else None
-        player_key = next((k for k, v in self.instances.items() if cls(v) == 'Player'
-                          and v['properties'].get('UserId') == user_id), None)
+        # The three scans below are O(instances) and avatar() runs several times per tick in a world of 100k instances. Each result is
+        # cached and re-validated in O(1); a stale entry triggers the original scan. Additions append to the dict, so the first match
+        # in dict order (what next() returns) cannot change while the cached instance still qualifies. That relies on the protocol's
+        # invariants: an instance never changes class, and the Player UserId / Humanoid parent are set when it is created.
+        cache = self._avatar_cache
+        cached = self.instances.get(cache.get(('player', user_id)))
+        if cached is not None and cls(cached) == 'Player' and cached['properties'].get('UserId') == user_id:
+            player_key = cache[('player', user_id)]
+        else:
+            player_key = next((k for k, v in self.instances.items() if cls(v) == 'Player'
+                              and v['properties'].get('UserId') == user_id), None)
+            cache[('player', user_id)] = player_key
         player = self.instances.get(player_key)
         character_key = player['properties'].get('Character') if player else None
         character = self.instances.get(character_key)
         root_key = character['properties'].get('PrimaryPart') if character else None
         root = self.instances.get(root_key)
-        humanoid = next((v for v in self.instances.values() if v.get('parent') == character_key
-                         and cls(v) == 'Humanoid'), None) if character else None
+        humanoid = None
+        if character:
+            cached = self.instances.get(cache.get(('humanoid', character_key)))
+            if cached is not None and cached.get('parent') == character_key and cls(cached) == 'Humanoid':
+                humanoid = cached
+            else:
+                found = next(((k, v) for k, v in self.instances.items() if v.get('parent') == character_key
+                              and cls(v) == 'Humanoid'), None)
+                if found is not None:
+                    cache[('humanoid', character_key)] = found[0]
+                    humanoid = found[1]
         position = None
         if root:
             for name in ('ReplicationPV', 'CFrame'):
@@ -206,8 +226,16 @@ class World:
                 and max(abs(x-y) for x, y in zip(coordinate, region['coordinate'])) < region['radius']
                 for region in self.regions)
         evidence['spawn_region_received'] = covered
-        workspace = self.instances.get(character.get('parent')) if character else next(
-            (v for v in self.instances.values() if cls(v) == 'Workspace'), None)
+        if character:
+            workspace = self.instances.get(character.get('parent'))
+        else:
+            cached = self.instances.get(cache.get('workspace'))
+            if cached is not None and cls(cached) == 'Workspace':
+                workspace = cached
+            else:
+                found = next(((k, v) for k, v in self.instances.items() if cls(v) == 'Workspace'), None)
+                workspace = found[1] if found else None
+                cache['workspace'] = found[0] if found else None
         streaming = workspace['properties'].get('StreamingEnabled') if cls(workspace) == 'Workspace' else None
         evidence['workspace_streaming_enabled'] = streaming
         evidence['initial_world_received'] = 13 in self.tags
