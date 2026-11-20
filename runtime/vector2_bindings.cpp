@@ -196,11 +196,16 @@ void install_vector2_bindings(lua_State* L) {
     lua_pushliteral(L,"The metatable is locked"); lua_setfield(L,-2,"__metatable");
     lua_pop(L,1);
 
-    lua_createtable(L,0,12);
+    // Insertion order reproduces the real client's pairs() order; Luraph
+    // fingerprints it and a mismatch produces a wrong decryption key.
+    lua_createtable(L,0,7);
+    method(L,"min",min_values);
+    constant(L,"xAxis",1,0);
+    constant(L,"zero",0,0);
+    method(L,"max",max_values);
+    constant(L,"one",1,1);
+    constant(L,"yAxis",0,1);
     method(L,"new",construct);
-    constant(L,"zero",0,0); constant(L,"one",1,1);
-    constant(L,"xAxis",1,0); constant(L,"yAxis",0,1);
-    method(L,"min",min_values); method(L,"max",max_values);
     lua_setreadonly(L,-1,true); lua_setglobal(L,"Vector2");
 }
 

@@ -2905,7 +2905,21 @@ void install(lua_State*L,World&w){
     lua_pushliteral(L,"Instance");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kCFrameMeta);lua_pushcfunction(L,cframe_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,cframe_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,cframe_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushliteral(L,"CFrame");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");install_frame_methods(L);lua_pop(L,1);
     lua_createtable(L,0,8);lua_pushcfunction(L,vector3_new,"new");lua_setfield(L,-2,"new");install_geometry_vector_constructors(L);set_vector_constant(L,"zero",0,0,0);set_vector_constant(L,"one",1,1,1);set_vector_constant(L,"xAxis",1,0,0);set_vector_constant(L,"yAxis",0,1,0);set_vector_constant(L,"zAxis",0,0,1);lua_setreadonly(L,-1,1);lua_setglobal(L,"Vector3");
-    lua_createtable(L,0,8);install_frame_constructors(L);lua_pushcfunction(L,cframe_new,"new");lua_setfield(L,-2,"new");lua_pushcfunction(L,cframe_from_matrix,"fromMatrix");lua_setfield(L,-2,"fromMatrix");auto*identity=new_cframe(L);luaL_getmetatable(L,kCFrameMeta);lua_setmetatable(L,-2);lua_setfield(L,-2,"identity");lua_setreadonly(L,-1,1);lua_setglobal(L,"CFrame");
+    // Insertion order reproduces the real client's pairs() order for CFrame.
+    lua_createtable(L,0,12);
+    lua_pushcfunction(L,cframe_new,"new");lua_setfield(L,-2,"new");
+    frame_method(L,"Angles",cframe_euler_xyz);
+    frame_method(L,"fromEulerAnglesYXZ",cframe_euler_yxz);
+    frame_method(L,"fromRotationBetweenVectors",cframe_rotation_between);
+    frame_method(L,"lookAlong",cframe_look_along);
+    frame_method(L,"fromOrientation",cframe_euler_yxz);
+    frame_method(L,"fromEulerAngles",cframe_from_euler_general);
+    frame_method(L,"fromEulerAnglesXYZ",cframe_euler_xyz);
+    lua_pushcfunction(L,cframe_from_matrix,"fromMatrix");lua_setfield(L,-2,"fromMatrix");
+    frame_method(L,"lookAt",cframe_look_at);
+    frame_method(L,"fromAxisAngle",cframe_axis_angle);
+    auto*identity=new_cframe(L);luaL_getmetatable(L,kCFrameMeta);lua_setmetatable(L,-2);lua_setfield(L,-2,"identity");
+    lua_setreadonly(L,-1,1);lua_setglobal(L,"CFrame");
     Node*game=find_node(w,w.game_id);push_node(L,w,game);lua_pushvalue(L,-1);lua_setglobal(L,"game");lua_setglobal(L,"Game");
     auto ws=w.services.find("Workspace");if(ws!=w.services.end()){push_node(L,w,find_node(w,ws->second));lua_pushvalue(L,-1);lua_setglobal(L,"workspace");lua_setglobal(L,"Workspace");}
     auto players=w.services.find("Players");if(players!=w.services.end()){
