@@ -129,78 +129,63 @@ int tween_info_constructor(lua_State* L) {
     return 1;
 }
 
-double tween_ease_in(int style, double x) {
+// Easing as the engine evaluates it, fitted against values measured in a live client: the alpha is a 32-bit float and every result
+// is rounded to float, but which steps run in double differs per style (the rounding path decides the last digits).
+// TweenService:GetValue(0.6, Linear, Out) is 0.6000000238418579, not the all-double result 0.5999999940395355.
+float tween_ease_in(int style, float x) {
+    const double xd = x;
     switch (style) {
         case 0: return x; // Linear
-        case 1: return 1.0 - std::cos(x * kTweenPi / 2.0); // Sine
+        case 1: return static_cast<float>(1.0 - std::cos(xd * kTweenPi / 2.0)); // Sine
         case 2: { // Back
-            const double overshoot = static_cast<double>(static_cast<float>(1.70158));
-            return x * x * ((overshoot + 1.0) * x - overshoot);
+            const float overshoot = 1.70158f;
+            return x * x * ((overshoot + 1.0f) * x - overshoot);
         }
         case 3: return x * x; // Quad
-        case 4: return x * x * x * x; // Quart
-        case 5: return x * x * x * x * x; // Quint
-        case 6: { // Bounce-in is the inverse of the legacy out polynomial.
-            double inverse = 1.0 - x;
+        case 4: return static_cast<float>(std::pow(xd, 4.0)); // Quart
+        case 5: return static_cast<float>(std::pow(xd, 5.0)); // Quint
+        case 6: { // Bounce: float 1 - x, double out-polynomial
+            double t = 1.0f - x;
             double value;
-            if (inverse < 1.0 / 2.75) value = 7.5625 * inverse * inverse;
-            else if (inverse < 2.0 / 2.75) {
-                inverse -= 1.5 / 2.75; value = 7.5625 * inverse * inverse + 0.75;
-            } else if (inverse < 2.5 / 2.75) {
-                inverse -= 2.25 / 2.75; value = 7.5625 * inverse * inverse + 0.9375;
-            } else {
-                inverse -= 2.625 / 2.75; value = 7.5625 * inverse * inverse + 0.984375;
-            }
-            return 1.0 - value;
+            if (t < 1.0 / 2.75) value = 7.5625 * t * t;
+            else if (t < 2.0 / 2.75) { t -= 1.5 / 2.75; value = 7.5625 * t * t + 0.75; }
+            else if (t < 2.5 / 2.75) { t -= 2.25 / 2.75; value = 7.5625 * t * t + 0.9375; }
+            else { t -= 2.625 / 2.75; value = 7.5625 * t * t + 0.984375; }
+            return static_cast<float>(1.0 - value);
         }
-        case 7: { // Elastic
-            if (x == 0.0 || x == 1.0) return x;
-            return std::pow(2.0, 10.0 * x - 10.0) * std::sin(x * kTweenPi * 6.5);
+        case 7: { // Elastic: exponent rounded to float, double pow and sin
+            if (x == 0.0f || x == 1.0f) return x;
+            const float exponent = static_cast<float>(10.0 * xd - 10.0); // double product, then rounded to float
+            return static_cast<float>(std::pow(2.0, static_cast<double>(exponent)) * std::sin(xd * kTweenPi * 6.5));
         }
         case 8: { // Exponential
-            if (x == 0.0) return 0.0;
-            return std::pow(2.0, 10.0 * x - 10.0);
+            if (x == 0.0f) return 0.0f;
+            const float exponent = static_cast<float>(10.0 * xd - 10.0); // double product, then rounded to float
+            return static_cast<float>(std::pow(2.0, static_cast<double>(exponent)));
         }
-        case 9: { // Circular; preserve the legacy float32 intermediate steps.
-            const float xf = static_cast<float>(x);
-            const float square = static_cast<float>(xf * xf);
-            const float remaining = static_cast<float>(1.0f - square);
-            const float root = static_cast<float>(std::sqrt(remaining));
-            return static_cast<float>(1.0f - root);
+        case 9: { // Circular
+            const float square = x * x;
+            const float remaining = 1.0f - square;
+            return 1.0f - std::sqrt(remaining);
         }
-        case 10: return x * x * x; // Cubic
+        case 10: return static_cast<float>(std::pow(xd, 3.0)); // Cubic
         default: return x;
     }
 }
 
-double tween_ease_out(int style, double x) {
-    if (style == 6) { // Bounce has a separately-defined out curve.
-        constexpr double n1 = 7.5625;
-        constexpr double d1 = 2.75;
-        if (x < 1.0 / d1) return n1 * x * x;
-        if (x < 2.0 / d1) { x -= 1.5 / d1; return n1 * x * x + 0.75; }
-        if (x < 2.5 / d1) { x -= 2.25 / d1; return n1 * x * x + 0.9375; }
-        x -= 2.625 / d1;
-        return n1 * x * x + 0.984375;
-    }
-    if (style == 2 || style == 7) return 1.0 - tween_ease_in(style, 1.0 - x);
-    if (style == 8) {
-        if (x == 1.0) return 1.0;
-        return 1.0 - std::pow(2.0, -10.0 * x);
-    }
-    return 1.0 - tween_ease_in(style, 1.0 - x);
+// Out is 1 - In(1 - x) for every style, with float arithmetic around the In curve (Bounce and Exponential have no special out curve).
+float tween_ease_out(int style, float x) {
+    return 1.0f - tween_ease_in(style, 1.0f - x);
 }
 
 double tween_ease(int style, int direction, double alpha) {
-    const double x = std::clamp(alpha, 0.0, 1.0);
     if (std::isnan(alpha)) return alpha;
-    if (x == 0.0 || x == 1.0) return x;
-    if (direction == 0) return static_cast<float>(tween_ease_in(style, x));
-    if (direction == 1) return 1.0 - static_cast<float>(tween_ease_in(style, 1.0 - x));
-    if (x == 0.0 || x == 1.0) return x;
-    if (x < 0.5)
-        return static_cast<float>(tween_ease_in(style, x * 2.0)) * 0.5;
-    return 1.0 - static_cast<float>(tween_ease_in(style, (1.0 - x) * 2.0)) * 0.5;
+    const float x = static_cast<float>(std::clamp(alpha, 0.0, 1.0));
+    if (x == 0.0f || x == 1.0f) return x;
+    if (direction == 0) return tween_ease_in(style, x);
+    if (direction == 1) return tween_ease_out(style, x);
+    if (x < 0.5f) return tween_ease_in(style, x * 2.0f) * 0.5f;
+    return 1.0f - tween_ease_in(style, (1.0f - x) * 2.0f) * 0.5f;
 }
 
 int tween_service_get_value(lua_State* L) {
