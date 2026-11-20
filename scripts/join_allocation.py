@@ -35,7 +35,7 @@ def write_private(path, value):
         if os.name != "nt": os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w") as output:
             fd = None
-            json.dump(value, output)
+            output.write(json.dumps(value))  # the C encoder; json.dump(fp) iterates in pure Python and dominated the session loop
             output.write("\n")
     finally:
         if fd is not None:
