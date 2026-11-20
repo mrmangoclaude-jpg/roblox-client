@@ -277,6 +277,7 @@ class PersistentClientScriptRuntime:
         self._catalog_catchup_needed = False
         self._catalog_deferrals = 0
         self._catalog_cost = 0.
+        self._catalog_delivered = False
         self._vm_pruned_ids = set()
         self._vm_rs_key = None
         self._vm_protected_ancestors = None
@@ -1013,7 +1014,10 @@ class PersistentClientScriptRuntime:
                 catchup_due
                 or (caught_up and self._catalog_needs_refresh(
                     world, delta, initial_ready, coalesce_queue=coalesce_queue)))
-        if not caught_up and initial_ready:
+        # Raised until the first full catalog delivery, then only now and then (scripts can still appear while the host lags).
+        if (not caught_up and initial_ready
+                and (not self._catalog_delivered
+                     or time.monotonic() - self._last_catalog_queue_refresh >= 10.0)):
             self._catalog_catchup_needed = True
         return delta, initial_ready, refresh, caught_up
 
@@ -1114,9 +1118,10 @@ class PersistentClientScriptRuntime:
         self._acknowledge_world(delta['sequence'])
         if defer_refresh:
             self._catalog_catchup_needed = True
-        elif is_final:
+        elif (refresh_catalog or has_pending_scripts) and is_final:
             # The whole catalog reached the VM; caught_up is irrelevant here.
             self._catalog_catchup_needed = False
+            self._catalog_delivered = True
         self._pending_script_catalog = None if is_final else target_catalog
         self.script_catalog = next_catalog
         self.initial_replication_complete = effective_initial_ready
@@ -1324,6 +1329,7 @@ class PersistentClientScriptRuntime:
                 self._catalog_catchup_needed = True
             elif context.get('catalog_caught_up', True):
                 self._catalog_catchup_needed = False
+                self._catalog_delivered = True
         return result
 
     def queue_background_source(self, source, *, label='<background-source>', timeout_ms=250):
@@ -1486,7 +1492,10 @@ class PersistentClientScriptRuntime:
                                    'timeout_ms': step_timeout}
                         context = {'op': 'update', 'revision': revision,
                                    'catalog': next_catalog, 'initial_ready': effective_initial_ready,
-                                   'catalog_caught_up': is_final and not defer_refresh,
+                                   # Cleared only when a catalog delivery actually finished in this transaction: an update with
+                                   # nothing to deliver used to clear the flag the same tick it was raised, so a host that
+                                   # never caught up never rebuilt the catalog.
+                                   'catalog_caught_up': bool(refresh or has_pending_scripts) and is_final and not defer_refresh,
                                    'defer_catalog_refresh': defer_refresh,
                                    'pending_script_catalog': (None if is_final else target_catalog),
                                    'shared_entry_count': len(getattr(world, 'shared', {}))}
