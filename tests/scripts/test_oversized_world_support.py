@@ -269,7 +269,7 @@ class OversizedWorldSupportTests(unittest.TestCase):
         runtime._vm_pruned_ids = {'1:99'}
         world.revision = 10
         world.tags.append(13)
-        runtime.initial_replication_complete = True
+        runtime.initial_replication_complete = False
         runtime._catalog_catchup_needed = True
 
         def lagging_delta(w, seq, **kw):

@@ -985,7 +985,10 @@ class PersistentClientScriptRuntime:
         if statistics != self._session_stats_sent:
             delta['session_stats'] = statistics
         caught_up = delta['sequence'] >= world.revision
-        initial_ready = self.initial_replication_complete or (13 in world.tags and caught_up)
+        # Tag 13 is the server's "initial replication complete" marker; everywhere
+        # else in the client it is used on its own. Requiring caught_up here made a
+        # continuously streaming game never start its scripts (host always behind).
+        initial_ready = self.initial_replication_complete or (13 in world.tags)
         coalesce_queue = self._coalesce_catalog_queue
         if self._pending_script_catalog is not None:
             orig_init = self.initial_replication_complete
