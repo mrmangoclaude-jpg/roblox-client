@@ -26,6 +26,9 @@ def _copy(value):
     return copy.deepcopy(value)
 
 
+_NO_PARENT_INDEXED = object()
+
+
 class World:
     def __init__(self, schema):
         self.schema = schema
@@ -69,6 +72,7 @@ class World:
         self.event_journal = collections.deque(maxlen=4096)
         self.actions = WorldActionJournal()
         self._removal_children = None
+        self._removal_parent = None
         self._removal_instances = None
         # Published only after an entire ordinary replication packet validates.
         # These are received wire changes, not local property revisions.
@@ -78,8 +82,19 @@ class World:
         fields = tuple(fields)
         if 'AttributesReplicate' in fields and not deleted:
             self.instances[key].pop('attributes',None)
-        if created or 'Parent' in fields:
-            self._removal_children = None
+        if (created or 'Parent' in fields) and self._removal_children is not None and not deleted:
+            # Keep the removal index current instead of discarding it: a rebuild scans every instance, and one stream-out
+            # packet after each create used to cost a full rescan (three quarters of the time spent building a 180k-action world).
+            instance = self.instances.get(key)
+            if instance is not None:
+                new_parent = instance.get('parent')
+                old_parent = self._removal_parent.get(key, _NO_PARENT_INDEXED)
+                if old_parent is not new_parent and old_parent != new_parent:
+                    if old_parent is not _NO_PARENT_INDEXED:
+                        siblings = self._removal_children.get(old_parent)
+                        if siblings is not None: siblings.discard(key)
+                    self._removal_children[new_parent].add(key)
+                    self._removal_parent[key] = new_parent
         self.revision += 1
         if not deleted:
             versions = self.property_versions.setdefault(key, {})
@@ -139,8 +154,11 @@ class World:
         # invalidate it; removals maintain it without rescanning the world.
         if self._removal_children is None or self._removal_instances is not self.instances:
             self._removal_children = collections.defaultdict(set)
+            self._removal_parent = {}
             for key, instance in self.instances.items():
-                self._removal_children[instance.get('parent')].add(key)
+                parent = instance.get('parent')
+                self._removal_children[parent].add(key)
+                self._removal_parent[key] = parent
             self._removal_instances = self.instances
         children = self._removal_children
         visited = set()
@@ -152,6 +170,7 @@ class World:
                 visited.add(k)
                 pending.extend(children.pop(k, ()))
                 existed = self.instances.pop(k, None)
+                self._removal_parent.pop(k, None)
                 if existed is not None:
                     siblings = children.get(existed.get('parent'))
                     if siblings is not None: siblings.discard(k)

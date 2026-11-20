@@ -40,24 +40,38 @@ class RemovalBatchTests(unittest.TestCase):
         self.assertEqual(set(world.creation),{(1,4)})
         self.assertEqual(set(world.property_versions),{(1,4)})
 
-    def test_consecutive_packets_reuse_index_but_reparent_invalidates_it(self):
+    def test_consecutive_packets_reuse_index_and_reparent_keeps_it_current(self):
+        # The index used to be discarded on a reparent, so every later removal rescanned the whole world.
         world=self.world({(1,i):None for i in range(1,201)})
         for i in range(1,101):world.remove_tree((1,i))
         self.assertEqual(world.instances.scans,1)
         world.instances[(1,200)]['parent']=(1,199)
         world.touch((1,200),['Parent'])
         world.remove_tree((1,199))
-        self.assertEqual(world.instances.scans,2)
+        self.assertEqual(world.instances.scans,1)
         self.assertNotIn((1,200),world.instances)
+        self.assertIn((1,150),world.instances)
 
-    def test_creation_invalidates_cached_index(self):
+    def test_creation_keeps_cached_index_current(self):
         world=self.world({(1,1):None,(1,2):None})
         world.remove_tree((1,1))
         world.instances[(1,3)]={'class':0,'parent':(1,2),'properties':{}}
         world.touch((1,3),created=True)
         world.remove_tree((1,2))
         self.assertFalse(world.instances)
-        self.assertEqual(world.instances.scans,2)
+        self.assertEqual(world.instances.scans,1)
+
+    def test_a_reparented_instance_is_no_longer_removed_with_its_old_parent(self):
+        world=self.world({(1,1):None,(1,2):(1,1),(1,3):None})
+        world.remove_tree((1,3))   # builds the index
+        world.instances[(1,2)]['parent']=(1,3+10)
+        world.instances[(1,13)]={'class':0,'parent':None,'properties':{}}
+        world.touch((1,13),created=True)
+        world.touch((1,2),['Parent'])
+        world.remove_tree((1,1))
+        self.assertEqual(set(world.instances),{(1,2),(1,13)})
+        world.remove_tree((1,13))
+        self.assertFalse(world.instances)
 
     def test_empty_removals_do_not_scan_the_world(self):
         world=self.world({(1,1):None})
