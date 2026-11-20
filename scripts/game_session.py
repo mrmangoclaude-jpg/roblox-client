@@ -667,7 +667,9 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                                    catalog_pending=script_runtime._pending_script_catalog is not None,
                                    catalog_catchup_needed=bool(script_runtime._catalog_catchup_needed),
                                    catalog_entries=len(script_runtime.script_catalog or ()),
-                                   initial_tag_seen=13 in getattr(script_runtime.world, 'tags', ()))
+                                   initial_tag_seen=13 in getattr(script_runtime.world, 'tags', ()),
+                                   host_timing={op: [round(v, 3) if isinstance(v, float) else v for v in row]
+                                                for op, row in dict(getattr(script_runtime.host, 'timing', {})).items()})
                 if locomotion_animation is not None and locomotion_source_token is not None:
                     animation_result = script_runtime.take_background_source_result(
                         locomotion_source_token)

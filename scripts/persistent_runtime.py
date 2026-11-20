@@ -39,6 +39,7 @@ class PersistentLuauHost:
         self.text_service_factory = text_service_factory
         self.failure_reason = None
         self.failure_context = None
+        self.timing = {}  # op -> [calls, encode seconds, round-trip seconds, request bytes, actions]
         self.lock = threading.RLock()
         self.responses = queue.Queue(maxsize=8)
         self.process = subprocess.Popen([str(RUST_HOST), 'session'], stdin=subprocess.PIPE,
@@ -74,7 +75,9 @@ class PersistentLuauHost:
             if self.text_service is not None and command.get('op') not in ('init','render','host_io','physics_feedback','close'):
                 ready=self.text_service.drain()
                 if ready:command['text_service_responses']=ready+command.get('text_service_responses',[])
+            encode_started = time.monotonic()
             data = json.dumps(command, ensure_ascii=True, allow_nan=False).encode() + b'\n'
+            encoded_at = time.monotonic()
             if len(data) > 608 * 1024 * 1024: raise ValueError('Persistent request exceeds 608 MiB')
             if self.closed or self.process.poll() is not None:
                 reason = self.failure_reason or f'Persistent worker exited (status {self.process.poll()}); script state was lost'
@@ -85,6 +88,14 @@ class PersistentLuauHost:
                 self.process.stdin.flush()
                 result = self.responses.get(timeout=RESPONSE_DEADLINE_S)
                 if isinstance(result, Exception): raise result
+                finished_at = time.monotonic()
+                row = self.timing.setdefault(str(command.get('op', '?')), [0, 0., 0., 0, 0])
+                row[0] += 1
+                row[1] += encoded_at - encode_started
+                row[2] += finished_at - encoded_at
+                row[3] += len(data)
+                delta = command.get('delta')
+                if isinstance(delta, dict): row[4] += len(delta.get('actions', ()))
                 if (not isinstance(result, dict) or type(result.get('ok')) is not bool
                         or not isinstance(result.get('values'), list)):
                     raise RuntimeError('Invalid persistent runtime result')
