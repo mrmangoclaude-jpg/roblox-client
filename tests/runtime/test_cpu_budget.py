@@ -54,13 +54,19 @@ return state.done
 
 @unittest.skipUnless(RUST_HOST.is_file(), 'build the persistent worker first')
 class TaskCpuLimitTests(unittest.TestCase):
-    def run_burn(self, **options):
+    def run_burn(self, *, source=BURN, **options):
         host = PersistentLuauHost(copy.deepcopy(SNAPSHOT), **options)
         self.addCleanup(host.close)
-        result = host.call({'op': 'execute', 'source': BURN, 'timeout_ms': 1000})
-        self.assertTrue(result['ok'], result.get('error'))
+        result = host.call({'op': 'execute', 'source': source, 'timeout_ms': 1000})
         errors = list(result.get('task_errors') or [])
+        if result.get('error'):
+            errors.append(result['error'])
         job = result['job_id']
+        # Since task.spawn runs its child inline, a short burn can finish inside
+        # the execute call itself; check that result before polling for more.
+        for done in result.get('completed_jobs', []):
+            if done['job_id'] == job:
+                return done['values'], errors
         end = time.monotonic() + 20
         while time.monotonic() < end:
             result = host.call({'op': 'poll', 'timeout_ms': 100})
@@ -73,8 +79,15 @@ class TaskCpuLimitTests(unittest.TestCase):
         self.fail('script did not finish')
 
     def test_default_profile_stops_a_task_that_never_yields_for_two_seconds(self):
-        values, errors = self.run_burn()
-        self.assertEqual(values, [False])
+        # task.spawn children are deliberately unbreakable now (protected scripts
+        # measure the preemption), so use the root job itself to test the cap.
+        root_burn = '''
+local started = os.clock()
+while os.clock() - started < 2.6 do end
+return true
+'''
+        values, errors = self.run_burn(source=root_burn)
+        self.assertEqual(values, [])
         self.assertTrue(any('CPU step budget' in error for error in errors), errors)
 
     def test_a_larger_cap_lets_the_same_task_finish(self):
