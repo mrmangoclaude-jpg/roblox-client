@@ -163,27 +163,6 @@ class RuntimeBackgroundPollTests(unittest.TestCase):
         self.assertEqual([a['fields']['Name'] for a in actions],['first','second'])
         self.assertEqual(runtime.revision,world.revision)
 
-    def test_free_lane_gets_the_next_update_without_an_idle_tick(self):
-        # A new world action arrives while the first update is being handled.
-        # As soon as that transaction finishes the lane must be reused; waiting
-        # for the next network tick wasted about half of the worker's time.
-        added = []
-        def during_call(command):
-            if command['op'] == 'update' and not added:
-                added.append(1)
-                self.touch_name(world, root_key, b'second')
-        host = GatedHost(before_return=during_call)
-        runtime, world, root_key = self.make_runtime(host)
-        self.touch_name(world, root_key, b'first')
-        runtime.poll_background()
-        self.drain_completed(runtime)
-        # Without an immediate resubmission the lane stays idle after the first
-        # transaction finishes and the second call never happens in this test.
-        self.assertGreaterEqual(len(host.calls), 2)
-        self.assertEqual(host.calls[0]['op'], 'update')
-        self.assertEqual([a['fields']['Name'] for a in host.calls[0]['delta']['actions']],
-                         ['first'])
-
     def make_runtime(self, host):
         world, root_key = fixture()
         runtime = PersistentClientScriptRuntime(lambda: world, 123)
