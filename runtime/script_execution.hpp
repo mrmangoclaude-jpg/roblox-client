@@ -249,8 +249,10 @@ local function prepareTemplates()
     mirror(game:FindService("StarterPack"), player:FindFirstChildOfClass("Backpack"))
 end
 local function environmentFor(instance)
-    -- A game script's own environment holds exactly _G, script and shared; its metatable is locked.
-    return setmetatable({script=instance, _G=base._G, shared=shared}, {__index=base, __metatable="The metatable is locked"})
+    -- A real client script's scope table has exactly one raw key: script. _G and
+    -- shared resolve through its __index metatable (verified with getfenv of real
+    -- ReplicatedFirst LocalScripts in the live client). A locked metatable too.
+    return setmetatable({script=instance}, {__index=base, __metatable="The metatable is locked"})
 end
 -- A module or script body runs directly as its thread's function, as in Roblox. A protected-call wrapper would cost one
 -- C-call level that protected scripts can measure (they nest coroutines until "C stack overflow" and use the depth), so

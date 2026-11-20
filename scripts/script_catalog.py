@@ -1,6 +1,7 @@
 """Prepare source, signed code, or native short code from a pinned game session."""
 import hashlib
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from session_integrity import bind_container_observer, container_candidate_probe
 
@@ -284,4 +285,11 @@ def script_catalog(world):
     if queue is not None:
         for key in [k for k in queue.pending if k not in world.instances]:
             queue.pending.pop(key)[1].cancel()
+    dump = os.environ.get('ROVE_DUMP_CATALOG')
+    if dump:
+        # Diagnostics only: lets a captured session's prepared bytecode be compared
+        # with the original script bytecode observed in a real client.
+        with open(dump, 'w', encoding='utf-8') as handle:
+            json.dump({key: value for key, value in current.items()
+                       if 'bytecode_hex' in value}, handle)
     return current
