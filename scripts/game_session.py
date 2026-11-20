@@ -794,9 +794,23 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                                        capability_bits=session.capabilities)
             script_runtime.chat_bridge = chat_console
         observation_scope = telemetry.integrity.observe_containers() if telemetry is not None else nullcontext()
-        with observation_scope, prevent_idle_sleep(session.report), current().stage('transport.loop'):
-            result = session.run(ready, packet, report_name=report_name,
-                                 on_tick=tick if clock is not None or console is not None or args.persistent_scripts or chat_console is not None or physics_trial is not None else None)
+        profile_path = os.environ.get('ROVE_PROFILE_MAIN_THREAD')  # developer aid: cProfile the network/game thread
+        profiler = None
+        if profile_path:
+            import cProfile
+            profiler = cProfile.Profile()
+        try:
+            with observation_scope, prevent_idle_sleep(session.report), current().stage('transport.loop'):
+                if profiler is not None: profiler.enable()
+                result = session.run(ready, packet, report_name=report_name,
+                                     on_tick=tick if clock is not None or console is not None or args.persistent_scripts or chat_console is not None or physics_trial is not None else None)
+        finally:
+            if profiler is not None:
+                import pstats
+                profiler.disable()
+                with open(profile_path, 'w', encoding='utf-8') as handle:
+                    for order in ('cumulative', 'tottime'):
+                        pstats.Stats(profiler, stream=handle).sort_stats(order).print_stats(70)
     finally:
         if chat_console is not None: chat_console.close()
         if console is not None: console.close()

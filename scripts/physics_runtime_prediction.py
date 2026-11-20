@@ -14,7 +14,13 @@ from world_replication import _copy  # native deep copy of plain data, falls bac
 from types import SimpleNamespace
 from mesh_asset_decoder import MeshAssetQueue, visual_meshes_from_world
 from collections import OrderedDict
+import time
 import weakref
+
+# Re-extracting the collision geometry walks every part in the world. On a large game that takes seconds, and a streaming
+# server marks the geometry dirty almost constantly, so an unthrottled refresh used to take most of the network thread and
+# starve the world feed. The refresh now waits at least this many times its own cost (about a quarter of the thread at most).
+_GEOMETRY_REFRESH_COST_RATIO = 3.
 
 _ENVIRONMENT_CLASSES = frozenset((
     'TrussPart', 'Seat', 'VehicleSeat', 'Terrain', 'Weld', 'WeldConstraint',
@@ -427,6 +433,7 @@ class RuntimePhysicsPrediction:
         self._last_step = None
         self._geometry_revision = None
         self._geometry_at = None
+        self._geometry_cost = 0.
         self._geometry = None
         self._player_key = None
         self._character_key = None
@@ -473,6 +480,7 @@ class RuntimePhysicsPrediction:
             self._revision = None
             self._geometry_revision = None
             self._geometry_at = None
+            self._geometry_cost = 0.
             self._geometry = None
             self._player_key = None
             self._character_key = None
@@ -547,7 +555,9 @@ class RuntimePhysicsPrediction:
         self._revision = world.revision
         controller = self.bridge.controller
         if (controller is not None and self._geometry_dirty
-                and (self._geometry_at is None or now-self._geometry_at >= .25)):
+                and (self._geometry_at is None
+                     or now-self._geometry_at >= max(.25, _GEOMETRY_REFRESH_COST_RATIO*self._geometry_cost))):
+            extraction_started = time.monotonic()
             geometry_world = SimpleNamespace(
                 schema=world.schema,
                 instances={key: world.instances[key] for key in self._geometry_keys
@@ -580,6 +590,7 @@ class RuntimePhysicsPrediction:
                                              current_poses, interval)
             controller.update_surface_velocities(
                 _received_surface_velocities(world, self._geometry))
+            self._geometry_cost = time.monotonic() - extraction_started
         if controller is not None and self._geometry is not None:
             if self._collision_dirty:
                 update_context=getattr(controller,'update_collision_context',None)
@@ -924,6 +935,7 @@ class RuntimePhysicsPrediction:
         self._geometry = None
         self._geometry_revision = None
         self._geometry_at = None
+        self._geometry_cost = 0.
         self._player_key = None
         self._character_key = None
         self._character_children = set()
