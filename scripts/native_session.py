@@ -274,8 +274,8 @@ class NativeSession:
         if time.monotonic() >= deadline:
             self.report["duration_limit_reached"] = True
             self.close("Bounded session complete")
-        elif self.duration and (self.report["datagrams_sent"] >= 10000 or
-                                self.report["bytes_received"] >= 64 * 1024 * 1024):
+        elif self.duration and (self.report["datagrams_sent"] >= 60000 or
+                                self.report["bytes_received"] >= 256 * 1024 * 1024):
             self.report["traffic_limit_reached"] = True
             self.close("Bounded traffic limit")
 
