@@ -1403,11 +1403,24 @@ class PersistentClientScriptRuntime:
         try:
             if self._background_context is not None:
                 completed = self._finish_background()
-                if completed is None or not self.remote_server_results:
+                if completed is None:
                     return completed
-                # The previous transaction has released the sole host lane.
-                # Deliver its result below while handing the free lane to an
-                # already-queued server reply, without another idle tick.
+                if self.remote_server_results:
+                    # The previous transaction has released the sole host lane.
+                    # Deliver its result below while handing the free lane to an
+                    # already-queued server reply, without another idle tick.
+                    pass
+                elif self.stats.get('pending_events', 0) >= 512:
+                    # Let the VM drain its callback queue before feeding it more
+                    # work; the receipt watermark stays put until pressure falls.
+                    return completed
+                elif not ((self.world is not None and self.world.revision > self.revision)
+                          or self._background_source_pending is not None
+                          or self._pending_script_catalog is not None
+                          or self._catalog_catchup_needed):
+                    return completed
+                # Otherwise the lane is free and there is real work waiting: submit
+                # the next transaction now instead of idling until the next tick.
             if self.host is None:
                 # Initialization happens once, before any asynchronous calls.
                 return self.poll()
