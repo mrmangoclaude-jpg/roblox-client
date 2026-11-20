@@ -12,7 +12,7 @@ use std::{
 };
 
 const REQUEST_LIMIT: usize = 608 * 1024 * 1024;
-const RESPONSE_LIMIT: usize = 1024 * 1024;
+const RESPONSE_LIMIT: usize = 8 * 1024 * 1024;
 
 fn frame<R: BufRead>(reader: &mut R, limit: usize) -> Result<Option<Vec<u8>>, String> {
     let mut output = Vec::new();
