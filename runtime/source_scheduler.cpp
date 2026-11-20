@@ -1,4 +1,5 @@
 #include "source_scheduler.hpp"
+#include <cstdlib>
 #include <cstring>
 #include "local_test_limits.hpp"
 #include "closure_bindings.hpp"
@@ -516,7 +517,8 @@ void SourceScheduler::step(Clock::time_point deadline,std::function<void()> pump
             // Large authored computations otherwise receive only a few ms
             // between costly world updates. Keep ordinary callbacks at 2 ms
             // and cap the authored turn at 8 ms inside the same request budget.
-            const auto quantum=std::chrono::milliseconds(task->root&&large_local_test()?8:2);
+            static const int quantum_override=[]{const char* text=std::getenv("ROVE_TASK_QUANTUM_MS");return text?std::atoi(text):0;}(); // diagnostic hook
+            const auto quantum=std::chrono::milliseconds(quantum_override>0?quantum_override:(task->root&&large_local_test()?8:2));
             set_interrupt_deadline(resumable?std::min(deadline,Clock::now()+quantum):deadline);
         }
         try{resume(*task,main_);}catch(...) {
