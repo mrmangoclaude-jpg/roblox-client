@@ -16,10 +16,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gxx', default=os.environ.get('GXX', 'g++'))
+    parser.add_argument('--out', default=str(ROOT / 'scripts' / '_wire_native.pyd'), help='output path (the file name must stay _wire_native.pyd)')
     args = parser.parse_args()
     include = sysconfig.get_paths()['include']
     stable_dll = pathlib.Path(sys.base_prefix) / 'python3.dll'
-    out = ROOT / 'scripts' / '_wire_native.pyd'
+    out = pathlib.Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     command = [args.gxx, '-std=c++17', '-O2', '-shared', '-DPy_LIMITED_API=0x030B0000', '-I', include,
                str(ROOT / 'native' / 'wire_native.cpp'), '-o', str(out), str(stable_dll),
                '-static', '-static-libgcc', '-static-libstdc++']

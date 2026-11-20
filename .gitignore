@@ -33,3 +33,4 @@ __pycache__/
 # optional native replication decoder (python scripts/build_native_wire.py)
 scripts/_wire_native.pyd
 scripts/_wire_native.off
+native/build/

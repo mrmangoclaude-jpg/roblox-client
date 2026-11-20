@@ -480,9 +480,160 @@ PyObject* copy_tree_method(PyObject*, PyObject* arg) {
     }
 }
 
+// scripts/world_snapshot.py _encode(value, type_id): the common cases of the decoded-value -> Luau-host JSON conversion.
+// CFrame-like values, remote variants, sequences and anything unusual raise Fallback so the Python code (which also raises the
+// original ValueErrors) handles them.
+Obj encode_value(PyObject* value, long type_id, int depth);
+
+Obj dict1(const char* key, Obj&& value) { Obj d = make_dict(); dict_set(d, key, std::move(value)); return d; }
+
+Obj encode_scalar_number(PyObject* v) {
+    if (PyLong_CheckExact(v)) { Py_INCREF(v); return Obj(v); }
+    const double d = PyFloat_AsDouble(v);
+    if (d == -1.0 && PyErr_Occurred()) throw Fallback{};
+    if (std::isfinite(d)) { Py_INCREF(v); return Obj(v); }
+    const char* text = std::isnan(d) ? "nan" : (d > 0 ? "inf" : "-inf");
+    return dict1("$number", Obj(PyUnicode_FromString(text)));
+}
+
+Obj encode_components(PyObject* value, size_t count) {
+    if (!(PyList_CheckExact(value) || PyTuple_CheckExact(value))) throw Fallback{};
+    const bool is_list = PyList_CheckExact(value);
+    if (static_cast<size_t>(is_list ? PyList_Size(value) : PyTuple_Size(value)) != count) throw Fallback{};
+    Obj list = make_list(count);
+    for (size_t i = 0; i < count; ++i) {
+        PyObject* item = is_list ? PyList_GetItem(value, static_cast<Py_ssize_t>(i)) : PyTuple_GetItem(value, static_cast<Py_ssize_t>(i));
+        if (!(PyLong_CheckExact(item) || PyFloat_CheckExact(item))) throw Fallback{};
+        list_set(list, i, encode_scalar_number(item));
+    }
+    return list;
+}
+Obj slice_copy(PyObject* list, size_t from, size_t to) {
+    Obj out = make_list(to - from);
+    for (size_t i = from; i < to; ++i) {
+        PyObject* item = PyList_GetItem(list, static_cast<Py_ssize_t>(i));
+        Py_INCREF(item);
+        list_set(out, i - from, Obj(item));
+    }
+    return out;
+}
+Obj ref_text(PyObject* a, PyObject* b) {
+    Obj ra(PyObject_Str(a)), rb(PyObject_Str(b));
+    return Obj(PyUnicode_FromFormat("%U:%U", ra.p, rb.p));
+}
+
+Obj encode_value(PyObject* value, long type_id, int depth) {
+    if (depth > 16) throw Fallback{};
+    if (PyDict_CheckExact(value) && PyDict_Size(value) == 1) {
+        Obj marker(PyUnicode_FromString("$remote_variant"));
+        const int has = PyDict_Contains(value, marker.p);
+        if (has != 0) throw Fallback{};  // remote variants (and errors) are handled in Python
+    }
+    if (type_id == 28 || type_id == 69) {
+        if (value == Py_None) return make_none();
+        if (!PyTuple_CheckExact(value) || PyTuple_Size(value) != 2) throw Fallback{};
+        PyObject *a = PyTuple_GetItem(value, 0), *b = PyTuple_GetItem(value, 1);
+        if (!PyLong_CheckExact(a) || !PyLong_CheckExact(b)) throw Fallback{};
+        return dict1("$ref", ref_text(a, b));
+    }
+    if (type_id == 18) { Py_INCREF(value); return dict1("$brickcolor", Obj(value)); }
+    if (PyBytes_CheckExact(value)) {
+        PyObject* decoded = PyUnicode_DecodeUTF8(PyBytes_AsString(value), PyBytes_Size(value), "strict");
+        if (decoded) return Obj(decoded);
+        PyErr_Clear();
+        const auto* data = reinterpret_cast<const uint8_t*>(PyBytes_AsString(value));
+        return dict1("$bytes_hex", make_hex(data, static_cast<size_t>(PyBytes_Size(value))));
+    }
+    if (value == Py_None || PyBool_Check(value) || PyUnicode_CheckExact(value) || PyLong_CheckExact(value)) { Py_INCREF(value); return Obj(value); }
+    if (PyFloat_CheckExact(value)) return encode_scalar_number(value);
+    switch (type_id) {
+        case 13: return dict1("$udim", encode_components(value, 2));
+        case 14: {
+            Obj values = encode_components(value, 4);
+            Obj pair = make_list(2);
+            list_set(pair, 0, dict1("$udim", slice_copy(values.p, 0, 2)));
+            list_set(pair, 1, dict1("$udim", slice_copy(values.p, 2, 4)));
+            return dict1("$udim2", std::move(pair));
+        }
+        case 19: return dict1("$color3", encode_components(value, 3));
+        case 20: {
+            Obj raw = encode_components(value, 3);
+            Obj out = make_list(3);
+            for (size_t i = 0; i < 3; ++i) {
+                PyObject* item = PyList_GetItem(raw.p, static_cast<Py_ssize_t>(i));
+                if (!PyLong_CheckExact(item)) throw Fallback{};
+                const long v = PyLong_AsLong(item);
+                if (v < 0 || v > 255) throw Fallback{};
+                list_set(out, i, make_float(static_cast<double>(v) / 255.0));
+            }
+            return dict1("$color3", std::move(out));
+        }
+        case 21: return dict1("$vector2", encode_components(value, 2));
+        case 37: return dict1("$number_range", encode_components(value, 2));
+        case 40: {
+            Obj values = encode_components(value, 4);
+            Obj pair = make_list(2);
+            list_set(pair, 0, dict1("$vector2", slice_copy(values.p, 0, 2)));
+            list_set(pair, 1, dict1("$vector2", slice_copy(values.p, 2, 4)));
+            return dict1("$rect", std::move(pair));
+        }
+        case 22: return dict1("$vector3", encode_components(value, 3));
+        case 35: case 38: throw Fallback{};
+        case 27: case 51: case 57: if (PyDict_Check(value)) throw Fallback{}; break;
+        default: break;
+    }
+    if (PyTuple_CheckExact(value) && PyTuple_Size(value) == 2 && PyLong_CheckExact(PyTuple_GetItem(value, 0)) && PyLong_CheckExact(PyTuple_GetItem(value, 1)))
+        return dict1("$ref", ref_text(PyTuple_GetItem(value, 0), PyTuple_GetItem(value, 1)));
+    if (PyList_CheckExact(value)) {
+        const Py_ssize_t n = PyList_Size(value);
+        Obj out = make_list(static_cast<size_t>(n));
+        for (Py_ssize_t i = 0; i < n; ++i) list_set(out, static_cast<size_t>(i), encode_value(PyList_GetItem(value, i), -1, depth + 1));
+        return out;
+    }
+    if (PyTuple_CheckExact(value)) {
+        const Py_ssize_t n = PyTuple_Size(value);
+        Obj out = make_list(static_cast<size_t>(n));
+        for (Py_ssize_t i = 0; i < n; ++i) list_set(out, static_cast<size_t>(i), encode_value(PyTuple_GetItem(value, i), -1, depth + 1));
+        return out;
+    }
+    if (PyDict_CheckExact(value)) {
+        Obj out = make_dict();
+        Py_ssize_t position = 0;
+        PyObject *key, *item;
+        while (PyDict_Next(value, &position, &key, &item)) {
+            if (!PyUnicode_CheckExact(key)) throw Fallback{};
+            Obj encoded = encode_value(item, -1, depth + 1);
+            if (PyDict_SetItem(out.p, key, encoded.p) != 0) throw Fallback{};
+        }
+        return out;
+    }
+    throw Fallback{};
+}
+
+PyObject* encode_method(PyObject*, PyObject* args) {
+    PyObject* value;
+    PyObject* type_obj;
+    if (!PyArg_ParseTuple(args, "OO", &value, &type_obj)) return nullptr;
+    try {
+        long type_id = -1;
+        if (type_obj != Py_None) {
+            if (!PyLong_CheckExact(type_obj)) throw Fallback{};
+            type_id = PyLong_AsLong(type_obj);
+            if (type_id == -1 && PyErr_Occurred()) throw Fallback{};
+        }
+        Obj encoded = encode_value(value, type_id, 0);
+        return encoded.release();
+    } catch (const Fallback&) {
+        PyErr_Clear();
+        PyErr_SetString(g_fallback, "encode defers to the Python implementation");
+        return nullptr;
+    }
+}
+
 PyMethodDef methods[] = {
     {"property_list", property_list, METH_VARARGS, "Decode one replicated property list; raises Fallback to defer to Python."},
     {"copy_tree", copy_tree_method, METH_O, "Deep copy of plain data; raises Fallback for any other type."},
+    {"encode", encode_method, METH_VARARGS, "world_snapshot._encode for the common value shapes; raises Fallback otherwise."},
     {nullptr, nullptr, 0, nullptr},
 };
 

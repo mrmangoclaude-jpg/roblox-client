@@ -11,6 +11,7 @@ import random
 import unittest
 
 import world_replication
+import world_snapshot
 from wire_reader import Reader, WireError
 from world_replication import World
 
@@ -125,7 +126,7 @@ class NativeWireTests(unittest.TestCase):
             if kind == 0: return rng.randrange(-2**40, 2**40)
             if kind == 1: return rng.choice([0.5, -0.0, float('inf'), float('nan'), 1e300, 3.25])
             if kind == 2: return bytes(rng.randrange(256) for _ in range(rng.randrange(8)))
-            if kind == 3: return rng.choice(['', 'abc', 'café', None, True, False])
+            if kind == 3: return rng.choice(['', 'abc', 'caf\u00e9', None, True, False])
             if kind == 4: return rng.randrange(4)
             if kind == 5: return [build(depth + 1) for _ in range(rng.randrange(4))]
             if kind == 6: return tuple(build(depth + 1) for _ in range(rng.randrange(4)))
@@ -147,6 +148,51 @@ class NativeWireTests(unittest.TestCase):
         for value in (object(), collections.OrderedDict(a=1), frozenset([1]), [object()], {'a': complex(1, 2)}):
             with self.assertRaises(NATIVE.Fallback):
                 NATIVE.copy_tree(value)
+
+    def test_encode_matches_python_on_random_values(self):
+        rng = random.Random(4242)
+        weird = [float('nan'), float('inf'), float('-inf'), -0.0, 1e300, 0.1]
+
+        def scalar():
+            kind = rng.randrange(10)
+            if kind == 0: return None
+            if kind == 1: return rng.choice([True, False])
+            if kind == 2: return rng.randrange(-300, 300)
+            if kind == 3: return rng.choice(weird + [rng.random() * 100])
+            if kind == 4: return rng.choice(['', 'abc', 'caf\u00e9'])
+            if kind == 5: return rng.choice([b'', b'abc', b'caf\xc3\xa9', b'\xff\xfe', b'\xc3'])
+            if kind == 6: return (rng.randrange(0, 5), rng.randrange(0, 2**32))
+            if kind == 7: return rng.randrange(0, 256)
+            if kind == 8: return rng.randrange(2**40, 2**41)
+            return rng.random()
+
+        def build(depth):
+            kind = rng.randrange(12 if depth < 3 else 4)
+            if kind < 4: return scalar()
+            if kind == 4: return [scalar() for _ in range(rng.choice([2, 3, 4, 5, 3, 3]))]
+            if kind == 5: return tuple(scalar() for _ in range(rng.choice([2, 3, 4])))
+            if kind == 6: return [build(depth + 1) for _ in range(rng.randrange(4))]
+            if kind == 7: return {rng.choice(['a', 'b', 'position', 'rotation_id']): build(depth + 1) for _ in range(rng.randrange(4))}
+            if kind == 8: return {'$remote_variant': {'type': rng.choice([30, 31, 27, 11, 99]), 'value': build(depth + 1)}}
+            if kind == 9: return {'position': [rng.random() for _ in range(3)], 'rotation_id': rng.randrange(0, 40), 'packed_rotation': None}
+            if kind == 10: return {rng.choice([1, b'k', (1, 2)]): scalar()}
+            return [[rng.random() for _ in range(rng.choice([3, 5]))] for _ in range(rng.randrange(3))]
+
+        def run(fn, value, type_id):
+            try:
+                return ('ok', repr(fn(value, type_id)))
+            except Exception as error:  # the Python reference raises ValueError/TypeError/IndexError/...; the types must agree
+                return ('error', type(error).__name__)
+
+        types = [None, None, 28, 69, 18, 13, 14, 19, 20, 21, 22, 37, 40, 35, 38, 27, 51, 57, 7, 11, 33]
+        accepted = 0
+        for _ in range(12000):
+            value, type_id = build(0), rng.choice(types)
+            reference = run(world_snapshot._encode_python, value, type_id)
+            native = run(world_snapshot._encode, value, type_id)
+            self.assertEqual(native, reference, (value, type_id))
+            accepted += reference[0] == 'ok'
+        self.assertGreater(accepted, 3000)
 
 
 if __name__ == '__main__':

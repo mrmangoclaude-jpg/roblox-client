@@ -6,6 +6,11 @@ from functools import lru_cache
 from pathlib import Path
 
 from world_replication import World
+
+try:  # optional native decoder (scripts/build_native_wire.py); _encode_python below is the reference implementation
+    import _wire_native as _native
+except ImportError:
+    _native = None
 from world_schema import parse_schema
 from script_catalog import script_catalog
 from received_attributes import attribute_snapshot
@@ -48,6 +53,16 @@ def instance_id(key):
 
 
 def _encode(value, type_id=None, depth=0):
+    native = _native
+    if native is not None and depth == 0:
+        try:
+            return native.encode(value, type_id)
+        except native.Fallback:
+            pass
+    return _encode_python(value, type_id, depth)
+
+
+def _encode_python(value, type_id=None, depth=0):
     if depth > 16:
         raise ValueError('Snapshot property nesting exceeds limit')
     if isinstance(value, dict) and set(value) == {'$remote_variant'}:
