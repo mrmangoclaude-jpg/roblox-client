@@ -2,6 +2,9 @@
 
 The dump is {"EnumName": [[ItemName, Value], ...], ...}, produced in Studio with Enum:GetEnums() / GetEnumItems().
 Enums the runtime already implements by hand are skipped (pass their names in a text file, one per line).
+The runtime mirrors the real game CLIENT, which lacks Studio-only enums: scripts/client_missing_enums.txt lists the 62 names the
+client does not have, and scripts/client_enum_overrides.json holds the two enums whose items differ (both measured in a live client,
+2026-11-20: Enum:GetEnums() has 602 entries there).
 Usage: python scripts/gen_studio_enums.py studio_enums.json existing_names.txt
 """
 import json
@@ -10,6 +13,10 @@ import sys
 
 dump = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
 existing = set(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8').split())
+here = pathlib.Path(__file__).resolve().parent
+studio_only = set((here / 'client_missing_enums.txt').read_text(encoding='utf-8').split())
+overrides = json.loads((here / 'client_enum_overrides.json').read_text(encoding='utf-8'))
+dump = {name: overrides.get(name, items) for name, items in dump.items() if name not in studio_only}
 runtime = pathlib.Path(__file__).resolve().parents[1] / 'runtime'
 items, specs = [], []
 for name in sorted(dump):

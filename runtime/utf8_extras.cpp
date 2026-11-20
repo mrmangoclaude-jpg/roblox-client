@@ -288,3 +288,21 @@ void install_roblox_global_extras(lua_State* L)
     lua_pushcfunction(L, global_settings, "settings");
     lua_setglobal(L, "settings");
 }
+
+void install_roblox_os_layout(lua_State* L)
+{
+    lua_getglobal(L, "os");
+    if (!lua_istable(L, -1))
+    {
+        lua_pop(L, 1);
+        return;
+    }
+    lua_createtable(L, 0, 4);
+    for (const char* name : {"clock", "date", "difftime", "time"})
+    {
+        lua_getfield(L, -2, name);
+        lua_setfield(L, -2, name);
+    }
+    lua_setglobal(L, "os");
+    lua_pop(L, 1); // the old table
+}

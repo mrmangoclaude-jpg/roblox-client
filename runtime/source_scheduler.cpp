@@ -1,4 +1,5 @@
 #include "source_scheduler.hpp"
+#include <cstring>
 #include "local_test_limits.hpp"
 #include "closure_bindings.hpp"
 #include "api_trace.hpp"
@@ -176,14 +177,18 @@ void SourceScheduler::install(lua_State* L) {
     // The VM does not invoke userthread destruction for its main state.
     // It has no script owner; only child threads need metadata storage.
     if(L!=main_&&!lua_getthreaddata(L))lua_setthreaddata(L,new ThreadOwner{this,""});
-    lua_newtable(L);
-    const char* names[]={"spawn","defer","delay","wait","cancel"};
-    for(int i=0;i<5;i++) {
-        lua_pushlightuserdata(L,this);lua_pushinteger(L,i);
-        lua_pushcclosurek(L,task_api,names[i],2,nullptr);lua_setfield(L,-2,names[i]);
+    // The real client's task table is presized for its seven fields and filled alphabetically; that fixes the order
+    // pairs() visits them, and protected scripts can fold that order into their keys.
+    lua_createtable(L,0,7);
+    const char* names[]={"spawn","defer","delay","wait","cancel"}; // the index selects the behaviour inside task_api
+    for(const char* name:{"cancel","defer","delay","desynchronize","spawn","synchronize","wait"}) {
+        if(!std::strcmp(name,"synchronize")){lua_pushcfunction(L,task_synchronize_unavailable,"synchronize");lua_setfield(L,-2,name);continue;}
+        if(!std::strcmp(name,"desynchronize")){lua_pushcfunction(L,task_desynchronize_unavailable,"desynchronize");lua_setfield(L,-2,name);continue;}
+        for(int i=0;i<5;i++) if(!std::strcmp(name,names[i])) {
+            lua_pushlightuserdata(L,this);lua_pushinteger(L,i);
+            lua_pushcclosurek(L,task_api,names[i],2,nullptr);lua_setfield(L,-2,names[i]);
+        }
     }
-    lua_pushcfunction(L,task_synchronize_unavailable,"synchronize");lua_setfield(L,-2,"synchronize");
-    lua_pushcfunction(L,task_desynchronize_unavailable,"desynchronize");lua_setfield(L,-2,"desynchronize");
     lua_getfield(L,-1,"wait");lua_setfield(L,LUA_REGISTRYINDEX,"Headless.SchedulerWait");
     lua_setreadonly(L,-1,true);lua_setglobal(L,"task");
     lua_pushlightuserdata(L,this);lua_pushcclosurek(L,legacy_wait_api,"wait",1,legacy_wait_continue);lua_setglobal(L,"wait");

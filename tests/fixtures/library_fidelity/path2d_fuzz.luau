@@ -3,6 +3,9 @@
 -- and mixes the engine's answers into its keys. The Rove port was checked against one script's inputs only, so compare it
 -- against Studio on many generated inputs. Run in Studio (command bar is fine) and in Rove, then diff the text bit for bit.
 -- The generator is a self-contained LCG, so both sides build identical cases without depending on Random.
+-- Default output is one hash per case (compare with path2d_fuzz.client-hashes.txt, measured in a live Roblox client 2026-11-20, an "s" marks
+-- Scale-sized frames); set DETAIL to a case number to print that case in full.
+local DETAIL = nil
 local seed = 20261120
 local function rnd()
 	seed = (seed * 1103515245 + 12345) % 2147483648
@@ -20,9 +23,11 @@ local function show(v)
 	if t == "number" then return fmt(v) end
 	return t .. ":" .. tostring(v)
 end
-local out = {}
+local function hash(s) local h = 5381 for i = 1, #s do h = (h * 31 + string.byte(s, i)) % 4294967296 end return h end
+local result = {}
 local samples = {0, 0.125, 0.2222222238779068, 0.28571429848670959, 0.4, 0.5, 0.625, 0.875, 1, -0.5, 1.5}
 for case = 1, 80 do
+	local out = {}
 	local screen = Instance.new("ScreenGui")
 	local frame = Instance.new("Frame")
 	-- Offset-sized frames like the protected guard's; every 8th case sizes the frame with Scale, which the offline model never covered.
@@ -57,5 +62,7 @@ for case = 1, 80 do
 		out[#out + 1] = "  controlPoints back: " .. tostring(gok and #got or got)
 	end
 	screen:Destroy()
+	local text = table.concat(out, "\n")
+	if DETAIL then if DETAIL == case then return text end else result[#result + 1] = case .. ":" .. hash(text) .. (scaled and "s" or "") end
 end
-return table.concat(out, "\n")
+return table.concat(result, " ")

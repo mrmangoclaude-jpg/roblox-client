@@ -3,16 +3,6 @@ static const ExportEnumEntry kStudioAccessModifierTypeItems[] = {
     {"Allow",0},
     {"Deny",1}
 };
-static const ExportEnumEntry kStudioActionOnAutoResumeSyncItems[] = {
-    {"DontResume",0},
-    {"KeepStudio",1},
-    {"KeepLocal",2}
-};
-static const ExportEnumEntry kStudioActionOnStopSyncItems[] = {
-    {"AlwaysAsk",0},
-    {"KeepLocalFiles",1},
-    {"DeleteLocalFiles",2}
-};
 static const ExportEnumEntry kStudioActionTypeItems[] = {
     {"Nothing",0},
     {"Pause",1},
@@ -239,36 +229,6 @@ static const ExportEnumEntry kStudioAnimatorRetargetingModeItems[] = {
     {"Disabled",1},
     {"Enabled",2}
 };
-static const ExportEnumEntry kStudioAnnotationChannelContentPreferenceItems[] = {
-    {"None",0},
-    {"All",1},
-    {"Unknown",2}
-};
-static const ExportEnumEntry kStudioAnnotationEditingModeItems[] = {
-    {"None",0},
-    {"PlacingNew",1},
-    {"WritingNew",2}
-};
-static const ExportEnumEntry kStudioAnnotationPlaceContentPreferenceItems[] = {
-    {"None",0},
-    {"All",1},
-    {"MentionsAndReplies",2},
-    {"Unknown",3}
-};
-static const ExportEnumEntry kStudioAnnotationRequestStatusItems[] = {
-    {"Success",0},
-    {"Loading",1},
-    {"ErrorInternalFailure",2},
-    {"ErrorNotFound",3},
-    {"ErrorModerated",4}
-};
-static const ExportEnumEntry kStudioAnnotationRequestTypeItems[] = {
-    {"Unknown",0},
-    {"Create",1},
-    {"Resolve",2},
-    {"Delete",3},
-    {"Edit",4}
-};
 static const ExportEnumEntry kStudioAntiAliasingItems[] = {
     {"Disabled",0},
     {"Enabled",1}
@@ -467,11 +427,6 @@ static const ExportEnumEntry kStudioAudioWindowSizeItems[] = {
 static const ExportEnumEntry kStudioAuthorityModeItems[] = {
     {"Server",0},
     {"Automatic",1}
-};
-static const ExportEnumEntry kStudioAutoIndentRuleItems[] = {
-    {"Off",0},
-    {"Absolute",1},
-    {"Relative",2}
 };
 static const ExportEnumEntry kStudioAvatarAssetTypeItems[] = {
     {"TShirt",2},
@@ -694,22 +649,11 @@ static const ExportEnumEntry kStudioBorderModeItems[] = {
     {"Middle",1},
     {"Inset",2}
 };
-static const ExportEnumEntry kStudioBranchStatusItems[] = {
-    {"Draft",0},
-    {"ReadyToMerge",1},
-    {"Merged",2},
-    {"Archived",3}
-};
 static const ExportEnumEntry kStudioBreakReasonItems[] = {
     {"Other",0},
     {"Error",1},
     {"SpecialBreakpoint",2},
     {"UserBreakpoint",3}
-};
-static const ExportEnumEntry kStudioBreakpointRemoveReasonItems[] = {
-    {"Requested",0},
-    {"ScriptChanged",1},
-    {"ScriptRemoved",2}
 };
 static const ExportEnumEntry kStudioBundleTypeItems[] = {
     {"BodyParts",1},
@@ -734,38 +678,9 @@ static const ExportEnumEntry kStudioCageTypeItems[] = {
     {"Inner",0},
     {"Outer",1}
 };
-static const ExportEnumEntry kStudioCameraNavigationModelItems[] = {
-    {"Roblox",0},
-    {"IndustryCompatible",1}
-};
 static const ExportEnumEntry kStudioCameraPanModeItems[] = {
     {"Classic",0},
     {"EdgeBump",1}
-};
-static const ExportEnumEntry kStudioCameraRotateCursorLockItems[] = {
-    {"Never",0},
-    {"FpsOnly",1},
-    {"BothModes",2}
-};
-static const ExportEnumEntry kStudioCameraSpeedAdjustBindingItems[] = {
-    {"None",0},
-    {"RmbScroll",1},
-    {"AltScroll",2}
-};
-static const ExportEnumEntry kStudioCanCollaborateErrorItems[] = {
-    {"Invalid",0},
-    {"None",1},
-    {"NotAgeVerified",2},
-    {"OutsideAgeBucket",3},
-    {"TooManyCollaborators",4},
-    {"PCBlock",5},
-    {"NotFound",6},
-    {"OutsideOwnerAgeBucket",7},
-    {"NotAuthorized",8},
-    {"OutsideAgeBucketTcPc",9},
-    {"OtherCollaboratorSettingsPreventTrust",10},
-    {"AgeVerificationCountryBlocked",11},
-    {"OtherUserCannotCollaborate",12}
 };
 static const ExportEnumEntry kStudioCaptureGalleryPermissionItems[] = {
     {"ReadAndUpload",0}
@@ -892,72 +807,9 @@ static const ExportEnumEntry kStudioCloseReasonItems[] = {
     {"OutOfMemory",5},
     {"Moderation",6}
 };
-static const ExportEnumEntry kStudioCollaboratorStatusItems[] = {
-    {"None",0},
-    {"Editing3D",1},
-    {"Scripting",2},
-    {"PrivateScripting",3}
-};
 static const ExportEnumEntry kStudioCommandPermissionItems[] = {
     {"Plugin",0},
     {"LocalUser",1}
-};
-static const ExportEnumEntry kStudioCompileTargetItems[] = {
-    {"Client",0},
-    {"CoreScript",1},
-    {"Studio",2},
-    {"CoreScriptRaw",3}
-};
-static const ExportEnumEntry kStudioCompletionAcceptanceBehaviorItems[] = {
-    {"Insert",0},
-    {"Replace",1},
-    {"ReplaceOnEnterInsertOnTab",2},
-    {"InsertOnEnterReplaceOnTab",3}
-};
-static const ExportEnumEntry kStudioCompletionItemKindItems[] = {
-    {"Text",1},
-    {"Method",2},
-    {"Function",3},
-    {"Constructor",4},
-    {"Field",5},
-    {"Variable",6},
-    {"Class",7},
-    {"Interface",8},
-    {"Module",9},
-    {"Property",10},
-    {"Unit",11},
-    {"Value",12},
-    {"Enum",13},
-    {"Keyword",14},
-    {"Snippet",15},
-    {"Color",16},
-    {"File",17},
-    {"Reference",18},
-    {"Folder",19},
-    {"EnumMember",20},
-    {"Constant",21},
-    {"Struct",22},
-    {"Event",23},
-    {"Operator",24},
-    {"TypeParameter",25}
-};
-static const ExportEnumEntry kStudioCompletionItemTagItems[] = {
-    {"Deprecated",1},
-    {"IncorrectIndexType",2},
-    {"PluginPermissions",3},
-    {"CommandLinePermissions",4},
-    {"RobloxPermissions",5},
-    {"AddParens",6},
-    {"PutCursorInParens",7},
-    {"TypeCorrect",8},
-    {"ClientServerBoundaryViolation",9},
-    {"Invalidated",10},
-    {"PutCursorBeforeEnd",11}
-};
-static const ExportEnumEntry kStudioCompletionTriggerKindItems[] = {
-    {"Invoked",1},
-    {"TriggerCharacter",2},
-    {"TriggerForIncompleteCompletions",3}
 };
 static const ExportEnumEntry kStudioCompositeValueCurveTypeItems[] = {
     {"ColorRGB",0},
@@ -1177,53 +1029,11 @@ static const ExportEnumEntry kStudioDebugBreakModeTypeItems[] = {
     {"Always",1},
     {"Unhandled",2}
 };
-static const ExportEnumEntry kStudioDebuggerEndReasonItems[] = {
-    {"ClientRequest",0},
-    {"Timeout",1},
-    {"InvalidHost",2},
-    {"Disconnected",3},
-    {"ServerShutdown",4},
-    {"ServerProtocolMismatch",5},
-    {"ConfigurationFailed",6},
-    {"RpcError",7}
-};
-static const ExportEnumEntry kStudioDebuggerExceptionBreakModeItems[] = {
-    {"Never",0},
-    {"Always",1},
-    {"Unhandled",2}
-};
-static const ExportEnumEntry kStudioDebuggerFrameTypeItems[] = {
-    {"C",0},
-    {"Lua",1}
-};
-static const ExportEnumEntry kStudioDebuggerPauseReasonItems[] = {
-    {"Unknown",0},
-    {"Requested",1},
-    {"Breakpoint",2},
-    {"Exception",3},
-    {"SingleStep",4},
-    {"Entrypoint",5}
-};
 static const ExportEnumEntry kStudioDebuggerResumeTypeItems[] = {
     {"StepInto",0},
     {"StepOut",1},
     {"StepOver",2},
     {"Resume",3}
-};
-static const ExportEnumEntry kStudioDebuggerStatusItems[] = {
-    {"Success",0},
-    {"Timeout",1},
-    {"ConnectionLost",2},
-    {"InvalidResponse",3},
-    {"InternalError",4},
-    {"InvalidState",5},
-    {"RpcError",6},
-    {"InvalidArgument",7},
-    {"ConnectionClosed",8}
-};
-static const ExportEnumEntry kStudioDefaultScriptSyncFileTypeItems[] = {
-    {"Lua",0},
-    {"Luau",1}
 };
 static const ExportEnumEntry kStudioDeveloperMemoryTagItems[] = {
     {"Internal",0},
@@ -1319,15 +1129,8 @@ static const ExportEnumEntry kStudioDistanceAttenuationModeItems[] = {
     {"Inverse",4}
 };
 static const ExportEnumEntry kStudioDomainTypeItems[] = {
-    {"Experience",1},
-    {"Group",2},
-    {"OAuth",3}
-};
-static const ExportEnumEntry kStudioDraftStatusCodeItems[] = {
-    {"OK",0},
-    {"DraftOutdated",1},
-    {"ScriptRemoved",2},
-    {"DraftCommitted",3}
+    {"EXPERIENCE",1},
+    {"OAUTH",3}
 };
 static const ExportEnumEntry kStudioDragDetectorDragStyleItems[] = {
     {"TranslateLine",0},
@@ -1349,14 +1152,6 @@ static const ExportEnumEntry kStudioDragDetectorResponseStyleItems[] = {
     {"Geometric",0},
     {"Physical",1},
     {"Custom",2}
-};
-static const ExportEnumEntry kStudioDraggerCoordinateSpaceItems[] = {
-    {"Object",0},
-    {"World",1}
-};
-static const ExportEnumEntry kStudioDraggerMovementModeItems[] = {
-    {"Geometric",0},
-    {"Physical",1}
 };
 static const ExportEnumEntry kStudioDraggingScrollBarItems[] = {
     {"None",0},
@@ -1387,8 +1182,7 @@ static const ExportEnumEntry kStudioEngagementLevelItems[] = {
 static const ExportEnumEntry kStudioEngineFolderItems[] = {
     {"Screenshots",0},
     {"Videos",1},
-    {"Logs",2},
-    {"ClientSettings",3}
+    {"Logs",2}
 };
 static const ExportEnumEntry kStudioEnviromentalPhysicsThrottleItems[] = {
     {"DefaultAuto",0},
@@ -1445,10 +1239,6 @@ static const ExportEnumEntry kStudioExperienceStateRecordingPlaybackModeItems[] 
 static const ExportEnumEntry kStudioExplosionTypeItems[] = {
     {"NoCraters",0},
     {"Craters",1}
-};
-static const ExportEnumEntry kStudioExternalEditorModeItems[] = {
-    {"SystemDefault",0},
-    {"UserSelectedEditor",1}
 };
 static const ExportEnumEntry kStudioFACSDataLodItems[] = {
     {"LOD0",0},
@@ -1549,27 +1339,6 @@ static const ExportEnumEntry kStudioFieldOfViewModeItems[] = {
     {"Vertical",0},
     {"Diagonal",1},
     {"MaxAxis",2}
-};
-static const ExportEnumEntry kStudioFilterErrorTypeItems[] = {
-    {"BackslashNotEscapingAnything",0},
-    {"BadBespokeFilter",1},
-    {"BadName",2},
-    {"IncompleteOr",3},
-    {"IncompleteParenthesis",4},
-    {"InvalidDoubleStar",5},
-    {"InvalidTilde",6},
-    {"PropertyBadOperator",7},
-    {"PropertyDoesNotExist",8},
-    {"PropertyInvalidField",9},
-    {"PropertyInvalidValue",10},
-    {"PropertyUnsupportedFields",11},
-    {"PropertyUnsupportedProperty",12},
-    {"UnexpectedNameIndex",13},
-    {"UnexpectedToken",14},
-    {"UnfinishedBinaryOperator",15},
-    {"UnfinishedQuote",16},
-    {"UnknownBespokeFilter",17},
-    {"WildcardInProperty",18}
 };
 static const ExportEnumEntry kStudioFilterResultItems[] = {
     {"Accepted",0},
@@ -1825,13 +1594,6 @@ static const ExportEnumEntry kStudioHighlightDepthModeItems[] = {
     {"AlwaysOnTop",0},
     {"Occluded",1}
 };
-static const ExportEnumEntry kStudioHoverAnimateSpeedItems[] = {
-    {"VerySlow",0},
-    {"Slow",1},
-    {"Medium",2},
-    {"Fast",3},
-    {"VeryFast",4}
-};
 static const ExportEnumEntry kStudioHttpCachePolicyItems[] = {
     {"None",0},
     {"Full",1},
@@ -2036,31 +1798,6 @@ static const ExportEnumEntry kStudioLeftRightItems[] = {
     {"Center",1},
     {"Right",2}
 };
-static const ExportEnumEntry kStudioLexemeTypeItems[] = {
-    {"Eof",0},
-    {"Name",1},
-    {"QuotedString",2},
-    {"Number",3},
-    {"And",4},
-    {"Or",5},
-    {"Equal",6},
-    {"TildeEqual",7},
-    {"GreaterThan",8},
-    {"GreaterThanEqual",9},
-    {"LessThan",10},
-    {"LessThanEqual",11},
-    {"Colon",12},
-    {"Dot",13},
-    {"LeftParenthesis",14},
-    {"RightParenthesis",15},
-    {"Star",16},
-    {"DoubleStar",17},
-    {"ReservedSpecial",18}
-};
-static const ExportEnumEntry kStudioLightAttenuationModeItems[] = {
-    {"Legacy",0},
-    {"Realistic",1}
-};
 static const ExportEnumEntry kStudioLightingStyleItems[] = {
     {"Realistic",0},
     {"Soft",1}
@@ -2073,10 +1810,6 @@ static const ExportEnumEntry kStudioLimbItems[] = {
     {"LeftLeg",4},
     {"RightLeg",5},
     {"Unknown",6}
-};
-static const ExportEnumEntry kStudioListDisplayModeItems[] = {
-    {"Horizontal",0},
-    {"Vertical",1}
 };
 static const ExportEnumEntry kStudioListenerLocationItems[] = {
     {"Default",0},
@@ -2093,17 +1826,6 @@ static const ExportEnumEntry kStudioListenerTypeItems[] = {
     {"CFrame",1},
     {"ObjectPosition",2},
     {"ObjectCFrame",3}
-};
-static const ExportEnumEntry kStudioLiveEditingAtomicUpdateResponseItems[] = {
-    {"Success",0},
-    {"FailureGuidNotFound",1},
-    {"FailureHashMismatch",2},
-    {"FailureOperationIllegal",3}
-};
-static const ExportEnumEntry kStudioLiveEditingBroadcastMessageTypeItems[] = {
-    {"Normal",0},
-    {"Warning",1},
-    {"Error",2}
 };
 static const ExportEnumEntry kStudioLoadCharacterLayeredClothingItems[] = {
     {"Default",0},
@@ -2155,10 +1877,6 @@ static const ExportEnumEntry kStudioMarketplaceProductTypeItems[] = {
     {"AvatarAsset",1},
     {"AvatarBundle",2}
 };
-static const ExportEnumEntry kStudioMarkupKindItems[] = {
-    {"PlainText",0},
-    {"Markdown",1}
-};
 static const ExportEnumEntry kStudioMatchmakingTypeItems[] = {
     {"Default",1},
     {"XboxOnly",2},
@@ -2174,17 +1892,6 @@ static const ExportEnumEntry kStudioMembershipTypeItems[] = {
     {"TurboBuildersClub",2},
     {"OutrageousBuildersClub",3},
     {"Premium",4}
-};
-static const ExportEnumEntry kStudioMergeResolutionItems[] = {
-    {"None",0},
-    {"UseSource",1},
-    {"UseTarget",2},
-    {"Manual",3}
-};
-static const ExportEnumEntry kStudioMergeStatusItems[] = {
-    {"None",0},
-    {"Loading",1},
-    {"Merging",2}
 };
 static const ExportEnumEntry kStudioMeshAttributeItems[] = {
     {"Vertex",0},
@@ -2210,14 +1917,6 @@ static const ExportEnumEntry kStudioMeshPartHeadsAndAccessoriesItems[] = {
     {"Default",0},
     {"Disabled",1},
     {"Enabled",2}
-};
-static const ExportEnumEntry kStudioMeshScaleUnitItems[] = {
-    {"Stud",0},
-    {"Meter",1},
-    {"CM",2},
-    {"MM",3},
-    {"Foot",4},
-    {"Inch",5}
 };
 static const ExportEnumEntry kStudioMetadataFieldTypeItems[] = {
     {"UInt8",0},
@@ -2347,10 +2046,6 @@ static const ExportEnumEntry kStudioOutfitTypeItems[] = {
     {"Shoes",4},
     {"Makeup",5}
 };
-static const ExportEnumEntry kStudioOutputLayoutModeItems[] = {
-    {"Horizontal",0},
-    {"Vertical",1}
-};
 static const ExportEnumEntry kStudioOverrideMouseIconBehaviorItems[] = {
     {"None",0},
     {"ForceShow",1},
@@ -2434,17 +2129,6 @@ static const ExportEnumEntry kStudioPerformanceOverlayModeItems[] = {
     {"Decals",2},
     {"Lights",3}
 };
-static const ExportEnumEntry kStudioPermissionLevelShownItems[] = {
-    {"Game",0},
-    {"RobloxGame",1},
-    {"RobloxScript",2},
-    {"Studio",3},
-    {"Roblox",4}
-};
-static const ExportEnumEntry kStudioPhysicalConstraintTypeItems[] = {
-    {"AnimationConstraint",0},
-    {"Motor6D",1}
-};
 static const ExportEnumEntry kStudioPhysicsSimulationRateItems[] = {
     {"Fixed240Hz",0},
     {"Fixed120Hz",1},
@@ -2465,17 +2149,6 @@ static const ExportEnumEntry kStudioPioneerSourceItems[] = {
     {"DaveyBazooka",1},
     {"Oof",2},
     {"RobloxPioneerTest",3}
-};
-static const ExportEnumEntry kStudioPlaceContentPreferenceItems[] = {
-    {"None",0},
-    {"All",1},
-    {"MentionsAndReplies",2},
-    {"Unknown",3}
-};
-static const ExportEnumEntry kStudioPlacePublishTypeItems[] = {
-    {"None",0},
-    {"Publish",1},
-    {"Save",2}
 };
 static const ExportEnumEntry kStudioPlatformItems[] = {
     {"Windows",0},
@@ -2539,10 +2212,6 @@ static const ExportEnumEntry kStudioPlayerPlatformSpenderStatusItems[] = {
     {"Unknown",0},
     {"Active",1},
     {"OtherPayer",2}
-};
-static const ExportEnumEntry kStudioPluginConnectionTargetTypeItems[] = {
-    {"Edit",0},
-    {"Test",1}
 };
 static const ExportEnumEntry kStudioPoseEasingDirectionItems[] = {
     {"In",0},
@@ -2830,17 +2499,6 @@ static const ExportEnumEntry kStudioReservedHighlightIdItems[] = {
     {"Selection",524288},
     {"NegatedPart",1048576}
 };
-static const ExportEnumEntry kStudioRestPoseItems[] = {
-    {"Default",0},
-    {"RotationsReset",1},
-    {"Custom",2}
-};
-static const ExportEnumEntry kStudioRestPoseModelItems[] = {
-    {"FromRigInACE",0},
-    {"FromRigInFile",1},
-    {"FromRigInFileZeroedRotations",2},
-    {"FromCustomClip",3}
-};
 static const ExportEnumEntry kStudioReturnKeyTypeItems[] = {
     {"Default",0},
     {"Done",1},
@@ -2932,17 +2590,6 @@ static const ExportEnumEntry kStudioRigLabelItems[] = {
     {"Pinky1",42},
     {"Pinky2",43},
     {"Pinky3",44}
-};
-static const ExportEnumEntry kStudioRigScaleItems[] = {
-    {"Default",0},
-    {"Rthro",1},
-    {"RthroNarrow",2}
-};
-static const ExportEnumEntry kStudioRigTypeItems[] = {
-    {"R15",0},
-    {"CustomHumanoid",1},
-    {"Custom",2},
-    {"None",3}
 };
 static const ExportEnumEntry kStudioRobuxTransferEligibilityItems[] = {
     {"Unknown",0},
@@ -3044,11 +2691,6 @@ static const ExportEnumEntry kStudioScreenshotCaptureResultItems[] = {
     {"NoDeviceSupport",2},
     {"NoSpaceOnDevice",3}
 };
-static const ExportEnumEntry kStudioScriptScannerUpdateTypeItems[] = {
-    {"Init",0},
-    {"Added",1},
-    {"Removed",2}
-};
 static const ExportEnumEntry kStudioScriptStoppedReasonItems[] = {
     {"Breakpoint",0},
     {"Exception",1},
@@ -3095,22 +2737,6 @@ static const ExportEnumEntry kStudioSerializationFormatItems[] = {
     {"Binary",0},
     {"Json",1},
     {"Luau",2}
-};
-static const ExportEnumEntry kStudioServerLiveEditingModeItems[] = {
-    {"Uninitialized",0},
-    {"Enabled",1},
-    {"Disabled",2}
-};
-static const ExportEnumEntry kStudioServiceVisibilityItems[] = {
-    {"Always",0},
-    {"Off",1},
-    {"WithChildren",2}
-};
-static const ExportEnumEntry kStudioSeverityItems[] = {
-    {"Error",1},
-    {"Warning",2},
-    {"Information",3},
-    {"Hint",4}
 };
 static const ExportEnumEntry kStudioShowAdResultItems[] = {
     {"ShowCompleted",1},
@@ -3228,12 +2854,6 @@ static const ExportEnumEntry kStudioStudioActionItems[] = {
     {"Cut",62},
     {"Paste",63}
 };
-static const ExportEnumEntry kStudioStudioCaptureBufferStatusItems[] = {
-    {"NotStarted",0},
-    {"Pending",1},
-    {"Ready",2},
-    {"Error",3}
-};
 static const ExportEnumEntry kStudioStudioCaptureScreenshotFormatItems[] = {
     {"RGBA8",0},
     {"PNG",1}
@@ -3254,202 +2874,6 @@ static const ExportEnumEntry kStudioStudioDataModelTypeItems[] = {
 static const ExportEnumEntry kStudioStudioPlaceUpdateFailureReasonItems[] = {
     {"Other",0},
     {"TeamCreateConflict",1}
-};
-static const ExportEnumEntry kStudioStudioScriptEditorColorCategoriesItems[] = {
-    {"Default",0},
-    {"Operator",1},
-    {"Number",2},
-    {"String",3},
-    {"Comment",4},
-    {"Keyword",5},
-    {"Builtin",6},
-    {"Method",7},
-    {"Property",8},
-    {"Nil",9},
-    {"Bool",10},
-    {"Function",11},
-    {"Local",12},
-    {"Self",13},
-    {"LuauKeyword",14},
-    {"FunctionName",15},
-    {"TODO",16},
-    {"Background",17},
-    {"SelectionText",18},
-    {"SelectionBackground",19},
-    {"FindSelectionBackground",20},
-    {"MatchingWordBackground",21},
-    {"Warning",22},
-    {"Error",23},
-    {"Info",24},
-    {"Hint",25},
-    {"Whitespace",26},
-    {"ActiveLine",27},
-    {"DebuggerCurrentLine",28},
-    {"DebuggerErrorLine",29},
-    {"Ruler",30},
-    {"Bracket",31},
-    {"Type",32},
-    {"MenuPrimaryText",33},
-    {"MenuSecondaryText",34},
-    {"MenuSelectedText",35},
-    {"MenuBackground",36},
-    {"MenuSelectedBackground",37},
-    {"MenuScrollbarBackground",38},
-    {"MenuScrollbarHandle",39},
-    {"MenuBorder",40},
-    {"DocViewCodeBackground",41},
-    {"AICOOverlayText",42},
-    {"AICOOverlayButtonBackground",43},
-    {"AICOOverlayButtonBackgroundHover",44},
-    {"AICOOverlayButtonBackgroundPressed",45},
-    {"IndentationRuler",46},
-    {"ReviewableChangeAddedText",47},
-    {"ReviewableChangeRemovedText",48}
-};
-static const ExportEnumEntry kStudioStudioScriptEditorColorPresetsItems[] = {
-    {"RobloxDefault",0},
-    {"Extra1",1},
-    {"Extra2",2},
-    {"Custom",3}
-};
-static const ExportEnumEntry kStudioStudioStyleGuideColorItems[] = {
-    {"MainBackground",0},
-    {"Titlebar",1},
-    {"Dropdown",2},
-    {"Tooltip",3},
-    {"Notification",4},
-    {"ScrollBar",5},
-    {"ScrollBarBackground",6},
-    {"TabBar",7},
-    {"Tab",8},
-    {"FilterButtonDefault",9},
-    {"FilterButtonHover",10},
-    {"FilterButtonChecked",11},
-    {"FilterButtonAccent",12},
-    {"FilterButtonBorder",13},
-    {"FilterButtonBorderAlt",14},
-    {"RibbonTab",15},
-    {"RibbonTabTopBar",16},
-    {"Button",17},
-    {"MainButton",18},
-    {"RibbonButton",19},
-    {"ViewPortBackground",20},
-    {"InputFieldBackground",21},
-    {"Item",22},
-    {"TableItem",23},
-    {"CategoryItem",24},
-    {"GameSettingsTableItem",25},
-    {"GameSettingsTooltip",26},
-    {"EmulatorBar",27},
-    {"EmulatorDropDown",28},
-    {"ColorPickerFrame",29},
-    {"CurrentMarker",30},
-    {"Border",31},
-    {"DropShadow",32},
-    {"Shadow",33},
-    {"Light",34},
-    {"Dark",35},
-    {"Mid",36},
-    {"MainText",37},
-    {"SubText",38},
-    {"TitlebarText",39},
-    {"BrightText",40},
-    {"DimmedText",41},
-    {"LinkText",42},
-    {"WarningText",43},
-    {"ErrorText",44},
-    {"InfoText",45},
-    {"SensitiveText",46},
-    {"ScriptSideWidget",47},
-    {"ScriptBackground",48},
-    {"ScriptText",49},
-    {"ScriptSelectionText",50},
-    {"ScriptSelectionBackground",51},
-    {"ScriptFindSelectionBackground",52},
-    {"ScriptMatchingWordSelectionBackground",53},
-    {"ScriptOperator",54},
-    {"ScriptNumber",55},
-    {"ScriptString",56},
-    {"ScriptComment",57},
-    {"ScriptKeyword",58},
-    {"ScriptBuiltInFunction",59},
-    {"ScriptWarning",60},
-    {"ScriptError",61},
-    {"ScriptInformation",62},
-    {"ScriptHint",63},
-    {"ScriptWhitespace",64},
-    {"ScriptRuler",65},
-    {"DocViewCodeBackground",66},
-    {"DebuggerCurrentLine",67},
-    {"DebuggerErrorLine",68},
-    {"DiffFilePathText",69},
-    {"DiffTextHunkInfo",70},
-    {"DiffTextNoChange",71},
-    {"DiffTextAddition",72},
-    {"DiffTextDeletion",73},
-    {"DiffTextSeparatorBackground",74},
-    {"DiffTextNoChangeBackground",75},
-    {"DiffTextAdditionBackground",76},
-    {"DiffTextDeletionBackground",77},
-    {"DiffLineNum",78},
-    {"DiffLineNumSeparatorBackground",79},
-    {"DiffLineNumNoChangeBackground",80},
-    {"DiffLineNumAdditionBackground",81},
-    {"DiffLineNumDeletionBackground",82},
-    {"DiffFilePathBackground",83},
-    {"DiffFilePathBorder",84},
-    {"ChatIncomingBgColor",85},
-    {"ChatIncomingTextColor",86},
-    {"ChatOutgoingBgColor",87},
-    {"ChatOutgoingTextColor",88},
-    {"ChatModeratedMessageColor",89},
-    {"Separator",90},
-    {"ButtonBorder",91},
-    {"ButtonText",92},
-    {"InputFieldBorder",93},
-    {"CheckedFieldBackground",94},
-    {"CheckedFieldBorder",95},
-    {"CheckedFieldIndicator",96},
-    {"HeaderSection",97},
-    {"Midlight",98},
-    {"StatusBar",99},
-    {"DialogButton",100},
-    {"DialogButtonText",101},
-    {"DialogButtonBorder",102},
-    {"DialogMainButton",103},
-    {"DialogMainButtonText",104},
-    {"InfoBarWarningBackground",105},
-    {"InfoBarWarningText",106},
-    {"ScriptEditorCurrentLine",107},
-    {"ScriptMethod",108},
-    {"ScriptProperty",109},
-    {"ScriptNil",110},
-    {"ScriptBool",111},
-    {"ScriptFunction",112},
-    {"ScriptLocal",113},
-    {"ScriptSelf",114},
-    {"ScriptLuauKeyword",115},
-    {"ScriptFunctionName",116},
-    {"ScriptTodo",117},
-    {"ScriptBracket",118},
-    {"AttributeCog",119},
-    {"AICOOverlayText",128},
-    {"AICOOverlayButtonBackground",129},
-    {"AICOOverlayButtonBackgroundHover",130},
-    {"AICOOverlayButtonBackgroundPressed",131},
-    {"OnboardingCover",132},
-    {"OnboardingHighlight",133},
-    {"OnboardingShadow",134},
-    {"BreakpointMarker",136},
-    {"DiffLineNumHover",137},
-    {"DiffLineNumSeparatorBackgroundHover",138}
-};
-static const ExportEnumEntry kStudioStudioStyleGuideModifierItems[] = {
-    {"Default",0},
-    {"Selected",1},
-    {"Pressed",2},
-    {"Disabled",3},
-    {"Hover",4}
 };
 static const ExportEnumEntry kStudioStyleItems[] = {
     {"AlternatingSupports",0},
@@ -3520,12 +2944,6 @@ static const ExportEnumEntry kStudioSystemThemeValueItems[] = {
 static const ExportEnumEntry kStudioTableMajorAxisItems[] = {
     {"RowMajor",0},
     {"ColumnMajor",1}
-};
-static const ExportEnumEntry kStudioTeamCreateErrorStateItems[] = {
-    {"PlaceSizeTooLarge",0},
-    {"PlaceSizeApproachingLimit",1},
-    {"PlaceUploadFailing",2},
-    {"NoError",3}
 };
 static const ExportEnumEntry kStudioTechnologyItems[] = {
     {"Legacy",0},
@@ -3829,10 +3247,6 @@ static const ExportEnumEntry kStudioUIDragSpeedAxisMappingItems[] = {
     {"XY",0},
     {"XX",1},
     {"YY",2}
-};
-static const ExportEnumEntry kStudioUIThemeItems[] = {
-    {"Light",0},
-    {"Dark",1}
 };
 static const ExportEnumEntry kStudioUiMessageTypeItems[] = {
     {"UiMessageError",0},

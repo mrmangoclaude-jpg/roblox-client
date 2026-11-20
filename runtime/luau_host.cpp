@@ -196,6 +196,7 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
     lua_getglobal(L, "os");
     if (lua_istable(L, -1)) { lua_pushnil(L); lua_setfield(L, -2, "exit"); }
     lua_pop(L, 1);
+    install_roblox_os_layout(L);
     install_random_compat(L);
     if(!is_bytecode)install_authored_bindings(L);
     if (engine_context) install_local_engine(L, *engine_context);
@@ -426,6 +427,7 @@ public:
             lua_getglobal(main,"utf8");install_utf8_extras(main);lua_pop(main,1);install_roblox_global_extras(main);
             for(const char* name:{"require","loadstring","dofile","loadfile","io","debug"})remove_global(main,name);
             lua_getglobal(main,"os");if(lua_istable(main,-1)){lua_pushnil(main);lua_setfield(main,-2,"exit");}lua_pop(main,1);
+            install_roblox_os_layout(main);
             install_random_compat(main);install_authored_bindings(main);world_bindings::install(main,*world);luaL_sandbox(main);
             environment=lua_newthread(main);luaL_sandboxthread(environment);
             lua_setsafeenv(environment,LUA_GLOBALSINDEX,false);

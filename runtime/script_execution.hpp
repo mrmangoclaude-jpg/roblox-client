@@ -167,11 +167,11 @@ for key,value in pristine do
 end
 if type(pristine.debug)=="table" then
     -- The engine's debug library as a client script sees it: these twelve members and no executor additions.
-    local stockDebug = {}
-    for _, name in {"info","traceback","profilebegin","profileend","setmemorycategory","resetmemorycategory","getmemorycategory","dumpcodesize","dumpheap","dumprefs","tracerefs","loadmodule"} do
-        stockDebug[name] = pristine.debug[name]
-    end
-    base.debug = table.freeze(stockDebug)
+    -- Built as a presized constructor in this order: it reproduces the real client's pairs() order for the table.
+    local d = pristine.debug
+    base.debug = table.freeze({info=d.info, profileend=d.profileend, profilebegin=d.profilebegin, setmemorycategory=d.setmemorycategory,
+        dumpcodesize=d.dumpcodesize, dumpheap=d.dumpheap, traceback=d.traceback, dumprefs=d.dumprefs, loadmodule=d.loadmodule,
+        resetmemorycategory=d.resetmemorycategory, tracerefs=d.tracerefs, getmemorycategory=d.getmemorycategory})
 end
 -- loadstring exists but is disabled in game scripts.
 base.loadstring = newcclosure(function() error("loadstring() is not available", 2) end, "loadstring")

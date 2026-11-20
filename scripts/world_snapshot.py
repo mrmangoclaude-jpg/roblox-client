@@ -250,7 +250,7 @@ def make_world_snapshot(world, user_id, *, job_id=None, place_id=None, game_id=N
         raise ValueError('World snapshot node limit exceeded')
     parents = json.loads((ROOT/'runtime/class-parents-745.json').read_text())['parents']
     class_parents = {name: parent for name, parent in parents.items() if isinstance(parent, str)}
-    nodes = [{'id': 'game', 'class_name': 'DataModel', 'name': 'Game',
+    nodes = [{'id': 'game', 'class_name': 'DataModel', 'name': 'Ugc',
               'parent': None, 'properties': {}, 'origins': {}}]
     if job_id is not None:
         nodes[0]['properties']['JobId'] = job_id
