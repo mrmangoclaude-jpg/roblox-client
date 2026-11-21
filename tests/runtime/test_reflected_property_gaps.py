@@ -40,6 +40,8 @@ local gui = Instance.new("BillboardGui")
 assert(typeof(gui.Size) == "UDim2", typeof(gui.Size))
 assert(gui.Size == UDim2.new(0,0,0,0))
 assert(typeof(gui.AbsoluteSize) == "Vector2", typeof(gui.AbsoluteSize))
+local ok, signal = pcall(function() return gui:GetPropertyChangedSignal("Size") end)
+assert(ok and signal ~= nil, tostring(signal))
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 

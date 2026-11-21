@@ -654,6 +654,9 @@ bool is_engine_enum_property_name(const std::string& name) {
 // True when the reflected class (or an ancestor) declares the property, even if the server never sent a value for it.
 bool class_declares_property(const World& world,const std::string& cls,const std::string& name) {
     if(is_engine_enum_property_name(name))return true;
+    // Engine properties owned by classes whose reflection metadata is absent
+    // from the protocol's class schema.
+    if(cls=="BillboardGui"&&(name=="Size"||name=="AbsoluteSize"))return true;
     std::string cursor=cls;
     for(int depth=0;depth<64&&!cursor.empty();++depth) {
         auto known=world.class_property_types.find(cursor);
