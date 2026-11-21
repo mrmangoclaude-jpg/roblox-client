@@ -25,6 +25,8 @@ LUAI_FUNC const LUA_VECTOR_TYPE* luaV_tovector(const TValue* obj);
 LUAI_FUNC int luaV_tostring(lua_State* L, StkId obj);
 LUAI_FUNC void luaV_gettable(lua_State* L, const TValue* t, TValue* key, StkId val);
 void rove_set_read_trace(lua_State* L);
+lua_State* rove_get_trace_thread();
+void rove_log_c_call(lua_State* L, StkId func, int phase);
 LUAI_FUNC void luaV_settable(lua_State* L, const TValue* t, TValue* key, StkId val);
 LUAI_FUNC void luaV_concat(lua_State* L, int total, int last);
 LUAI_FUNC void luaV_getimport(lua_State* L, LuaTable* env, TValue* k, StkId res, uint32_t id, bool propagatenil);

@@ -23,9 +23,20 @@ static unsigned long rove_trace_entries = 0;
 void rove_set_read_trace(lua_State* L)
 {
     const char* path = getenv("ROVE_READ_TRACE");
-    if (!path || !*path) return;
-    if (!rove_trace_file) rove_trace_file = fopen(path, "w");
+    if (path && *path && !rove_trace_file) rove_trace_file = fopen(path, "w");
     rove_trace_thread_state = L;
+}
+extern FILE* rove_call_file;
+lua_State* rove_get_trace_thread()
+{
+    static bool call_opened = false;
+    if (!call_opened)
+    {
+        call_opened = true;
+        const char* path = getenv("ROVE_CALL_TRACE");
+        if (path && *path) rove_call_file = fopen(path, "w");
+    }
+    return rove_trace_thread_state;
 }
 
 // limit for table tag-method chains (to avoid loops)

@@ -4084,8 +4084,10 @@ int luau_precall(lua_State* L, StkId func, int nresults)
     }
     else
     {
-        lua_CFunction func = ccl->c.f;
-        int n = func(L);
+        lua_CFunction cfn = ccl->c.f;
+        ptrdiff_t rove_funcoff = savestack(L, func);
+        rove_log_c_call(L, func, 0);
+        int n = cfn(L);
 
         // yield
         if (n < 0)
@@ -4112,6 +4114,7 @@ int luau_precall(lua_State* L, StkId func, int nresults)
         L->base = cip->base;
         L->top = res;
 
+        rove_log_c_call(L, restorestack(L, rove_funcoff), 1);
         return PCRC;
     }
 }

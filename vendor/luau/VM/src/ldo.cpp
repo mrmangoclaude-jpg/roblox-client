@@ -1,4 +1,4 @@
-// This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
+﻿// This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 // This code is based on Lua 5.x implementation licensed under MIT License; see lua_LICENSE.txt for details
 #include "ldo.h"
 
@@ -8,6 +8,7 @@
 #include "lmem.h"
 #include "ltable.h"
 #include "lvm.h"
+#include "lobject.h"
 
 #if LUA_USE_LONGJMP
 #include <setjmp.h>
@@ -17,6 +18,124 @@
 #endif
 
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// Rove diagnostic: log C-function calls made by one traced script thread.
+FILE* rove_call_file = NULL;
+static unsigned long rove_call_entries = 0;
+extern lua_State* rove_get_trace_thread();
+
+static void rove_serialize_value(FILE* f, lua_State* L, int idx)
+{
+    int t = lua_type(L, idx);
+    switch (t)
+    {
+    case LUA_TNIL: fputs("nil", f); break;
+    case LUA_TBOOLEAN: fputs(lua_toboolean(L, idx) ? "true" : "false", f); break;
+    case LUA_TNUMBER: fprintf(f, "n:%.17g", (double)lua_tonumber(L, idx)); break;
+    case LUA_TVECTOR:
+    {
+        const float* v = lua_tovector(L, idx);
+        if (v) fprintf(f, "v:%.17g,%.17g,%.17g", (double)v[0], (double)v[1], (double)v[2]);
+        else fputs("v:?", f);
+        break;
+    }
+    case LUA_TSTRING:
+    {
+        size_t n = 0;
+        const char* s = lua_tolstring(L, idx, &n);
+        fputs("s:", f);
+        for (size_t i = 0; i < n; ++i) fprintf(f, "%02x", (unsigned char)s[i]);
+        break;
+    }
+    default:
+    {
+        fputs("other:", f);
+        if (lua_getmetatable(L, idx))
+        {
+            lua_pushliteral(L, "__type");
+            lua_rawget(L, -2);
+            if (lua_type(L, -1) == LUA_TSTRING) fputs(lua_tostring(L, -1), f);
+            else fputs(lua_typename(L, t), f);
+            lua_pop(L, 2);
+        }
+        else fputs(lua_typename(L, t), f);
+        break;
+    }
+    }
+}
+
+static void rove_serialize_list(FILE* f, lua_State* L, int first, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        if (i) fputc(';', f);
+        rove_serialize_value(f, L, first + i);
+    }
+}
+
+static int rove_call_depth = 0;
+static char rove_call_args[64][4096];
+
+void rove_log_c_call(lua_State* L, StkId func, int phase)
+{
+    lua_State* traced = rove_get_trace_thread();
+    if (!rove_call_file || L != traced) return;
+    if (rove_call_entries >= 200000) return;
+    if (phase == 0 && (!ttisfunction(func) || !clvalue(func)->isC)) return;
+    const char* name = "?";
+    if (phase == 0)
+    {
+        Closure* cl = clvalue(func);
+        name = cl->c.debugname ? getstr(cl->c.debugname) : "?";
+    }
+    int fidx = cast_int(func - L->base) + 1;
+    if (phase == 0)
+    {
+        if (rove_call_depth >= 64) return;
+        char* buf = rove_call_args[rove_call_depth];
+        int off = snprintf(buf, 4096, "CALL %s A(", name);
+        if (off < 0 || off >= 4096) return;
+        // serialize args into the buffer by temporarily using a memory stream
+        FILE* saved = rove_call_file;
+        // serialize manually into buf with a tiny helper that writes into char*
+        // (reuse rove_serialize_value by redirecting through tmpfile is too slow; do it directly)
+        int nargs = cast_int(L->top - func) - 1;
+        for (int i = 0; i < nargs && off < 4000; ++i)
+        {
+            if (i) buf[off++] = ';';
+            // simple scalar serialization
+            int idx = fidx + 1 + i;
+            int t = lua_type(L, idx);
+            if (t == LUA_TNIL) off += snprintf(buf + off, 4096 - off, "nil");
+            else if (t == LUA_TBOOLEAN) off += snprintf(buf + off, 4096 - off, "%s", lua_toboolean(L, idx) ? "true" : "false");
+            else if (t == LUA_TNUMBER) off += snprintf(buf + off, 4096 - off, "n:%.17g", (double)lua_tonumber(L, idx));
+            else if (t == LUA_TSTRING)
+            {
+                size_t n = 0; const char* s = lua_tolstring(L, idx, &n);
+                buf[off++] = 's';
+                for (size_t k2 = 0; k2 < n && off < 4090; ++k2) off += snprintf(buf + off, 4096 - off, "%02x", (unsigned char)s[k2]);
+            }
+            else off += snprintf(buf + off, 4096 - off, "other");
+        }
+        if (off >= 4096) off = 4095;
+        snprintf(buf + off, 4096 - off, ")");
+        ++rove_call_depth;
+    }
+    else
+    {
+        if (rove_call_depth == 0) return;
+        --rove_call_depth;
+        const char* head = rove_call_args[rove_call_depth];
+        ++rove_call_entries;
+        fputs(head, rove_call_file);
+        fputs(" R(", rove_call_file);
+        rove_serialize_list(rove_call_file, L, fidx, cast_int(L->top - func));
+        fputs(")\n", rove_call_file);
+        fflush(rove_call_file);
+    }
+}
 
 LUAU_FASTFLAG(LuauFastpcall)
 LUAU_FASTFLAGVARIABLE(LuauPcallErrorContinuationReentry)
