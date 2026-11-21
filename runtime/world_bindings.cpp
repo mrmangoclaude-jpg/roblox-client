@@ -1304,6 +1304,39 @@ int text_service_request(lua_State*);
 int text_service_continue(lua_State*,int);
 bool text_font_index(lua_State*,World&,Node&,const std::string&);
 #include "path2d_bindings.inc"
+// Deterministic synchronous text measurement matching the engine's simple
+// advance model used elsewhere in the runtime (Drawing.TextBounds). The exact
+// glyph metrics of a specific font are not shipped to a client without the font
+// asset, so scripts receive the engine-shaped Vector2 result rather than an
+// "unknown member" error.
+int textservice_get_text_size(lua_State* L)
+{
+    // Roblox calls this as a method (TextService:GetTextSize(...)); accept both
+    // colon and dot forms.
+    int shift = lua_type(L,1)==LUA_TUSERDATA && has_meta(L,1,kInstanceMeta) ? 1 : 0;
+    size_t length=0;
+    const char* text=luaL_checklstring(L,1+shift,&length);
+    double font_size=luaL_checknumber(L,2+shift);
+    if(!std::isfinite(font_size)||font_size<=0)luaL_error(L,"invalid font size");
+    if(length==0) { push_engine_vector2(L,0,0); return 1; }
+    double max_width=0,lines=1;
+    double current=0;
+    for(size_t i=0;i<length;++i)
+    {
+        unsigned char c=static_cast<unsigned char>(text[i]);
+        if(c=='\n'){max_width=std::max(max_width,current);current=0;++lines;continue;}
+        if(c<0x80)current+=1;
+        else if((c&0xE0)==0xC0){current+=1;i+=1;}
+        else if((c&0xF0)==0xE0){current+=1;i+=2;}
+        else if((c&0xF8)==0xF0){current+=1;i+=3;}
+    }
+    max_width=std::max(max_width,current);
+    double advance=font_size*0.55;
+    push_engine_vector2(L,max_width*advance,lines*font_size);
+    return 1;
+}
+
+
 int instance_index_raw(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world; Node& n=*h->node; std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);
     if(api_trace_enabled())api_trace(L,"get",n.class_name+"."+key);
@@ -1394,6 +1427,7 @@ int instance_index_raw(lua_State* L) {
     if(textbox_focus_index(L,w,n,key))return 1;
     if(n.class_name=="Workspace"&&key=="GetServerTimeNow"){lua_pushcfunction(L,workspace_get_server_time_now,"GetServerTimeNow");return 1;}
     if(n.class_name=="Path2D"&&path2d_index(L,key))return 1;
+    if(n.class_name=="TextService"&&key=="GetTextSize"){lua_pushcfunction(L,textservice_get_text_size,"GetTextSize");return 1;}
     if(n.class_name=="TextService"&&(key=="GetFamilyInfoAsync"||key=="GetTextBoundsAsync")) {
         lua_pushboolean(L,key=="GetTextBoundsAsync");lua_pushcclosurek(L,text_service_request,key.c_str(),1,text_service_continue);return 1;
     }

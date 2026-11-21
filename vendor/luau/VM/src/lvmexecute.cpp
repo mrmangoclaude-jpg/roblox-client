@@ -4107,7 +4107,7 @@ int luau_precall(lua_State* L, StkId func, int nresults)
     {
         lua_CFunction cfn = ccl->c.f;
         int n = cfn(L);
-        if (n >= 0) rove_log_c_call(L, L->top - n, 2, n);  // results are live on the stack here
+        if (n >= 0) rove_log_c_call(L, func, 2, n);  // results are live on the stack here
         else rove_log_c_call(L, func, 3);                // yielded: close the entry without results
 
         // yield

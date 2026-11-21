@@ -26,6 +26,8 @@ FILE* rove_call_file = NULL;
 static unsigned long rove_call_entries = 0;
 extern lua_State* rove_get_trace_thread();
 
+static bool rove_serializing = false;
+
 static void rove_serialize_value(FILE* f, lua_State* L, int idx)
 {
     int t = lua_type(L, idx);
@@ -47,6 +49,58 @@ static void rove_serialize_value(FILE* f, lua_State* L, int idx)
         const char* s = lua_tolstring(L, idx, &n);
         fputs("s:", f);
         for (size_t i = 0; i < n; ++i) fprintf(f, "%02x", (unsigned char)s[i]);
+        break;
+    }
+    case LUA_TUSERDATA:
+    {
+        // Encode engine datatypes so they can be reconstructed in the real client.
+        fputs("other:", f);
+        std::string type_name;
+        if (lua_getmetatable(L, idx))
+        {
+            lua_pushliteral(L, "__type");
+            lua_rawget(L, -2);
+            if (lua_type(L, -1) == LUA_TSTRING) type_name = lua_tostring(L, -1);
+            lua_pop(L, 2);
+        }
+        auto field = [&](const char* key, double& out) {
+            lua_pushstring(L, key); lua_gettable(L, idx);
+            if (lua_type(L, -1) == LUA_TNUMBER) out = (double)lua_tonumber(L, -1);
+            lua_pop(L, 1);
+        };
+        if (type_name == "Vector3" || type_name == "Vector2")
+        {
+            double a=0,b=0,c=0; field("X",a); field("Y",b);
+            if (type_name == "Vector3") field("Z",c);
+            fprintf(f, "%s:%.17g,%.17g%s", type_name=="Vector3"?"v3":"v2", a, b,
+                    type_name=="Vector3"?"":"");
+            if (type_name == "Vector3") fprintf(f, ",%.17g", c);
+        }
+        else if (type_name == "UDim2")
+        {
+            lua_getfield(L, idx, "X"); lua_getfield(L, -1, "Scale"); double xs=lua_tonumber(L,-1); lua_pop(L,1);
+            lua_getfield(L, -1, "Offset"); double xo=lua_tonumber(L,-1); lua_pop(L,2);
+            lua_getfield(L, idx, "Y"); lua_getfield(L, -1, "Scale"); double ys=lua_tonumber(L,-1); lua_pop(L,1);
+            lua_getfield(L, -1, "Offset"); double yo=lua_tonumber(L,-1); lua_pop(L,2);
+            fprintf(f, "u2:%.17g,%.17g,%.17g,%.17g", xs,xo,ys,yo);
+        }
+        else if (type_name == "UDim")
+        {
+            double s=0,o=0; field("Scale",s); field("Offset",o);
+            fprintf(f, "ud:%.17g,%.17g", s,o);
+        }
+        else if (type_name == "Color3")
+        {
+            double r=0,g=0,b=0; field("R",r); field("G",g); field("B",b);
+            fprintf(f, "c3:%.17g,%.17g,%.17g", r,g,b);
+        }
+        else if (type_name == "Instance")
+        {
+            lua_getfield(L, idx, "ClassName"); const char* cn = lua_tostring(L,-1); lua_pop(L,1);
+            lua_getfield(L, idx, "Name"); const char* nm = lua_tostring(L,-1); lua_pop(L,1);
+            fprintf(f, "I:%s:%s", cn?cn:"?", nm?nm:"?");
+        }
+        else fputs(type_name.empty()?lua_typename(L,t):type_name.c_str(), f);
         break;
     }
     default:
@@ -77,6 +131,7 @@ static void rove_serialize_list(FILE* f, lua_State* L, int first, int count)
 
 void rove_log_fastcall(lua_State* L, const char* name, TValue* res, TValue* a1, TValue* a2, TValue* a3, int nparams, int nresults)
 {
+    if (rove_serializing) return;
     rove_get_trace_thread();
     if (!rove_call_file) return;
     ++rove_call_entries;
@@ -141,79 +196,50 @@ void rove_log_fastcall(lua_State* L, const char* name, TValue* res, TValue* a1, 
 }
 
 static int rove_call_depth = 0;
-static char rove_call_args[64][4096];
+static StkId rove_call_func[64];
+static char rove_call_name[64][128];
+static int rove_call_nargs[64];
 
 void rove_log_c_call(lua_State* L, StkId func, int phase, int nresults)
 {
-    rove_get_trace_thread();  // lazy-open the trace file
+    if (rove_serializing) return;
+    rove_get_trace_thread();
     if (!rove_call_file) return;
     if (rove_call_entries >= 200000) return;
-    if (phase == 0 && (!ttisfunction(func) || !clvalue(func)->isC)) return;
-    if (phase >= 2)  // result logging: `func` points at the first result, count passed via depth marker
+    if (phase == 0)
     {
-        if (rove_call_depth == 0) return;
-        --rove_call_depth;
-        const char* head = rove_call_args[rove_call_depth];
-        ++rove_call_entries;
-        fputs(head, rove_call_file);
-        fputs(" R(", rove_call_file);
-        if (phase == 2) rove_serialize_list(rove_call_file, L, cast_int(func - L->base) + 1, nresults);
-        fputs(")\n", rove_call_file);
-        fflush(rove_call_file);
+        if (!ttisfunction(func) || !clvalue(func)->isC) return;
+        if (rove_call_depth >= 64) return;
+        Closure* cl = clvalue(func);
+        const char* nm = cl->c.debugname ? getstr(cl->c.debugname) : "?";
+        snprintf(rove_call_name[rove_call_depth], sizeof(rove_call_name[0]), "%s", nm);
+        rove_call_func[rove_call_depth] = func;
+        rove_call_nargs[rove_call_depth] = cast_int(L->top - func) - 1;
+        ++rove_call_depth;
         return;
     }
-    const char* name = "?";
-    if (phase == 0)
+    if (rove_call_depth == 0) return;
+    --rove_call_depth;
+    StkId fslot = rove_call_func[rove_call_depth];
+    int nargs = rove_call_nargs[rove_call_depth];
+    ++rove_call_entries;
+    rove_serializing = true;
+    fprintf(rove_call_file, "T%p CALL %s A(", (void*)L, rove_call_name[rove_call_depth]);
+    int fidx = cast_int(fslot - L->base) + 1;
+    for (int i = 0; i < nargs && i < 32; ++i)
     {
-        Closure* cl = clvalue(func);
-        name = cl->c.debugname ? getstr(cl->c.debugname) : "?";
+        if (i) fputc(';', rove_call_file);
+        rove_serialize_value(rove_call_file, L, fidx + 1 + i);
     }
-    int fidx = cast_int(func - L->base) + 1;
-    if (phase == 0)
-    {
-        if (rove_call_depth >= 64) return;
-        char* buf = rove_call_args[rove_call_depth];
-        int off = snprintf(buf, 4096, "T%p CALL %s A(", (void*)L, name);
-        if (off < 0 || off >= 4096) return;
-        // serialize args into the buffer by temporarily using a memory stream
-        FILE* saved = rove_call_file;
-        // serialize manually into buf with a tiny helper that writes into char*
-        // (reuse rove_serialize_value by redirecting through tmpfile is too slow; do it directly)
-        int nargs = cast_int(L->top - func) - 1;
-        for (int i = 0; i < nargs && off < 4000; ++i)
-        {
-            if (i) buf[off++] = ';';
-            // simple scalar serialization
-            int idx = fidx + 1 + i;
-            int t = lua_type(L, idx);
-            if (t == LUA_TNIL) off += snprintf(buf + off, 4096 - off, "nil");
-            else if (t == LUA_TBOOLEAN) off += snprintf(buf + off, 4096 - off, "%s", lua_toboolean(L, idx) ? "true" : "false");
-            else if (t == LUA_TNUMBER) off += snprintf(buf + off, 4096 - off, "n:%.17g", (double)lua_tonumber(L, idx));
-            else if (t == LUA_TSTRING)
-            {
-                size_t n = 0; const char* s = lua_tolstring(L, idx, &n);
-                off += snprintf(buf + off, 4096 - off, "s:");
-                for (size_t k2 = 0; k2 < n && off < 4090; ++k2) off += snprintf(buf + off, 4096 - off, "%02x", (unsigned char)s[k2]);
-            }
-            else off += snprintf(buf + off, 4096 - off, "other");
-        }
-        if (off >= 4096) off = 4095;
-        snprintf(buf + off, 4096 - off, ")");
-        ++rove_call_depth;
-    }
-    else
-    {
-        if (rove_call_depth == 0) return;
-        --rove_call_depth;
-        const char* head = rove_call_args[rove_call_depth];
-        ++rove_call_entries;
-        fputs(head, rove_call_file);
-        fputs(" R(", rove_call_file);
-        rove_serialize_list(rove_call_file, L, fidx, cast_int(L->top - func));
-        fputs(")\n", rove_call_file);
-        fflush(rove_call_file);
-    }
+    fputs(") R(", rove_call_file);
+    int rbase = cast_int((L->top - nresults) - L->base) + 1;
+    for (int i = 0; i < nresults && i < 32; ++i)
+        rove_serialize_value(rove_call_file, L, rbase + i);
+    fputs(")\n", rove_call_file);
+    fflush(rove_call_file);
+    rove_serializing = false;
 }
+
 
 LUAU_FASTFLAG(LuauFastpcall)
 LUAU_FASTFLAGVARIABLE(LuauPcallErrorContinuationReentry)
