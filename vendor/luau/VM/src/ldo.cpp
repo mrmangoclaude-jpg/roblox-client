@@ -27,6 +27,10 @@ static unsigned long rove_call_entries = 0;
 extern lua_State* rove_get_trace_thread();
 
 static bool rove_serializing = false;
+// Raw mode logs no values that require a Lua call or a metamethod: reading an
+// EnumItem/Instance field or calling CFrame:GetComponents from a tracer adds
+// frames and creates signal objects, which changes what a protected script sees.
+bool rove_raw_trace = false;
 
 static void rove_serialize_value(FILE* f, lua_State* L, int idx)
 {
@@ -72,6 +76,7 @@ static void rove_serialize_value(FILE* f, lua_State* L, int idx)
             if (lua_type(L, -1) == LUA_TSTRING) type_name = lua_tostring(L, -1);
             lua_pop(L, 2);
         }
+        if (rove_raw_trace) { fputs(type_name.empty() ? lua_typename(L, t) : type_name.c_str(), f); break; }
         auto field = [&](const char* key, double& out) {
             lua_pushstring(L, key); lua_gettable(L, idx);
             if (lua_type(L, -1) == LUA_TNUMBER) out = (double)lua_tonumber(L, -1);

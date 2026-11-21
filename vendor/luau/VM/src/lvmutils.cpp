@@ -1,6 +1,7 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 // This code is based on Lua 5.x implementation licensed under MIT License; see lua_LICENSE.txt for details
 #include "lclass.h"
+#include <cstring>
 #include "lfunc.h"
 #include "lvm.h"
 
@@ -35,6 +36,9 @@ lua_State* rove_get_trace_thread()
         call_opened = true;
         const char* path = getenv("ROVE_CALL_TRACE");
         if (path && *path) rove_call_file = fopen(path, "w");
+        extern bool rove_raw_trace;
+        const char* raw = getenv("ROVE_CALL_TRACE_RAW");
+        rove_raw_trace = raw && *raw && strcmp(raw, "0") != 0;
     }
     return rove_trace_thread_state;
 }
