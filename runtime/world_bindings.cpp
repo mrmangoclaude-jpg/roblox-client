@@ -38,6 +38,14 @@
 
 namespace world_bindings {
 namespace {
+// Optional update timing (ROVE_UPDATE_PROFILE=path): cumulative seconds per phase.
+static double rove_update_parse_s=0, rove_update_apply_s=0, rove_update_sync_s=0;
+static unsigned long rove_update_calls=0, rove_update_actions=0, rove_update_syncs=0;
+static FILE* rove_update_file=nullptr;
+void rove_update_profile_init(){ if(rove_update_file)return; const char* path=getenv("ROVE_UPDATE_PROFILE"); if(path&&*path){rove_update_file=fopen(path,"w"); if(rove_update_file){fprintf(rove_update_file,"started\n");fflush(rove_update_file);}} }
+void rove_update_profile_dump(){ if(!rove_update_file)return; fprintf(rove_update_file,"updates=%lu actions=%lu parse=%.4f apply=%.4f sync=%.4f sync_calls=%lu\n",rove_update_calls,rove_update_actions,rove_update_parse_s,rove_update_apply_s,rove_update_sync_s,rove_update_syncs); fflush(rove_update_file); }
+
+
 constexpr const char* kInstanceMeta = "WorldSnapshot.Instance";
 constexpr const char* kCFrameMeta = "WorldSnapshot.CFrame";
 constexpr const char* kSettingsId = "__world_snapshot_settings__";
@@ -658,6 +666,7 @@ bool is_joint_index_class(World& w,const std::string& cls) {
     return cls=="WeldConstraint"||class_is_a(w,cls,"JointInstance")||class_is_a(w,cls,"Constraint");
 }
 void sync_world_indices(World& w) {
+    auto rove_sync_started=std::chrono::steady_clock::now();
     if(w.children_dirty) {
         w.children_cache.clear();w.script_order.clear();w.joint_order.clear();
         for(size_t i=0;i<w.order.size();++i) {
@@ -675,6 +684,8 @@ void sync_world_indices(World& w) {
         auto p=parent_id(w,node);if(!p.empty())w.children_cache[p].push_back(node.id);
     }
     w.indexed_order_size=w.order.size();
+    rove_update_sync_s+=std::chrono::duration<double>(std::chrono::steady_clock::now()-rove_sync_started).count();
+    ++rove_update_syncs;
 }
 const Children& get_children_index(World& w) {
     sync_world_indices(w);return w.children_cache;
@@ -3272,9 +3283,15 @@ void complete_chat(lua_State* from,World& w,const Json& responses) {
 }
 void update_snapshot(lua_State* from,World& w,const std::string& text) {
     if(text.size()>8*1024*1024)throw std::runtime_error("world delta exceeds 8 MiB");
-    update_snapshot(from,w,Json::parse(text));
+    rove_update_profile_init();
+    auto started=std::chrono::steady_clock::now();
+    Json parsed=Json::parse(text);
+    rove_update_parse_s+=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
+    update_snapshot(from,w,parsed);
 }
 void update_snapshot(lua_State* from,World& w,const Json& delta) {
+    rove_update_profile_init();
+    auto rove_apply_started=std::chrono::steady_clock::now();
     if(!delta.is_object()||delta.value("version",0)!=1||!delta.value("delta",false)
        ||!delta.contains("actions")||!delta["actions"].is_array()||delta["actions"].size()>10000)
         throw std::runtime_error("invalid ordered world delta");
@@ -3488,6 +3505,11 @@ void update_snapshot(lua_State* from,World& w,const Json& delta) {
         emit(w,w.nodes.at(w.game_id),"Loaded");
     }
     (void)from;
+    (void)from;
+    rove_update_apply_s+=std::chrono::duration<double>(std::chrono::steady_clock::now()-rove_apply_started).count();
+    ++rove_update_calls;
+    if(delta.contains("actions")&&delta.at("actions").is_array())rove_update_actions+=delta.at("actions").size();
+    if(rove_update_file&&(rove_update_calls%25)==0)rove_update_profile_dump();
 }
 #include "render_surface.inc"
 } // namespace world_bindings
