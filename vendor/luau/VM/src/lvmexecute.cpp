@@ -4034,6 +4034,7 @@ void luau_finishop(lua_State* L)
 
 int luau_precall(lua_State* L, StkId func, int nresults)
 {
+    rove_log_c_call(L, func, 0);
     if (!ttisfunction(func))
     {
         luaV_tryfuncTM(L, func);
@@ -4086,7 +4087,6 @@ int luau_precall(lua_State* L, StkId func, int nresults)
     {
         lua_CFunction cfn = ccl->c.f;
         ptrdiff_t rove_funcoff = savestack(L, func);
-        rove_log_c_call(L, func, 0);
         int n = cfn(L);
 
         // yield
