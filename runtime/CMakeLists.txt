@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/utf-8 /bigobj)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    # Luau's interpreter is instruction-throughput bound. x86-64-v2 (SSE4.2 /
+    # POPCNT) is universal on modern runners and measurably faster than the
+    # baseline x86-64 codegen; -march=native is avoided because CI builds and
+    # runs on different machines.
+    add_compile_options(-march=x86-64-v2)
 endif()
 set(LUAU "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/luau")
 
