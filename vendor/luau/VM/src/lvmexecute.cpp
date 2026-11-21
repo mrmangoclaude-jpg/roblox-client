@@ -3080,7 +3080,11 @@ reentry:
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
+                    const char* rove_fname = nullptr;
+                    if (ttisfunction(ra) && clvalue(ra)->isC && clvalue(ra)->c.debugname)
+                        rove_fname = getstr(clvalue(ra)->c.debugname);
                     int n = f(L, ra, ra + 1, nresults, ra + 2, nparams);
+                    if (n >= 0) rove_log_fastcall(L, rove_fname, ra, ra + 1, ra + 2, nullptr, nparams, n);
 
                     if (n >= 0)
                     {
@@ -3195,7 +3199,11 @@ reentry:
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
+                    const char* rove_fname = nullptr;
+                    if (ttisfunction(ra) && clvalue(ra)->isC && clvalue(ra)->c.debugname)
+                        rove_fname = getstr(clvalue(ra)->c.debugname);
                     int n = f(L, ra, arg, nresults, NULL, nparams);
+                    if (n >= 0) rove_log_fastcall(L, rove_fname, ra, arg, nullptr, nullptr, nparams, n);
 
                     if (n >= 0)
                     {
@@ -3245,7 +3253,11 @@ reentry:
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
+                    const char* rove_fname = nullptr;
+                    if (ttisfunction(ra) && clvalue(ra)->isC && clvalue(ra)->c.debugname)
+                        rove_fname = getstr(clvalue(ra)->c.debugname);
                     int n = f(L, ra, arg1, nresults, arg2, nparams);
+                    if (n >= 0) rove_log_fastcall(L, rove_fname, ra, arg1, arg2, nullptr, nparams, n);
 
                     if (n >= 0)
                     {
@@ -3295,7 +3307,11 @@ reentry:
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
+                    const char* rove_fname = nullptr;
+                    if (ttisfunction(ra) && clvalue(ra)->isC && clvalue(ra)->c.debugname)
+                        rove_fname = getstr(clvalue(ra)->c.debugname);
                     int n = f(L, ra, arg1, nresults, arg2, nparams);
+                    if (n >= 0) rove_log_fastcall(L, rove_fname, ra, arg1, arg2, nullptr, nparams, n);
 
                     if (n >= 0)
                     {
@@ -3352,7 +3368,11 @@ reentry:
                     setobj2s(L, top, arg2);
                     setobj2s(L, top + 1, arg3);
 
+                    const char* rove_fname = nullptr;
+                    if (ttisfunction(ra) && clvalue(ra)->isC && clvalue(ra)->c.debugname)
+                        rove_fname = getstr(clvalue(ra)->c.debugname);
                     int n = f(L, ra, arg1, nresults, top, nparams);
+                    if (n >= 0) rove_log_fastcall(L, rove_fname, ra, arg1, arg2, arg3, nparams, n);
 
                     if (n >= 0)
                     {
@@ -4086,8 +4106,9 @@ int luau_precall(lua_State* L, StkId func, int nresults)
     else
     {
         lua_CFunction cfn = ccl->c.f;
-        ptrdiff_t rove_funcoff = savestack(L, func);
         int n = cfn(L);
+        if (n >= 0) rove_log_c_call(L, L->top - n, 2, n);  // results are live on the stack here
+        else rove_log_c_call(L, func, 3);                // yielded: close the entry without results
 
         // yield
         if (n < 0)
@@ -4114,7 +4135,6 @@ int luau_precall(lua_State* L, StkId func, int nresults)
         L->base = cip->base;
         L->top = res;
 
-        rove_log_c_call(L, restorestack(L, rove_funcoff), 1);
         return PCRC;
     }
 }

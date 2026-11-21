@@ -75,15 +75,93 @@ static void rove_serialize_list(FILE* f, lua_State* L, int first, int count)
     }
 }
 
+void rove_log_fastcall(lua_State* L, const char* name, TValue* res, TValue* a1, TValue* a2, TValue* a3, int nparams, int nresults)
+{
+    rove_get_trace_thread();
+    if (!rove_call_file) return;
+    ++rove_call_entries;
+    fprintf(rove_call_file, "T%p CALL %s A(", (void*)L, name ? name : "?");
+    TValue* args[3] = {a1, a2, a3};
+    for (int i = 0; i < nparams && i < 3; ++i)
+    {
+        if (i) fputc(';', rove_call_file);
+        const TValue* v = args[i];
+        if (!v) { fputs("nil", rove_call_file); continue; }
+        switch (ttype(v))
+        {
+        case LUA_TNIL: fputs("nil", rove_call_file); break;
+        case LUA_TBOOLEAN: fputs(bvalue(v) ? "true" : "false", rove_call_file); break;
+        case LUA_TNUMBER: fprintf(rove_call_file, "n:%.17g", (double)nvalue(v)); break;
+        case LUA_TVECTOR:
+        {
+            const float* vec = vvalue(v);
+            fprintf(rove_call_file, "v:%.17g,%.17g,%.17g", (double)vec[0], (double)vec[1], (double)vec[2]);
+            break;
+        }
+        case LUA_TSTRING:
+        {
+            size_t n = tsvalue(v)->len;
+            const char* s = getstr(tsvalue(v));
+            fputs("s:", rove_call_file);
+            for (size_t k = 0; k < n; ++k) fprintf(rove_call_file, "%02x", (unsigned char)s[k]);
+            break;
+        }
+        default: fputs("other", rove_call_file); break;
+        }
+    }
+    fputs(") R(", rove_call_file);
+    for (int i = 0; i < nresults && i < 3; ++i)
+    {
+        if (i) fputc(';', rove_call_file);
+        const TValue* v = res + i;
+        switch (ttype(v))
+        {
+        case LUA_TNIL: fputs("nil", rove_call_file); break;
+        case LUA_TBOOLEAN: fputs(bvalue(v) ? "true" : "false", rove_call_file); break;
+        case LUA_TNUMBER: fprintf(rove_call_file, "n:%.17g", (double)nvalue(v)); break;
+        case LUA_TVECTOR:
+        {
+            const float* vec = vvalue(v);
+            fprintf(rove_call_file, "v:%.17g,%.17g,%.17g", (double)vec[0], (double)vec[1], (double)vec[2]);
+            break;
+        }
+        case LUA_TSTRING:
+        {
+            size_t n = tsvalue(v)->len;
+            const char* s = getstr(tsvalue(v));
+            fputs("s:", rove_call_file);
+            for (size_t k = 0; k < n; ++k) fprintf(rove_call_file, "%02x", (unsigned char)s[k]);
+            break;
+        }
+        default: fputs("other", rove_call_file); break;
+        }
+    }
+    fputs(")\n", rove_call_file);
+    fflush(rove_call_file);
+}
+
 static int rove_call_depth = 0;
 static char rove_call_args[64][4096];
 
-void rove_log_c_call(lua_State* L, StkId func, int phase)
+void rove_log_c_call(lua_State* L, StkId func, int phase, int nresults)
 {
-    lua_State* traced = rove_get_trace_thread();
-    if (!rove_call_file || L != traced) return;
+    rove_get_trace_thread();  // lazy-open the trace file
+    if (!rove_call_file) return;
     if (rove_call_entries >= 200000) return;
     if (phase == 0 && (!ttisfunction(func) || !clvalue(func)->isC)) return;
+    if (phase >= 2)  // result logging: `func` points at the first result, count passed via depth marker
+    {
+        if (rove_call_depth == 0) return;
+        --rove_call_depth;
+        const char* head = rove_call_args[rove_call_depth];
+        ++rove_call_entries;
+        fputs(head, rove_call_file);
+        fputs(" R(", rove_call_file);
+        if (phase == 2) rove_serialize_list(rove_call_file, L, cast_int(func - L->base) + 1, nresults);
+        fputs(")\n", rove_call_file);
+        fflush(rove_call_file);
+        return;
+    }
     const char* name = "?";
     if (phase == 0)
     {
@@ -95,7 +173,7 @@ void rove_log_c_call(lua_State* L, StkId func, int phase)
     {
         if (rove_call_depth >= 64) return;
         char* buf = rove_call_args[rove_call_depth];
-        int off = snprintf(buf, 4096, "CALL %s A(", name);
+        int off = snprintf(buf, 4096, "T%p CALL %s A(", (void*)L, name);
         if (off < 0 || off >= 4096) return;
         // serialize args into the buffer by temporarily using a memory stream
         FILE* saved = rove_call_file;
@@ -114,7 +192,7 @@ void rove_log_c_call(lua_State* L, StkId func, int phase)
             else if (t == LUA_TSTRING)
             {
                 size_t n = 0; const char* s = lua_tolstring(L, idx, &n);
-                buf[off++] = 's';
+                off += snprintf(buf + off, 4096 - off, "s:");
                 for (size_t k2 = 0; k2 < n && off < 4090; ++k2) off += snprintf(buf + off, 4096 - off, "%02x", (unsigned char)s[k2]);
             }
             else off += snprintf(buf + off, 4096 - off, "other");
