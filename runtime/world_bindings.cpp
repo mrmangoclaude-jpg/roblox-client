@@ -644,8 +644,16 @@ bool class_is_a(const World& world, const std::string& actual, const std::string
     world.class_ancestors.emplace(actual,std::move(seen));
     return result;
 }
+// Roblox reflection declares many enum-named properties (Player.PreferredInput,
+// CameraMode, ...) that the protocol's class schema may omit. Treat names in the
+// engine enum registry as declared so GetPropertyChangedSignal does not reject them.
+bool is_engine_enum_property_name(const std::string& name) {
+    for(const auto& spec:kUsiExportEnums)if(name==spec.name)return true;
+    return false;
+}
 // True when the reflected class (or an ancestor) declares the property, even if the server never sent a value for it.
 bool class_declares_property(const World& world,const std::string& cls,const std::string& name) {
+    if(is_engine_enum_property_name(name))return true;
     std::string cursor=cls;
     for(int depth=0;depth<64&&!cursor.empty();++depth) {
         auto known=world.class_property_types.find(cursor);

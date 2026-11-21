@@ -1,5 +1,6 @@
 #include "api_trace.hpp"
 #include <lua.h>
+#include <lualib.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,13 @@ FILE* trace_file() {
 }
 
 bool api_trace_enabled() { return trace_file() != nullptr; }
+
+void api_trace_raw(const char* kind, const std::string& what) {
+    FILE* file = trace_file();
+    if (!file) return;
+    std::fprintf(file, "%s %s\n", kind, what.c_str());
+    std::fflush(file);
+}
 
 void (*api_trace_interrupt_hook)(lua_State*) = nullptr;
 
@@ -82,7 +90,17 @@ void api_trace(lua_State* L, const char* kind, const std::string& what) {
     }
     if (caller.rfind("script-runtime", 0) == 0 || caller.rfind("=script-runtime", 0) == 0
         || caller.rfind("persistent-source", 0) == 0) return;
+    std::string detail = what;
+    // Writes carry the assigned value at stack index 3; recording it reveals the
+    // exact UDim2/CFrame constants Luraph feeds into its stage-key derivation.
+    if (std::strcmp(kind, "set") == 0 && lua_gettop(L) >= 3) {
+        lua_pushvalue(L, 3);
+        size_t length = 0;
+        const char* text = luaL_tolstring(L, -1, &length);
+        if (text) detail += "=" + std::string(text, length < 120 ? length : 120);
+        lua_pop(L, 2);
+    }
     ++lines;
-    std::fprintf(file, "%s %s @ %s\n", kind, what.c_str(), caller.c_str());
+    std::fprintf(file, "%s %s @ %s\n", kind, detail.c_str(), caller.c_str());
     std::fflush(file);
 }

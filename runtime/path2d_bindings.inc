@@ -12,6 +12,17 @@ struct Path2DControlPointValue {
 };
 constexpr const char* kPath2DControlPointMeta="HeadlessRuntime.Path2DControlPoint";
 constexpr size_t kPath2DMaxControlPoints=100;
+// Format-only diagnostic for the values Luraph hashes into its stage keys. It
+// must not inspect the Lua stack: lua_getinfo/tolstring change what a protected
+// script observes and move it onto a different decryption path.
+std::string p2d_num_text(double v) { char b[48]; std::snprintf(b, sizeof b, "%.17g", v); return b; }
+void p2d_trace(const std::string& text) { if(api_trace_enabled()) api_trace_raw("p2d", text); }
+void p2d_trace_point(const Path2DControlPointValue& p, const char* tag) {
+    p2d_trace(std::string(tag) + " " + p2d_num_text(p.px) + "," + std::to_string(p.pxo) + ","
+        + p2d_num_text(p.py) + "," + std::to_string(p.pyo) + " "
+        + p2d_num_text(p.ltx) + "," + std::to_string(p.ltxo) + "," + p2d_num_text(p.lty) + "," + std::to_string(p.ltyo) + " "
+        + p2d_num_text(p.rtx) + "," + std::to_string(p.rtxo) + "," + p2d_num_text(p.rty) + "," + std::to_string(p.rtyo));
+}
 
 // Engine-bound methods raise plain messages without a source position.
 [[noreturn]] void p2d_raise(lua_State* L,const std::string& message) {
@@ -380,6 +391,7 @@ Path2DCurve path2d_curve(lua_State* L,Handle* h,const char* method,double* t) {
         if(std::isnan(value))value=0;
         *t=std::clamp(value,0.0,1.0);
     }
+    p2d_trace(std::string("curve ") + method + " t=" + (t?p2d_num_text(*t):std::string("-")));
     World& w=*h->world;Node& n=*h->node;
     const auto& points=path2d_points_const(w,n.id);
     const size_t count=path2d_segment_count(points,path2d_is_closed(w,n));
@@ -426,6 +438,8 @@ int path2d_set_control_points(lua_State* L) {
         next.push_back(*static_cast<Path2DControlPointValue*>(lua_touserdata(L,-1)));
         lua_pop(L,1);
     }
+    p2d_trace("SetControlPoints n=" + std::to_string(next.size()));
+    for(const auto& point:next)p2d_trace_point(point,"cp");
     path2d_state_for(*h->world,h->node->id).points=std::move(next);
     emit(*h->world,*h->node,"ControlPointChanged",Json::array());
     return 0;
