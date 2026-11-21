@@ -376,7 +376,9 @@ std::string SourceScheduler::owner(lua_State* thread) const {
     auto found=tasks_.find(thread);return found==tasks_.end()?"":found->second.owner;
 }
 lua_State* SourceScheduler::spawn_owned(lua_State* from,int index,const std::string& owner_name,bool report_errors) {
+    extern void rove_set_read_trace(lua_State*);
     index=lua_absindex(from,index);lua_State* child=lua_newthread(from);
+    rove_set_read_trace(child);
     lua_pushvalue(from,index);lua_xmove(from,child,1);
     // A script thread's globals are its own environment (getfenv(0) == getfenv()), as in the engine.
     lua_getfenv(child,-1);lua_replace(child,LUA_GLOBALSINDEX);

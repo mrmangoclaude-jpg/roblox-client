@@ -13,6 +13,20 @@
 #include "lnumutils.h"
 
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// Optional Rove diagnostic: trace table/global reads from one script thread only.
+static lua_State* rove_trace_thread_state = NULL;
+static FILE* rove_trace_file = NULL;
+static unsigned long rove_trace_entries = 0;
+void rove_set_read_trace(lua_State* L)
+{
+    const char* path = getenv("ROVE_READ_TRACE");
+    if (!path || !*path) return;
+    if (!rove_trace_file) rove_trace_file = fopen(path, "w");
+    rove_trace_thread_state = L;
+}
 
 // limit for table tag-method chains (to avoid loops)
 #define MAXTAGLOOP 100
@@ -170,6 +184,14 @@ static LUAU_NOINLINE void callTM(lua_State* L, const TValue* f, const TValue* p1
 
 void luaV_gettable(lua_State* L, const TValue* t, TValue* key, StkId val)
 {
+    if (rove_trace_file && L == rove_trace_thread_state && rove_trace_entries < 500000)
+    {
+        ++rove_trace_entries;
+        if (ttisstring(key)) fprintf(rove_trace_file, "GET %s\n", svalue(key));
+        else if (ttisnumber(key)) fprintf(rove_trace_file, "GET [number]\n");
+        else fprintf(rove_trace_file, "GET [other]\n");
+        if ((rove_trace_entries & 1023) == 0) fflush(rove_trace_file);
+    }
     int loop;
     for (loop = 0; loop < MAXTAGLOOP; loop++)
     {
