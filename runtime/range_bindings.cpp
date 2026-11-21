@@ -74,7 +74,7 @@ int number_range_index(lua_State* L) {
     const char* key = luaL_checkstring(L, 2);
     if (std::strcmp(key, "Min") == 0) lua_pushnumber(L, range->min);
     else if (std::strcmp(key, "Max") == 0) lua_pushnumber(L, range->max);
-    else { lua_pushnil(L); }
+    else { luaL_error(L, "%s is not a valid member of NumberRange", key); }
     return 1;
 }
 
@@ -141,7 +141,7 @@ int rect_index(lua_State* L) {
         else push_vector2(L, rect->max_x, rect->max_y);
     } else if (std::strcmp(key, "Width") == 0) lua_pushnumber(L, rect->max_x - rect->min_x);
     else if (std::strcmp(key, "Height") == 0) lua_pushnumber(L, rect->max_y - rect->min_y);
-    else lua_pushnil(L);
+    else luaL_error(L, "%s is not a valid member of Rect", key);
     return 1;
 }
 

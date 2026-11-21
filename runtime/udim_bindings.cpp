@@ -67,7 +67,7 @@ int udim_index(lua_State* L) {
     const char* key=luaL_checkstring(L,2);
     if(std::string(key)=="Scale")lua_pushnumber(L,v->scale);
     else if(std::string(key)=="Offset")lua_pushinteger(L,v->offset);
-    else lua_pushnil(L);
+    else luaL_error(L, "%s is not a valid member of UDim", key);
     return 1;
 }
 int udim_add(lua_State* L) {
@@ -117,7 +117,7 @@ int udim2_index(lua_State* L) {
     if(std::string(key)=="X"||std::string(key)=="Width")push_udim(L,v->x);
     else if(std::string(key)=="Y"||std::string(key)=="Height")push_udim(L,v->y);
     else if(std::string(key)=="Lerp")lua_pushcfunction(L,udim2_lerp,"Lerp");
-    else lua_pushnil(L);return 1;
+    else luaL_error(L, "%s is not a valid member of UDim2", key);return 1;
 }
 int udim2_add(lua_State* L) {
     UDim2Value a,b;if(!read_udim2(L,1,&a))luaL_typeerror(L,1,"UDim2");if(!read_udim2(L,2,&b))luaL_typeerror(L,2,"UDim2");

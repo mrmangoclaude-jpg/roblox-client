@@ -136,7 +136,7 @@ int color_index(lua_State* L) {
     else if (std::strcmp(key, "Lerp") == 0) lua_pushcfunction(L, color_lerp, "Lerp");
     else if (std::strcmp(key, "ToHSV") == 0) lua_pushcfunction(L, color_to_hsv, "ToHSV");
     else if (std::strcmp(key, "ToHex") == 0) lua_pushcfunction(L, color_to_hex, "ToHex");
-    else lua_pushnil(L);
+    else luaL_error(L, "%s is not a valid member of Color3", key);
     return 1;
 }
 

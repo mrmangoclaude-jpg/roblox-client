@@ -41,7 +41,7 @@ int tween_info_index(lua_State* L) {
     else if (key == "RepeatCount") lua_pushinteger(L, value->repeat_count);
     else if (key == "Reverses") lua_pushboolean(L, value->reverses);
     else if (key == "DelayTime") lua_pushnumber(L, value->delay_time);
-    else luaL_error(L, "unknown TweenInfo member");
+    else luaL_error(L, "%s is not a valid member of TweenInfo", key.c_str());
     return 1;
 }
 

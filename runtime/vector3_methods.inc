@@ -38,7 +38,7 @@ int vector3_index(lua_State* L) {
     }
     lua_pushvalue(L, 2);
     lua_rawget(L, lua_upvalueindex(1));
-    if (lua_isnil(L, -1)) luaL_error(L, "attempt to index Vector3 with '%s'", key);
+    if (lua_isnil(L, -1)) luaL_error(L, "%s is not a valid member of Vector3", key);
     return 1;
 }
 

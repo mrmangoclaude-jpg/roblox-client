@@ -972,7 +972,7 @@ int cframe_index(lua_State* L) {
     else if(std::strcmp(k,"Rotation")==0){checked_cframe(L,1);return push_frame_value(L,{},c->r);}
     else if(std::strcmp(k,"XVector")==0||std::strcmp(k,"RightVector")==0||std::strcmp(k,"YVector")==0||std::strcmp(k,"UpVector")==0||std::strcmp(k,"ZVector")==0||std::strcmp(k,"LookVector")==0){if(!c->rotation_known){luaL_error(L,"CFrame rotation metadata is unavailable");return 0;}if(std::strcmp(k,"XVector")==0||std::strcmp(k,"RightVector")==0)lua_pushvector(L,c->r[0],c->r[3],c->r[6]);else if(std::strcmp(k,"YVector")==0||std::strcmp(k,"UpVector")==0)lua_pushvector(L,c->r[1],c->r[4],c->r[7]);else if(std::strcmp(k,"ZVector")==0)lua_pushvector(L,c->r[2],c->r[5],c->r[8]);else lua_pushvector(L,-c->r[2],-c->r[5],-c->r[8]);}
     else if(std::strcmp(k,"GetComponents")==0)lua_pushcfunction(L,cframe_components,"GetComponents");
-    else {luaL_getmetatable(L,kCFrameMeta);lua_pushvalue(L,2);lua_rawget(L,-2);lua_remove(L,-2);} return 1;
+    else {luaL_getmetatable(L,kCFrameMeta);lua_pushvalue(L,2);lua_rawget(L,-2);lua_remove(L,-2);if(lua_isnil(L,-1))luaL_error(L,"%s is not a valid member of CFrame",k);} return 1;
 }
 int run_service_true(lua_State* L) {
     auto* h = checked_handle(L,1);

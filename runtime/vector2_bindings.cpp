@@ -84,6 +84,7 @@ int index(lua_State* L) {
         lua_pushvalue(L, 2);
         lua_rawget(L, -2);
         lua_remove(L, -2);
+        if (lua_isnil(L, -1)) luaL_error(L, "%s is not a valid member of Vector2", key);
     }
     return 1;
 }
