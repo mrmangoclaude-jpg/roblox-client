@@ -1657,6 +1657,13 @@ int instance_index_raw(lua_State* L) {
     if(!value&&n.class_name=="Workspace"&&key=="FilteringEnabled"){lua_pushboolean(L,1);return 1;}
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
     if(!value&&n.class_name=="Workspace"&&key=="Terrain"){Node* terrain=ensure_workspace_terrain(w);if(terrain){push_node(L,w,terrain);return 1;}}
+    // BillboardGui owns Size/AbsoluteSize outside the generic GuiObject layout path.
+    if(!value&&n.class_name=="BillboardGui"&&key=="Size") {
+        push_authored_value(L,Json{{"$udim2",Json::array({Json{{"$udim",Json::array({0,0})}},Json{{"$udim",Json::array({0,0})}}})}});return 1;
+    }
+    if(!value&&n.class_name=="BillboardGui"&&key=="AbsoluteSize") {
+        push_authored_value(L,Json{{"$vector2",Json::array({0,0})}});return 1;
+    }
     // Engine-owned enum properties that the replication stream does not send.
     if(!value) {
         const char* default_enum = nullptr;

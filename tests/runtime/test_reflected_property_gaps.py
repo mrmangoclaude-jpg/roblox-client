@@ -32,6 +32,17 @@ assert(tostring(value):find("Enum.PreferredInput.", 1, true), tostring(value))
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 
+    def test_billboard_gui_size_defaults(self):
+        host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+local gui = Instance.new("BillboardGui")
+assert(typeof(gui.Size) == "UDim2", typeof(gui.Size))
+assert(gui.Size == UDim2.new(0,0,0,0))
+assert(typeof(gui.AbsoluteSize) == "Vector2", typeof(gui.AbsoluteSize))
+''', 'timeout_ms': 2000})
+        self.assertTrue(result['ok'], result.get('error'))
+
     def test_camera_type_defaults_to_custom(self):
         host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
         self.addCleanup(host.close)
