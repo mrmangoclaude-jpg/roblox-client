@@ -2,6 +2,9 @@
 // This code is based on Lua 5.x implementation licensed under MIT License; see lua_LICENSE.txt for details
 #include "lualib.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "lapi.h"
 #include "lnumutils.h"
 #include "lstate.h"
@@ -572,7 +575,25 @@ static int tcreate(lua_State* L)
 {
     int size = luaL_checkinteger(L, 1);
     if (size < 0)
+    {
+        if (const char* path = getenv("ROVE_DIAG_CREATE"))
+        {
+            if (FILE* f = fopen(path, "a"))
+            {
+                lua_Debug ar{};
+                lua_getinfo(L, 0, "sl", &ar);
+                fprintf(f, "create size=%d at %s:%d\n", size,
+                    ar.short_src ? ar.short_src : "?", ar.currentline);
+                luaL_traceback(L, L, nullptr, 1);
+                const char* traceback = lua_tostring(L, -1);
+                fputs(traceback ? traceback : "?", f);
+                fputc('\n', f);
+                lua_pop(L, 1);
+                fclose(f);
+            }
+        }
         luaL_argerror(L, 1, "size out of range");
+    }
 
     if (!lua_isnoneornil(L, 2))
     {
