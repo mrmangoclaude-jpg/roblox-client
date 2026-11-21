@@ -49,7 +49,8 @@ static int db_info(lua_State* L)
         level = -lua_gettop(L);
     }
     else
-        luaL_argerror(L, arg + 1, "function or level expected");
+        // Roblox's debug.info reports this without a function name in the message.
+        luaL_error(L, "invalid argument #%d (function or level expected)", arg + 1);
 
     const char* options = luaL_checkstring(L, arg + 2);
 

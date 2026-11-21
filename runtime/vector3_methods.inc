@@ -14,7 +14,11 @@ int vector3_fuzzy_eq(lua_State* L) {
 int vector3_index(lua_State* L) {
     const auto* value = luaL_checkvector(L, 1);
     size_t length = 0;
-    const char* key = luaL_checklstring(L, 2, &length);
+    // Roblox's Vector3.__index is an unnamed C function: argument errors omit
+    // the "to 'Vector3.__index'" fragment that luaL_checklstring would add.
+    if (lua_type(L, 2) != LUA_TSTRING)
+        luaL_error(L, "invalid argument #2 (string expected, got %s)", luaL_typename(L, 2));
+    const char* key = lua_tolstring(L, 2, &length);
     if (length == 1) {
         const unsigned component = unsigned((key[0] | ' ') - 'x');
         if (component < 3) {
