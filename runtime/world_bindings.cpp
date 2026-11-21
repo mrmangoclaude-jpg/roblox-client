@@ -1372,6 +1372,7 @@ int contentprovider_preload_async(lua_State* L)
     return 0;
 }
 
+Node* ensure_workspace_terrain(World&);
 int instance_index_raw(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world; Node& n=*h->node; std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);
     if(api_trace_enabled())api_trace(L,"get",n.class_name+"."+key);
@@ -1639,6 +1640,7 @@ int instance_index_raw(lua_State* L) {
     if(!value&&n.class_name=="Workspace"&&key=="StreamingEnabled"){lua_pushboolean(L,1);return 1;}
     if(!value&&n.class_name=="Workspace"&&key=="FilteringEnabled"){lua_pushboolean(L,1);return 1;}
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
+    if(!value&&n.class_name=="Workspace"&&key=="Terrain"){Node* terrain=ensure_workspace_terrain(w);if(terrain){push_node(L,w,terrain);return 1;}}
     if(!value)for(const auto& id:direct_children(w,n.id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
     if(!value) {
         // A member the class does not have reads as Roblox words it: X is not a valid member of Class "Full.Name".
@@ -2979,7 +2981,6 @@ void install(lua_State*L,World&w){
     // CoreGui is a client-local container. Create its actual local identity
     // before scripts run so ordinary child lookup also finds the service.
     if(!w.services.count("CoreGui"))ensure_client_service(w,"CoreGui");
-    ensure_workspace_terrain(w);
     install_vector3_methods(L);
     luaL_newmetatable(L,kChatStatusMeta);lua_pushcfunction(L,chat_status_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_status_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_status_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kChatEnumMeta);lua_pushcfunction(L,chat_enum_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_enum_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
