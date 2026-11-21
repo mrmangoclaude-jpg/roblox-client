@@ -6,11 +6,14 @@ bool pivot_object(World& w,const Node& n){return pivot_model(w,n)||pivot_part(w,
 CFrameValue pivot_decode(const Json& value) {
     if(!value.is_object()||!value.contains("$cframe"))throw std::runtime_error("pivot requires a CFrame");
     const auto& v=value["$cframe"];CFrameValue cf;
-    if(!v.is_object()||!v.contains("position")||!v["position"].is_array()||v["position"].size()!=3||
-        !v.contains("rotation")||!v["rotation"].is_array()||v["rotation"].size()!=9)
-        throw std::runtime_error("pivot CFrame rotation/position is unavailable");
+    if(!v.is_object()||!v.contains("position")||!v["position"].is_array()||v["position"].size()!=3)
+        throw std::runtime_error("pivot CFrame position is unavailable");
     for(int i=0;i<3;++i){cf.p[i]=json_number(v["position"][i]);if(!std::isfinite(cf.p[i]))throw std::runtime_error("nonfinite pivot position");}
-    for(int i=0;i<9;++i){cf.r[i]=json_number(v["rotation"][i]);if(!std::isfinite(cf.r[i]))throw std::runtime_error("nonfinite pivot rotation");}
+    // The network can carry a translation-only CFrame (rotation metadata absent).
+    // Roblox still answers GetPivot; keep the identity rotation and mark it unknown.
+    if(v.contains("rotation")&&v["rotation"].is_array()&&v["rotation"].size()==9) {
+        for(int i=0;i<9;++i){cf.r[i]=json_number(v["rotation"][i]);if(!std::isfinite(cf.r[i]))throw std::runtime_error("nonfinite pivot rotation");}
+    } else cf.rotation_known=false;
     return cf;
 }
 Json pivot_encode(const CFrameValue& cf){return Json{{"$cframe",Json{{"position",cf.p},{"rotation",cf.r}}}};}
@@ -63,8 +66,9 @@ CFrameValue model_world_pivot(World& w,Node& n) {
 }
 Node* model_primary(World& w,Node& n) {
     const auto* value=property_value(w,n,"PrimaryPart");
-    if(!value)throw std::runtime_error("model PrimaryPart state is unavailable");
-    if(value->is_null())return nullptr;
+    // A model with no PrimaryPart reads as nil in Roblox, including when the
+    // protocol never sent the property at all.
+    if(!value||value->is_null())return nullptr;
     if(!value->is_object()||!value->contains("$ref")||!(*value)["$ref"].is_string())throw std::runtime_error("invalid PrimaryPart reference");
     auto* part=find_node(w,(*value)["$ref"].get<std::string>());
     if(!part)throw std::runtime_error("PrimaryPart reference is unresolved");
