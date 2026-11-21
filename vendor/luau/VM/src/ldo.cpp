@@ -94,6 +94,31 @@ static void rove_serialize_value(FILE* f, lua_State* L, int idx)
             double r=0,g=0,b=0; field("R",r); field("G",g); field("B",b);
             fprintf(f, "c3:%.17g,%.17g,%.17g", r,g,b);
         }
+        else if (type_name == "CFrame")
+        {
+            fputs("CFrame:", f);
+            lua_getfield(L, idx, "GetComponents");
+            if (lua_type(L, -1) == LUA_TFUNCTION)
+            {
+                lua_pushvalue(L, idx);
+                rove_serializing = true;
+                int call_ok = lua_pcall(L, 1, 12, 0);
+                rove_serializing = false;
+                if (call_ok == 0)
+                {
+                    for (int i = 0; i < 12; ++i)
+                    {
+                        if (i) fputc(',', f);
+                        fprintf(f, "%.17g", (double)lua_tonumber(L, -12 + i));
+                    }
+                    lua_pop(L, 12);
+                }
+                else lua_pop(L, 1);
+            }
+            else lua_pop(L, 1);
+            // If GetComponents failed, fall through with just the type name.
+            if (type_name == "CFrame" && f == rove_call_file) { /* line is fine as-is */ }
+        }
         else if (type_name == "Instance")
         {
             lua_getfield(L, idx, "ClassName"); const char* cn = lua_tostring(L,-1); lua_pop(L,1);
