@@ -43,6 +43,15 @@ static void rove_serialize_value(FILE* f, lua_State* L, int idx)
         else fputs("v:?", f);
         break;
     }
+    case LUA_TFUNCTION:
+    {
+        lua_Debug ar;
+        lua_pushvalue(L, idx);
+        if (lua_getinfo(L, -1, "n", &ar) && ar.name) fprintf(f, "fn:%s", ar.name);
+        else fputs("fn:?", f);
+        lua_pop(L, 1);
+        break;
+    }
     case LUA_TSTRING:
     {
         size_t n = 0;
