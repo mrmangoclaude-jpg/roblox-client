@@ -797,6 +797,7 @@ bool local_service_supported(const std::string& service) {
     if(service=="VirtualInputManager")return true;
     if(service=="VRService"||service=="SoundService")return true;
     if(service=="PhysicsService"||service=="EncodingService"||service=="ReflectionService")return true;
+    if(service=="ContentProvider")return true;
     return service=="TextService"||service=="RunService"||service=="HttpService"||service=="ServerStorage"||service=="ServerScriptService"||service=="GuiService"||service=="UserInputService"||service=="ContextActionService"||service=="Lighting"||service=="CoreGui"||service=="Debris"||service=="CollectionService"||service=="TweenService"||service=="TestService"||service=="Stats";
 }
 int gui_ten_foot_interface(lua_State* L) {
@@ -1337,6 +1338,29 @@ int textservice_get_text_size(lua_State* L)
 }
 
 
+// ContentProvider:PreloadAsync is a no-op for the local asynchronous loader;
+// invoke the optional status callback for each requested asset as Roblox does.
+int contentprovider_preload_async(lua_State* L)
+{
+    int shift = lua_type(L,1)==LUA_TUSERDATA && has_meta(L,1,kInstanceMeta) ? 1 : 0;
+    luaL_checktype(L, 1+shift, LUA_TTABLE);
+    lua_settop(L, 2+shift);
+    if (lua_type(L, 2+shift) == LUA_TFUNCTION)
+    {
+        lua_pushvalue(L, 2+shift);
+        int callback = lua_gettop(L);
+        lua_pushnil(L);
+        while (lua_next(L, 1+shift) != 0)
+        {
+            lua_pushvalue(L, callback);
+            lua_pushvalue(L, -2);
+            lua_call(L, 1, 0);
+            lua_pop(L, 1);
+        }
+    }
+    return 0;
+}
+
 int instance_index_raw(lua_State* L) {
     Handle* h=checked_handle(L,1); World& w=*h->world; Node& n=*h->node; std::string key=canonical_instance_member(luaL_checkstring(L,2),&n);
     if(api_trace_enabled())api_trace(L,"get",n.class_name+"."+key);
@@ -1428,6 +1452,7 @@ int instance_index_raw(lua_State* L) {
     if(n.class_name=="Workspace"&&key=="GetServerTimeNow"){lua_pushcfunction(L,workspace_get_server_time_now,"GetServerTimeNow");return 1;}
     if(n.class_name=="Path2D"&&path2d_index(L,key))return 1;
     if(n.class_name=="TextService"&&key=="GetTextSize"){lua_pushcfunction(L,textservice_get_text_size,"GetTextSize");return 1;}
+    if(n.class_name=="ContentProvider"&&key=="PreloadAsync"){lua_pushcfunction(L,contentprovider_preload_async,"PreloadAsync");return 1;}
     if(n.class_name=="TextService"&&(key=="GetFamilyInfoAsync"||key=="GetTextBoundsAsync")) {
         lua_pushboolean(L,key=="GetTextBoundsAsync");lua_pushcclosurek(L,text_service_request,key.c_str(),1,text_service_continue);return 1;
     }
