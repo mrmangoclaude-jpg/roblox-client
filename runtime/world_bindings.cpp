@@ -1745,6 +1745,26 @@ Node* ensure_client_service(World& w,const std::string& service) {
     append_mutations(w,std::move(entries));parent_events(w,created,"",w.game_id);return &created;
 }
 Node* ensure_http_service(World& w){return ensure_client_service(w,"HttpService");}
+// Terrain is a client-visible child of Workspace, not a Service. Some scripts
+// index workspace.Terrain unconditionally; create a local instance when the
+// server has not replicated one so the member lookup behaves like a client.
+Node* ensure_workspace_terrain(World& w) {
+    auto workspace_it=w.services.find("Workspace");
+    if(workspace_it==w.services.end())return nullptr;
+    const std::string& workspace_id=workspace_it->second;
+    for(auto& [id,node]:w.nodes)if(node.class_name=="Terrain"&&!node.destroyed&&node.parent==workspace_id)return &node;
+    if(w.nodes.size()>=kMaxNodes)return nullptr;
+    Node node;do{node.id="local:"+std::to_string(w.next_local_id++);}while(w.nodes.count(node.id));
+    node.class_name="Terrain";node.name="Terrain";node.parent=workspace_id;node.server_owned=false;
+    node.attributes_known=true;node.collection_tags_known=true;
+    node.properties["Archivable"]=true;node.origins["Archivable"]="class_default";
+    node.origins=Json{{"Name","local"},{"ClassName","local"},{"Parent","local"}};
+    std::vector<Json> entries{Json{{"kind","create"},{"node",node_record(node)}}};
+    try {check_mutation_budget(w,entries);} catch(const std::exception&) {return nullptr;}
+    auto inserted=w.nodes.emplace(node.id,std::move(node));if(!inserted.second)return nullptr;
+    auto& created=inserted.first->second;w.order.push_back(created.id);
+    append_mutations(w,std::move(entries));parent_events(w,created,"",workspace_id);return &created;
+}
 const Children& children_index(World& w) {
     return get_children_index(w);
 }
@@ -2923,6 +2943,7 @@ void install(lua_State*L,World&w){
     // CoreGui is a client-local container. Create its actual local identity
     // before scripts run so ordinary child lookup also finds the service.
     if(!w.services.count("CoreGui"))ensure_client_service(w,"CoreGui");
+    ensure_workspace_terrain(w);
     install_vector3_methods(L);
     luaL_newmetatable(L,kChatStatusMeta);lua_pushcfunction(L,chat_status_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_status_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_status_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"EnumItem");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kChatEnumMeta);lua_pushcfunction(L,chat_enum_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,chat_enum_string,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,chat_readonly,"__newindex");lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"Enum");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
