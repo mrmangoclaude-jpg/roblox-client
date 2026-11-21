@@ -38,6 +38,33 @@ for _, pair in ipairs(values) do
 end
 ''')
 
+    def test_constructors_coerce_bad_arguments_to_zero(self):
+        self.execute('''
+assert(tostring(Vector3.new("x",1,1)) == "0, 1, 1")
+assert(tostring(UDim.new("x",1)) == "0, 1")
+assert(tostring(UDim2.new("x",1,1,1)) == "{0, 1}, {1, 1}")
+assert(tostring(Color3.new("x",1,1)) == "0, 1, 1")
+assert(tostring(Rect.new("x",1,1,1)) == "0, 1, 1, 1")
+''')
+
+    def test_immutable_datatype_members_use_engine_message(self):
+        self.execute('''
+local values = {
+    {Vector3.new(1,2,3), "X", "X cannot be assigned to"},
+    {Vector2.new(1,2), "X", "X member of Vector2 is read-only and cannot be assigned to"},
+    {CFrame.new(), "X", "X member of CFrame is read-only and cannot be assigned to"},
+    {UDim2.new(0,1,0,2), "X", "X member of UDim2 is read-only and cannot be assigned to"},
+    {Color3.new(), "R", "R member of Color3 is read-only and cannot be assigned to"},
+    {NumberRange.new(1,2), "Min", "Min member of NumberRange is read-only and cannot be assigned to"},
+    {TweenInfo.new(1), "Time", "Time member of TweenInfo is read-only and cannot be assigned to"},
+}
+for _, entry in ipairs(values) do
+    local ok, message = pcall(function() entry[1][entry[2]] = 5 end)
+    assert(not ok, entry[3] .. ": ok")
+    assert(message:find(entry[3], 1, true), entry[3] .. ": " .. tostring(message))
+end
+''')
+
     def test_vector3_nil_key_omits_function_name(self):
         self.execute('''
 local v = Vector3.new(1, 2, 3)

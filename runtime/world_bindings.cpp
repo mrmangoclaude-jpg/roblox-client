@@ -925,9 +925,17 @@ int find_service(lua_State* L) {
 }
 
 int cframe_components(lua_State* L) { auto* c=static_cast<CFrameValue*>(luaL_checkudata(L,1,kCFrameMeta));if(!c->rotation_known){luaL_error(L,"CFrame rotation metadata is unavailable");return 0;}for(double v:c->p)lua_pushnumber(L,v);for(double v:c->r)lua_pushnumber(L,v);return 12; }
+// Roblox datatype constructors coerce unusable arguments to zero instead of
+// raising a type error: Vector3.new("x",1,1) == 0,1,1.
+double lenient_number(lua_State* L, int index) {
+    int type = lua_type(L, index);
+    if (type == LUA_TNUMBER) return lua_tonumber(L, index);
+    if (type == LUA_TSTRING && lua_isnumber(L, index)) return lua_tonumber(L, index);
+    return 0.0;
+}
 int vector3_new(lua_State*L){
     if(lua_gettop(L)>3){luaL_error(L,"Vector3.new expects at most three numbers");return 0;}
-    double x=luaL_optnumber(L,1,0),y=luaL_optnumber(L,2,0),z=luaL_optnumber(L,3,0);
+    double x=lenient_number(L,1),y=lenient_number(L,2),z=lenient_number(L,3);
     // Studio 0.745 preserves IEEE infinity and NaN in vectors. Geometry and
     // movement consumers validate their own finite-input requirements.
     lua_pushvector(L,x,y,z);return 1;
@@ -3024,7 +3032,7 @@ void install(lua_State*L,World&w){
     lua_pushcfunction(L,instance_equal,"__eq");lua_setfield(L,-2,"__eq");
     lua_pushcclosurek(L,compat_namecall,"__namecall",0,compat_namecall_continue);lua_setfield(L,-2,"__namecall");
     lua_pushliteral(L,"Instance");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
-    luaL_newmetatable(L,kCFrameMeta);lua_pushcfunction(L,cframe_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,cframe_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,cframe_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushliteral(L,"CFrame");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");install_frame_methods(L);lua_pop(L,1);
+    luaL_newmetatable(L,kCFrameMeta);lua_pushcfunction(L,cframe_index,"__index");lua_setfield(L,-2,"__index");lua_pushcfunction(L,cframe_tostring,"__tostring");lua_setfield(L,-2,"__tostring");lua_pushcfunction(L,cframe_equal,"__eq");lua_setfield(L,-2,"__eq");lua_pushcfunction(L,[](lua_State* S)->int{luaL_error(S,"%s member of CFrame is read-only and cannot be assigned to",luaL_checkstring(S,2));return 0;},nullptr);lua_setfield(L,-2,"__newindex");lua_pushliteral(L,"CFrame");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");install_frame_methods(L);lua_pop(L,1);
     lua_createtable(L,0,8);lua_pushcfunction(L,vector3_new,"new");lua_setfield(L,-2,"new");install_geometry_vector_constructors(L);set_vector_constant(L,"zero",0,0,0);set_vector_constant(L,"one",1,1,1);set_vector_constant(L,"xAxis",1,0,0);set_vector_constant(L,"yAxis",0,1,0);set_vector_constant(L,"zAxis",0,0,1);lua_setreadonly(L,-1,1);lua_setglobal(L,"Vector3");
     // Insertion order reproduces the real client's pairs() order for CFrame.
     lua_createtable(L,0,12);

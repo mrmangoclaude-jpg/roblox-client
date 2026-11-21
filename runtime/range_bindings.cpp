@@ -125,10 +125,17 @@ int rect_new(lua_State* L) {
         lua_error(L);
         return 0;
     }
-    float min_x = checked_component(L, 1, "Rect minX");
-    float min_y = checked_component(L, 2, "Rect minY");
-    float max_x = checked_component(L, 3, "Rect maxX");
-    float max_y = checked_component(L, 4, "Rect maxY");
+    // Roblox coerces unusable Rect components to zero (Rect.new("x",1,1,1) == 0,1,1,1).
+    auto lenient = [](lua_State* L, int index) -> float {
+        int type = lua_type(L, index);
+        double value = (type == LUA_TNUMBER || (type == LUA_TSTRING && lua_isnumber(L, index)))
+            ? lua_tonumber(L, index) : 0.0;
+        return static_cast<float>(value);
+    };
+    float min_x = lenient(L, 1);
+    float min_y = lenient(L, 2);
+    float max_x = lenient(L, 3);
+    float max_y = lenient(L, 4);
     push_rect(L, min_x, min_y, max_x, max_y);
     return 1;
 }
@@ -171,6 +178,12 @@ void install_meta(lua_State* L, const char* name, lua_CFunction index,
     lua_pushcfunction(L, index, "datatype.__index"); lua_setfield(L, -2, "__index");
     lua_pushcfunction(L, equal, "datatype.__eq"); lua_setfield(L, -2, "__eq");
     lua_pushcfunction(L, tostring, "datatype.__tostring"); lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, [](lua_State* S)->int {
+        const char* type = "?";
+        if (lua_getmetatable(S, 1)) { lua_getfield(S, -1, "__type"); type = lua_tostring(S, -1); }
+        luaL_error(S, "%s member of %s is read-only and cannot be assigned to", luaL_checkstring(S, 2), type);
+        return 0;
+    }, "__newindex"); lua_setfield(L, -2, "__newindex");
     lua_pushstring(L, type_name); lua_setfield(L, -2, "__type");
     lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
     lua_pop(L, 1);

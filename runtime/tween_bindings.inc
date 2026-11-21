@@ -28,7 +28,7 @@ bool tween_info_is_value(lua_State* L, int index) {
 }
 
 int tween_info_readonly(lua_State* L) {
-    luaL_error(L, "TweenInfo values are immutable");
+    luaL_error(L, "%s member of TweenInfo is read-only and cannot be assigned to", luaL_checkstring(L, 2));
     return 0;
 }
 

@@ -89,7 +89,7 @@ int index(lua_State* L) {
     return 1;
 }
 int readonly(lua_State* L) {
-    luaL_error(L, "Vector2 values are immutable");
+    luaL_error(L, "%s member of Vector2 is read-only and cannot be assigned to", luaL_checkstring(L, 2));
     return 0;
 }
 int tostring_vector(lua_State* L) {

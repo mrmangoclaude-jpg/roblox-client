@@ -91,6 +91,9 @@ void install_vector3_methods(lua_State* L) {
     lua_getfield(L, library, "normalize");
     lua_pushcclosure(L, vector3_index, "Vector3.__index", 3);
     lua_setfield(L, metatable, "__index");
+    lua_pushcfunction(L, [](lua_State* S)->int {
+        luaL_error(S, "%s cannot be assigned to", luaL_checkstring(S, 2)); return 0;
+    }, nullptr); lua_setfield(L, metatable, "__newindex");
     lua_pushliteral(L, "Vector3"); lua_setfield(L, metatable, "__type");
     lua_pushliteral(L, "The metatable is locked"); lua_setfield(L, metatable, "__metatable");
     lua_setreadonly(L, metatable, true);

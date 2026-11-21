@@ -53,11 +53,16 @@ void push_udim2(lua_State* L,UDim2Value value) {
     new(out) UDim2Value(value);
     luaL_getmetatable(L,kUDim2);lua_setmetatable(L,-2);
 }
+// Roblox constructors coerce unusable components to zero: UDim.new("x",1) == 0,1.
+static double lenient_component(lua_State* L, int index) {
+    int type = lua_type(L, index);
+    if (type == LUA_TNUMBER) return lua_tonumber(L, index);
+    if (type == LUA_TSTRING && lua_isnumber(L, index)) return lua_tonumber(L, index);
+    return 0.0;
+}
 int udim_new(lua_State* L) {
     int n=lua_gettop(L);if(n>2){luaL_error(L,"UDim.new accepts at most two numbers");return 0;}
-    double scale=0,offset=0;
-    if(n>=1&&!lua_isnil(L,1)&&!valid_number(L,1,&scale)){luaL_error(L,"UDim scale must be a finite bounded number");return 0;}
-    if(n>=2&&!lua_isnil(L,2)&&!valid_number(L,2,&offset)){luaL_error(L,"UDim offset must be a finite bounded number");return 0;}
+    double scale=n>=1?lenient_component(L,1):0, offset=n>=2?lenient_component(L,2):0;
     if(!valid_offset(offset)){luaL_error(L,"UDim offset exceeds the supported integer range");return 0;}
     // UDim stores pixel offsets as signed integers. Match native integer conversion.
     push_udim(L,{scale,static_cast<int32_t>(std::trunc(offset))});return 1;
@@ -100,7 +105,7 @@ int udim2_new(lua_State* L) {
         if(read_udim(L,1,&x)&&read_udim(L,2,&y)){push_udim2(L,{x,y});return 1;}
     }
     if(n>4){luaL_error(L,"UDim2.new accepts zero, two UDim values, or up to four numbers");return 0;}
-    double c[4]={0,0,0,0};for(int i=0;i<n;i++)if(!lua_isnil(L,i+1)&&!valid_number(L,i+1,&c[i])){luaL_error(L,"UDim2 components must be finite bounded numbers");return 0;}
+    double c[4]={0,0,0,0};for(int i=0;i<n;i++)c[i]=lenient_component(L,i+1);
     if(!valid_offset(c[1])||!valid_offset(c[3])){luaL_error(L,"UDim2 offset exceeds the supported integer range");return 0;}
     push_udim2(L,{{c[0],static_cast<int32_t>(std::trunc(c[1]))},{c[2],static_cast<int32_t>(std::trunc(c[3]))}});return 1;
 }
@@ -176,10 +181,12 @@ void install_udim_bindings(lua_State* L) {
     luaL_newmetatable(L,kUDim);
     set_metamethod(L,"__index",udim_index);set_operator(L,"__add",udim_add);set_operator(L,"__sub",udim_sub);set_operator(L,"__unm",udim_negate);
     set_metamethod(L,"__eq",udim_equal);set_metamethod(L,"__tostring",udim_tostring);
+    set_metamethod(L,"__newindex",[](lua_State* S)->int {luaL_error(S,"%s member of UDim is read-only and cannot be assigned to",luaL_checkstring(S,2));return 0;});
     lua_pushliteral(L,"UDim");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     luaL_newmetatable(L,kUDim2);
     set_metamethod(L,"__index",udim2_index);set_operator(L,"__add",udim2_add);set_operator(L,"__sub",udim2_sub);set_operator(L,"__unm",udim2_negate);
     set_metamethod(L,"__eq",udim2_equal);set_metamethod(L,"__tostring",udim2_tostring);set_metamethod(L,"Lerp",udim2_lerp);
+    set_metamethod(L,"__newindex",[](lua_State* S)->int {luaL_error(S,"%s member of UDim2 is read-only and cannot be assigned to",luaL_checkstring(S,2));return 0;});
     lua_pushliteral(L,"UDim2");lua_setfield(L,-2,"__type");lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");lua_pop(L,1);
     make_library(L,"UDim",udim_new);make_library(L,"UDim2",udim2_new,udim2_from_scale,udim2_from_offset);
 }

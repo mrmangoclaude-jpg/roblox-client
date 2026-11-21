@@ -21,8 +21,14 @@ int color_lerp(lua_State* L);
 int color_to_hsv(lua_State* L);
 int color_to_hex(lua_State* L);
 
+static double lenient_number(lua_State* L, int index) {
+    int type = lua_type(L, index);
+    if (type == LUA_TNUMBER) return lua_tonumber(L, index);
+    if (type == LUA_TSTRING && lua_isnumber(L, index)) return lua_tonumber(L, index);
+    return 0.0;
+}
 double finite_number(lua_State* L, int index, const char* label) {
-    const double value = luaL_checknumber(L, index);
+    const double value = lenient_number(L, index);
     if (!std::isfinite(value)) {
         luaL_error(L, "%s must be finite", label);
         return 0;
@@ -244,6 +250,9 @@ void install_color3_bindings(lua_State* L) {
     lua_setfield(L, -2, "__eq");
     lua_pushcfunction(L, color_tostring, "Color3.__tostring");
     lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, [](lua_State* S)->int {
+        luaL_error(S, "%s member of Color3 is read-only and cannot be assigned to", luaL_checkstring(S, 2)); return 0;
+    }, nullptr); lua_setfield(L, -2, "__newindex");
     lua_pushliteral(L, "Color3");
     lua_setfield(L, -2, "__type");
     lua_pushliteral(L,"The metatable is locked");lua_setfield(L,-2,"__metatable");
