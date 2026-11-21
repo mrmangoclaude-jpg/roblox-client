@@ -1656,7 +1656,9 @@ int instance_index_raw(lua_State* L) {
         if(known==w.class_property_types.end()||!known->contains(key)) {
             luaL_error(L,"%s is not a valid member of %s \"%s\"",key.c_str(),n.class_name.c_str(),instance_full_name(w,n).c_str());return 0;
         }
-        luaL_error(L,"property '%s' unavailable in snapshot for %s (%s)",key.c_str(),n.name.c_str(),n.class_name.c_str());return 0;
+        // The class declares the property but the replication stream omitted a value.
+        // Roblox answers with the property's default (nil for optional members), not an error.
+        lua_pushnil(L);return 1;
     }
     // The replication reader retains PhysicalProperties as a 5/6-scalar
     // array. Expose the typed source value without altering received data.

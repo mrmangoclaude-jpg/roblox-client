@@ -22,6 +22,20 @@ assert(signal ~= nil)
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 
+    def test_declared_property_without_replicated_value_reads_as_nil(self):
+        snapshot = copy.deepcopy(self.snapshot)
+        types = snapshot.setdefault('class_property_types', {})
+        types.setdefault('Player', {})['DevEnableMouseLock'] = 'boolean'
+        host = motion.PersistentLuauHost(snapshot)
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+local player = game:GetService("Players").LocalPlayer
+local ok, value = pcall(function() return player.DevEnableMouseLock end)
+assert(ok, tostring(value))
+assert(value == nil, tostring(value))
+''', 'timeout_ms': 2000})
+        self.assertTrue(result['ok'], result.get('error'))
+
     def test_pivot_accepts_translation_only_cframe(self):
         snapshot = copy.deepcopy(self.snapshot)
         snapshot.setdefault('nodes', []).append({
