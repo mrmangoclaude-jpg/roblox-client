@@ -22,6 +22,16 @@ assert(signal ~= nil)
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 
+    def test_user_input_service_preferred_input_is_an_enum_item(self):
+        host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+local value = game:GetService("UserInputService").PreferredInput
+assert(typeof(value) == "EnumItem", typeof(value))
+assert(tostring(value):find("Enum.PreferredInput.", 1, true), tostring(value))
+''', 'timeout_ms': 2000})
+        self.assertTrue(result['ok'], result.get('error'))
+
     def test_declared_property_without_replicated_value_reads_as_nil(self):
         snapshot = copy.deepcopy(self.snapshot)
         types = snapshot.setdefault('class_property_types', {})

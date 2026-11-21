@@ -1649,6 +1649,14 @@ int instance_index_raw(lua_State* L) {
     if(!value&&n.class_name=="Workspace"&&key=="FilteringEnabled"){lua_pushboolean(L,1);return 1;}
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
     if(!value&&n.class_name=="Workspace"&&key=="Terrain"){Node* terrain=ensure_workspace_terrain(w);if(terrain){push_node(L,w,terrain);return 1;}}
+    // The client exposes PreferredInput on UserInputService (not on Player), with a
+    // keyboard/mouse default when the replication stream carries no input hint.
+    if(!value&&n.class_name=="UserInputService"&&key=="PreferredInput") {
+        for(int k=0;k<(int)std::size(kUsiExportEnums);++k)if(std::strcmp(kUsiExportEnums[k].name,"PreferredInput")==0) {
+            lua_getfield(L,LUA_REGISTRYINDEX,kUsiExportItemsRegistry);
+            lua_rawgeti(L,-1,k*kExportEnumStride+1);lua_remove(L,-2);return 1;
+        }
+    }
     if(!value)for(const auto& id:direct_children(w,n.id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
     if(!value) {
         // A member the class does not have reads as Roblox words it: X is not a valid member of Class "Full.Name".
