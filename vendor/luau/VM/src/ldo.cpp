@@ -128,6 +128,13 @@ static void rove_serialize_value(FILE* f, lua_State* L, int idx)
             // If GetComponents failed, fall through with just the type name.
             if (type_name == "CFrame" && f == rove_call_file) { /* line is fine as-is */ }
         }
+        else if (type_name == "EnumItem")
+        {
+            lua_getfield(L, idx, "EnumType");
+            lua_getfield(L, -1, "Name"); const char* en = lua_tostring(L, -1); lua_pop(L, 2);
+            lua_getfield(L, idx, "Name"); const char* nm = lua_tostring(L, -1); lua_pop(L, 1);
+            fprintf(f, "EnumItem:%s:%s", en?en:"?", nm?nm:"?");
+        }
         else if (type_name == "Instance")
         {
             lua_getfield(L, idx, "ClassName"); const char* cn = lua_tostring(L,-1); lua_pop(L,1);
