@@ -134,6 +134,12 @@ const Json* property_descriptor(const Node& node, const std::string& key) {
             return &selected;
         }
     }
+    if(node.class_name=="BillboardGui") {
+        static const Json size{{"type","UDim2"},{"writable",true},{"value",Json{{"$udim2",Json::array({Json{{"$udim",Json::array({0,0})}},Json{{"$udim",Json::array({0,0})}}})}}}};
+        static const Json absolute{{"type","Vector2"},{"writable",false},{"value",Json{{"$vector2",Json::array({0,0})}}}};
+        if(key=="Size")return &size;
+        if(key=="AbsoluteSize")return &absolute;
+    }
     if(node.class_name=="UIStroke") {
         if(key=="ApplyStrokeMode") {
             static const Json mode{{"type","Enum"},{"writable",true},
