@@ -1402,12 +1402,24 @@ class PersistentClientScriptRuntime:
         completed = None
         try:
             if self._background_context is not None:
+                # Capture backpressure BEFORE _finish_background replaces stats with
+                # the worker's response (which has no pending_events field).
+                pressured = self.stats.get('pending_events', 0) >= 512
                 completed = self._finish_background()
-                if completed is None or not self.remote_server_results:
+                if completed is None:
                     return completed
-                # The previous transaction has released the sole host lane.
-                # Deliver its result below while handing the free lane to an
-                # already-queued server reply, without another idle tick.
+                if self.remote_server_results:
+                    # The lane is free; deliver the queued reply without an idle tick.
+                    pass
+                elif pressured:
+                    # Let the VM drain callbacks before acknowledging more world work.
+                    return completed
+                elif not ((self.world is not None and self.world.revision > self.revision)
+                          or self._background_source_pending is not None
+                          or self._pending_script_catalog is not None
+                          or self._catalog_catchup_needed):
+                    return completed
+                # Otherwise submit the next transaction now instead of idling.
             if self.host is None:
                 # Initialization happens once, before any asynchronous calls.
                 return self.poll()
