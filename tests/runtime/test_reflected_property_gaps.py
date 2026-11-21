@@ -32,6 +32,17 @@ assert(tostring(value):find("Enum.PreferredInput.", 1, true), tostring(value))
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 
+    def test_camera_type_defaults_to_custom(self):
+        host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+local camera = game:GetService("Workspace").CurrentCamera
+local value = camera.CameraType
+assert(typeof(value) == "EnumItem", typeof(value))
+assert(tostring(value):find("Enum.CameraType.Custom", 1, true), tostring(value))
+''', 'timeout_ms': 2000})
+        self.assertTrue(result['ok'], result.get('error'))
+
     def test_declared_property_without_replicated_value_reads_as_nil(self):
         snapshot = copy.deepcopy(self.snapshot)
         types = snapshot.setdefault('class_property_types', {})

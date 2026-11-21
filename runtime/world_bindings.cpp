@@ -1649,12 +1649,18 @@ int instance_index_raw(lua_State* L) {
     if(!value&&n.class_name=="Workspace"&&key=="FilteringEnabled"){lua_pushboolean(L,1);return 1;}
     if(!value&&n.class_name=="TextSource"&&key=="UserId")value=property_value(w,n,"UserIdReplicated");
     if(!value&&n.class_name=="Workspace"&&key=="Terrain"){Node* terrain=ensure_workspace_terrain(w);if(terrain){push_node(L,w,terrain);return 1;}}
-    // The client exposes PreferredInput on UserInputService (not on Player), with a
-    // keyboard/mouse default when the replication stream carries no input hint.
-    if(!value&&n.class_name=="UserInputService"&&key=="PreferredInput") {
-        for(int k=0;k<(int)std::size(kUsiExportEnums);++k)if(std::strcmp(kUsiExportEnums[k].name,"PreferredInput")==0) {
-            lua_getfield(L,LUA_REGISTRYINDEX,kUsiExportItemsRegistry);
-            lua_rawgeti(L,-1,k*kExportEnumStride+1);lua_remove(L,-2);return 1;
+    // Engine-owned enum properties that the replication stream does not send.
+    if(!value) {
+        const char* default_enum = nullptr;
+        int default_item = 0;
+        if(n.class_name=="UserInputService"&&key=="PreferredInput") { default_enum="PreferredInput"; default_item=0; }
+        if(n.class_name=="Camera"&&key=="CameraType") { default_enum="CameraType"; default_item=5; }
+        if(default_enum) {
+            for(int k=0;k<(int)std::size(kUsiExportEnums);++k)
+                if(std::strcmp(kUsiExportEnums[k].name,default_enum)==0) {
+                    lua_getfield(L,LUA_REGISTRYINDEX,kUsiExportItemsRegistry);
+                    lua_rawgeti(L,-1,k*kExportEnumStride+default_item+1);lua_remove(L,-2);return 1;
+                }
         }
     }
     if(!value)for(const auto& id:direct_children(w,n.id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==key){push_node(L,w,&child);return 1;}}
