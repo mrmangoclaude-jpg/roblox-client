@@ -61,6 +61,21 @@ assert(gui.SizeOffset == Vector2.new(3, 7), tostring(gui.SizeOffset))
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 
+    def test_highlight_color_properties(self):
+        host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+local h = Instance.new("Highlight")
+assert(typeof(h.FillColor) == "Color3", typeof(h.FillColor))
+assert(typeof(h.OutlineColor) == "Color3", typeof(h.OutlineColor))
+assert(h.OutlineColor == Color3.new(1, 1, 1), tostring(h.OutlineColor))
+local ok = pcall(function() h.OutlineColor = Color3.new(0.2, 0.4, 0.6) end)
+assert(ok)
+assert(h.OutlineColor == Color3.new(0.2, 0.4, 0.6), tostring(h.OutlineColor))
+assert(typeof(h.LineThickness) == "number", typeof(h.LineThickness))
+''', 'timeout_ms': 2000})
+        self.assertTrue(result['ok'], result.get('error'))
+
     def test_camera_type_defaults_to_custom(self):
         host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
         self.addCleanup(host.close)
