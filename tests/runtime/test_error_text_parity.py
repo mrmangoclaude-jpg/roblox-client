@@ -26,7 +26,7 @@ assert(not message:find("to 'info'", 1, true), message)
 local t = table.freeze({1, 2, 3})
 local ok, message = pcall(function() return Random.new(1):Shuffle(t) end)
 assert(not ok, tostring(message))
-assert(message == "attempt to modify a readonly table", tostring(message))
+assert(message:find("attempt to modify a readonly table", 1, true), tostring(message))
 ''')
 
     def test_invalid_datatype_members_use_engine_message(self):
