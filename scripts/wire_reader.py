@@ -1,5 +1,16 @@
 """Bounded little-endian readers for the recovered game protocol."""
 import struct
+from functools import lru_cache
+
+_NUMBER_FORMATS = {}
+
+
+@lru_cache(maxsize=32)
+def _cache_number_format(fmt):
+    code = '<' + fmt
+    value = (code, struct.calcsize(code))
+    _NUMBER_FORMATS[fmt] = value
+    return value
 
 
 class WireError(ValueError):
@@ -23,7 +34,16 @@ class Reader:
         return out
 
     def number(self, fmt):
-        return struct.unpack('<' + fmt, self.take(struct.calcsize('<' + fmt)))[0]
+        # The hot wire decoder calls this millions of times per session; the
+        # format code and size are constant per fmt, and unpack_from avoids a
+        # bytes copy of the sliced memoryview.
+        code, size = _NUMBER_FORMATS.get(fmt) or _cache_number_format(fmt)
+        end = self.pos + size
+        if end > len(self.data):
+            raise WireError("Truncated field at offset %d" % self.pos)
+        value = struct.unpack_from(code, self.data, self.pos)[0]
+        self.pos = end
+        return value
 
     def u8(self): return self.number('B')
     def u16(self): return self.number('H')
