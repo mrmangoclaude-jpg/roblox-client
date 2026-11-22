@@ -190,8 +190,10 @@ return ran''',budget=2000)
         self.assertEqual(results[waiting['job_id']]['values'],['Arriving'])
 
     def test_wait_for_child_timeout_and_native_argument_rules(self):
-        invalid=self.execute('return pcall(function()workspace:WaitForChild("Missing",0)end)')
-        self.assertEqual(invalid['values'][0],False)
+        # Roblox treats a zero timeout as "do not wait" and returns nil.
+        immediate=self.execute('return pcall(function()workspace:WaitForChild("Missing",0)end)')
+        self.assertEqual(immediate['values'][0],True)
+        self.assertEqual(immediate['values'][1],None)
         waiting=self.execute('return workspace:WaitForChild("Missing",.005)==nil')
         job_id=waiting['job_id']
         completed=waiting if waiting.get('completed') else next(

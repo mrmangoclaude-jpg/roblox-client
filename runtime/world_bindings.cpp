@@ -2200,11 +2200,17 @@ int wait_for_child(lua_State* L) {
     auto deadline=Clock::time_point::max();
     if(!lua_isnoneornil(L,3)) {
         double duration=luaL_checknumber(L,3);
-        if(std::isnan(duration)||duration<=0){luaL_error(L,"timeOut must be greater than 0");return 0;}
-        auto remaining=std::chrono::duration<double>(Clock::time_point::max()-Clock::now()).count();
-        if(duration<remaining)deadline=Clock::now()+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(duration));
+        if(std::isnan(duration)){luaL_error(L,"timeOut must be greater than 0");return 0;}
+        // Roblox treats a non-positive timeout as "do not wait": it still returns
+        // an existing child, then returns nil immediately instead of erroring.
+        if(duration<=0)deadline=Clock::now();
+        else {
+            auto remaining=std::chrono::duration<double>(Clock::time_point::max()-Clock::now()).count();
+            if(duration<remaining)deadline=Clock::now()+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(duration));
+        }
     }
     for(const auto& id:direct_children(w,h->node->id)){Node& child=w.nodes.at(id);if(instance_name(w,child)==name){push_node(L,w,&child);return 1;}}
+    if(deadline<=Clock::now()){lua_pushnil(L);return 1;}
     if(!w.scheduler||!lua_isyieldable(L)){luaL_error(L,"WaitForChild requires a scheduled yieldable thread");return 0;}
     if(w.child_waiters.size()>=2048){luaL_error(L,"WaitForChild waiter limit exceeded");return 0;}
     try{w.scheduler->wait_signal(L);}catch(const std::exception& e){luaL_error(L,"WaitForChild failed: %s",e.what());return 0;}
