@@ -14,6 +14,7 @@
 #include <vector>
 #include <array>
 #include <cstring>
+#include <cstdio>
 #include "platform_support.hpp"
 #include <cstdlib>
 #ifdef __APPLE__
@@ -50,12 +51,42 @@ int collectgarbage_count(lua_State* L) {
 int getgenv(lua_State* L) { lua_rawgetfield(L,LUA_REGISTRYINDEX,"Headless.ExecutorEnvironment"); return 1; }
 int iscclosure(lua_State* L) { luaL_checktype(L,1,LUA_TFUNCTION); lua_pushboolean(L,lua_iscfunction(L,1)); return 1; }
 int islclosure(lua_State* L) { luaL_checktype(L,1,LUA_TFUNCTION); lua_pushboolean(L,!lua_iscfunction(L,1)); return 1; }
+
+// Env-gated diagnostic for the Luraph extraction route. Off by default.
+static void trace_loadstring_diag(const char* chunk, const char* source, size_t length)
+{
+    static const bool enabled=[]{
+        const char* v=std::getenv("ROVE_TRACE_LOADSTRING");
+        return v && (v[0]=='1' || v[0]=='t' || v[0]=='T');
+    }();
+    if(!enabled)return;
+    static unsigned seq=0;
+    const char* dir=std::getenv("ROVE_TRACE_LOADSTRING_DIR");
+    const std::string base=dir?dir:".";
+    char path[512], manifest[512];
+    std::snprintf(path,sizeof(path),"%s/loadstring_%03u.src",base.c_str(),++seq);
+    std::snprintf(manifest,sizeof(manifest),"%s/manifest.txt",base.c_str());
+    if(FILE* f=std::fopen(path,"wb")){
+        std::fwrite(source,1,length,f);
+        std::fclose(f);
+    }
+    char hex[160]; hex[0]=0;
+    for(size_t i=0;i<length && i<64;++i)
+        std::snprintf(hex+2*i,sizeof(hex)-2*i,"%02x",static_cast<unsigned char>(source[i]));
+    if(FILE* m=std::fopen(manifest,"a")){
+        const bool bytecode=length>=4 && static_cast<unsigned char>(source[0])==0x0e;
+        std::fprintf(m,"%s\t%s\t%zu\t%s\t%s\n",path,chunk?chunk:"?",length,bytecode?"bytecode":"text",hex);
+        std::fclose(m);
+    }
+}
+
 int loadstring(lua_State* L) {
     size_t length=0;
     const char* source=luaL_checklstring(L,1,&length);
     const char* chunk=luaL_optstring(L,2,source);
     if(length>local_test_source_limit(100*1024*1024)) { luaL_error(L,"loadstring source exceeds configured input limit"); return 0; }
     trace_local_source(source,length);
+    trace_loadstring_diag(chunk,source,length);
     auto* integrity=static_cast<ScriptThreadIntegrity*>(lua_touserdata(L,lua_upvalueindex(1)));
     if(integrity)integrity->check_load_thread();
     std::string code=Luau::compile(std::string(source,length));
