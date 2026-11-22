@@ -48,6 +48,19 @@ assert(gui.Size == UDim2.new(0,100,0,50))
 ''', 'timeout_ms': 2000})
         self.assertTrue(result['ok'], result.get('error'))
 
+    def test_billboard_gui_size_offset_is_a_writable_vector2(self):
+        host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+local gui = Instance.new("BillboardGui")
+assert(typeof(gui.SizeOffset) == "Vector2", typeof(gui.SizeOffset))
+assert(gui.SizeOffset == Vector2.new(0, 0), tostring(gui.SizeOffset))
+local ok = pcall(function() gui.SizeOffset = Vector2.new(3, 7) end)
+assert(ok, tostring(ok))
+assert(gui.SizeOffset == Vector2.new(3, 7), tostring(gui.SizeOffset))
+''', 'timeout_ms': 2000})
+        self.assertTrue(result['ok'], result.get('error'))
+
     def test_camera_type_defaults_to_custom(self):
         host = motion.PersistentLuauHost(copy.deepcopy(self.snapshot))
         self.addCleanup(host.close)

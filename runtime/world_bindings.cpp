@@ -137,7 +137,8 @@ const Json* property_descriptor(const Node& node, const std::string& key) {
     if(node.class_name=="BillboardGui") {
         static const Json size{{"type","UDim2"},{"writable",true},{"value",Json{{"$udim2",Json::array({Json{{"$udim",Json::array({0,0})}},Json{{"$udim",Json::array({0,0})}}})}}}};
         static const Json absolute{{"type","Vector2"},{"writable",false},{"value",Json{{"$vector2",Json::array({0,0})}}}};
-        static const Json offset{{"type","UDim2"},{"writable",true},{"value",Json{{"$udim2",Json::array({Json{{"$udim",Json::array({0,0})}},Json{{"$udim",Json::array({0,0})}}})}}}};
+        // Roblox API: BillboardGui.SizeOffset is a Vector2, not a UDim2.
+        static const Json offset{{"type","Vector2"},{"writable",true},{"value",Json{{"$vector2",Json::array({0,0})}}}};
         if(key=="Size")return &size;
         if(key=="AbsoluteSize")return &absolute;
         if(key=="SizeOffset")return &offset;
@@ -1676,7 +1677,7 @@ int instance_index_raw(lua_State* L) {
         push_authored_value(L,Json{{"$vector2",Json::array({0,0})}});return 1;
     }
     if(!value&&n.class_name=="BillboardGui"&&key=="SizeOffset") {
-        push_authored_value(L,Json{{"$udim2",Json::array({Json{{"$udim",Json::array({0,0})}},Json{{"$udim",Json::array({0,0})}}})}});return 1;
+        push_authored_value(L,Json{{"$vector2",Json::array({0,0})}});return 1;
     }
     // Engine-owned enum properties that the replication stream does not send.
     if(!value) {
