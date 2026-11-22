@@ -37,19 +37,8 @@ int device_tick(lua_State* L) {
     const auto now=std::chrono::system_clock::now().time_since_epoch();
     double seconds=std::chrono::duration<double>(now).count();
     // Roblox's legacy tick() returns epoch seconds in LOCAL time (os.time() plus
-    // the host timezone offset), unlike os.time()/DateTime which are UTC. Verified
-    // against the live client: tick() - os.time() == 3600 in CET. Luraph-style
-    // obfuscators can fold this into their decryption keys, so match it exactly.
-    const std::time_t stamp=std::time(nullptr);
-    std::tm local_tm{}, utc_tm{};
-#if defined(_WIN32)
-    localtime_s(&local_tm,&stamp); gmtime_s(&utc_tm,&stamp);
-    const double offset=static_cast<double>(std::mktime(&local_tm)-_mkgmtime(&utc_tm));
-#else
-    localtime_r(&stamp,&local_tm); gmtime_r(&stamp,&utc_tm);
-    const double offset=static_cast<double>(std::mktime(&local_tm)-timegm(&utc_tm));
-#endif
-    lua_pushnumber(L,seconds+offset);return 1;
+    // the host timezone offset), unlike os.time()/DateTime which are UTC.
+    lua_pushnumber(L,seconds+static_cast<double>(local_timezone_offset_seconds()));return 1;
 }
 int collectgarbage_count(lua_State* L) {
     if(std::strcmp(luaL_checkstring(L,1),"count")!=0) {

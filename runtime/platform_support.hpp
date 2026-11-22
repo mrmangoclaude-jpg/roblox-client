@@ -1,3 +1,4 @@
+#include <ctime>
 #pragma once
 #include <cstddef>
 #include <fstream>
@@ -45,4 +46,34 @@ inline bool host_entropy(void* data,size_t size) {
     std::ifstream source("/dev/urandom",std::ios::binary);
     return source && bool(source.read(static_cast<char*>(data),static_cast<std::streamsize>(size)));
 #endif
+}
+
+// Seconds by which local wall-clock time is ahead of UTC. MinGW's _mkgmtime
+// misbehaves on this toolchain, so derive it from the civil date fields.
+inline long local_timezone_offset_seconds()
+{
+    std::time_t stamp=std::time(nullptr);
+    std::tm local{}, utc{};
+#if defined(_WIN32)
+    localtime_s(&local,&stamp); gmtime_s(&utc,&stamp);
+#else
+    localtime_r(&stamp,&local); gmtime_r(&stamp,&utc);
+#endif
+    auto days_from_civil=[](int year,int month,int day)->long long
+    {
+        year-=month<=2?1:0;
+        const int era=(year>=0?year:year-399)/400;
+        const unsigned yoe=static_cast<unsigned>(year-era*400);
+        const unsigned doy=(153u*static_cast<unsigned>(month+(month>2?-3:9))+2)/5+static_cast<unsigned>(day)-1;
+        const unsigned doe=yoe*365+yoe/4-yoe/100+doy;
+        return static_cast<long long>(era)*146097+static_cast<long long>(doe)-719468;
+    };
+    auto as_seconds=[&](const std::tm& value)->long long
+    {
+        return days_from_civil(value.tm_year+1900,value.tm_mon+1,value.tm_mday)*86400
+             + static_cast<long long>(value.tm_hour)*3600
+             + static_cast<long long>(value.tm_min)*60
+             + value.tm_sec;
+    };
+    return static_cast<long>(as_seconds(local)-as_seconds(utc));
 }

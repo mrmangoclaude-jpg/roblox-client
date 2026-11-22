@@ -29,5 +29,20 @@ return now, os.time(), type(math.random()), type(tick)
         self.assertEqual((random_type, clock_type), ('number', 'function'))
 
 
+    def test_os_date_zone_is_numeric_offset(self):
+        host = PersistentLuauHost(SNAPSHOT)
+        self.addCleanup(host.close)
+        result = host.call({'op': 'execute', 'source': '''
+return os.date("%z")
+''', 'timeout_ms': 100})
+        self.assertTrue(result['ok'], result)
+        local = time.localtime()
+        total = -(time.altzone if local.tm_isdst else time.timezone)
+        sign = '-' if total < 0 else '+'
+        magnitude = abs(total)
+        expected = '%s%02d%02d' % (sign, magnitude // 3600, (magnitude % 3600) // 60)
+        self.assertEqual(result['values'], [expected])
+
+
 if __name__ == '__main__':
     unittest.main()

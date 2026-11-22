@@ -1,8 +1,11 @@
 #include "utf8_extras.hpp"
+#include "platform_support.hpp"
 #include <lua.h>
 #include <lualib.h>
 #include <algorithm>
 #include <cstdint>
+#include <ctime>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -290,6 +293,40 @@ void install_roblox_global_extras(lua_State* L)
     lua_setglobal(L, "settings");
 }
 
+static int roblox_os_date(lua_State* L)
+{
+    // MinGW's strftime renders %z as the Windows timezone NAME, while Roblox
+    // renders the numeric +HHMM offset. Rewrite the format before delegating.
+    const int nargs=lua_gettop(L);
+    std::string format=luaL_optstring(L,1,"%c");
+    if(format.find("%z")!=std::string::npos)
+    {
+        const long offset=local_timezone_offset_seconds();
+        const long magnitude=offset<0?-offset:offset;
+        char numeric[8];
+        std::snprintf(numeric,sizeof(numeric),"%c%02ld%02ld",offset<0?'-':'+',magnitude/3600,(magnitude%3600)/60);
+        std::string rewritten;
+        size_t from=0;
+        while(true)
+        {
+            const size_t at=format.find("%z",from);
+            if(at==std::string::npos){rewritten+=format.substr(from);break;}
+            rewritten+=format.substr(from,at-from)+numeric;
+            from=at+2;
+        }
+        lua_pushvalue(L,lua_upvalueindex(1));
+        lua_pushlstring(L,rewritten.data(),rewritten.size());
+        lua_replace(L,1);
+    }
+    else
+    {
+        lua_pushvalue(L,lua_upvalueindex(1));
+    }
+    lua_insert(L,1);
+    lua_call(L,nargs,1);
+    return 1;
+}
+
 void install_roblox_os_layout(lua_State* L)
 {
     lua_getglobal(L, "os");
@@ -304,6 +341,9 @@ void install_roblox_os_layout(lua_State* L)
         lua_getfield(L, -2, name);
         lua_setfield(L, -2, name);
     }
+    lua_getfield(L,-1,"date");
+    lua_pushcclosurek(L,roblox_os_date,"os.date",1,nullptr);
+    lua_setfield(L,-2,"date");
     lua_setglobal(L, "os");
     lua_pop(L, 1); // the old table
 }
