@@ -20,6 +20,16 @@ class NetworkOpiumTests(unittest.TestCase):
         self.addCleanup(lambda: (server.shutdown(), thread.join(3)))
         return server.server_address[1]
 
+    def test_misuse_error_text_matches_real_client(self):
+        self.run_script('''
+local ok, e = pcall(request, nil)
+assert(not ok and e == "attempt to index nil with 'Url'", tostring(e))
+local ok2, e2 = pcall(request, {})
+assert(not ok2 and e2 == "invalid url for http request", tostring(e2))
+local ok3, e3 = pcall(httpget, nil)
+assert(not ok3 and e3 == "invalid argument #1 (Instance expected, got nil)", tostring(e3))
+''')
+
     def test_httpget_aliases_and_request_cookies_methods_and_response_shape(self):
         seen = []
 
