@@ -21,6 +21,14 @@ assert(message:find("invalid argument #1 (function or level expected)", 1, true)
 assert(not message:find("to 'info'", 1, true), message)
 ''')
 
+    def test_random_shuffle_on_frozen_table_uses_engine_message(self):
+        self.execute('''
+local t = table.freeze({1, 2, 3})
+local ok, message = pcall(function() return Random.new(1):Shuffle(t) end)
+assert(not ok, tostring(message))
+assert(message == "attempt to modify a readonly table", tostring(message))
+''')
+
     def test_invalid_datatype_members_use_engine_message(self):
         self.execute('''
 local values = {

@@ -287,7 +287,9 @@ int randomShuffle(lua_State* L)
     const int tableIndex = lua_absindex(L, 2);
     if (lua_getreadonly(L, tableIndex))
     {
-        luaL_error(L, "Random:Shuffle cannot modify a frozen table");
+        // Roblox reports the generic readonly-table error here (verified against
+        // Studio); Luraph fingerprints exact error text as a key input.
+        luaL_error(L, "attempt to modify a readonly table");
         return 0;
     }
 
