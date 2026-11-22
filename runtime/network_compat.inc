@@ -81,8 +81,10 @@ local function requestHeaders(headers,cookies)
  return merged
 end
 function request(options)
- if type(options)~="table" then error(string.format("invalid argument #1 to 'request' (table expected, got %s)",type(options)),0) end
- if type(options.Url)~="string" then error("invalid argument #1 to 'request' (string expected for field 'Url')",0) end
+ -- Match the real client's executor error text: Luraph fingerprints exact
+ -- messages from misuse of request(nil)/request({}) as key inputs.
+ if type(options)~="table" then error(string.format("attempt to index %s with 'Url'",type(options)),0) end
+ if type(options.Url)~="string" then error("invalid url for http request",0) end
  local method=options.Method or "GET"
  assert(type(method)=="string","HTTP method must be text")
  method=string.upper(method)
@@ -95,7 +97,7 @@ end
 http_request=request;http={request=request}
 local httpRequest=request
 function HttpGet(url, cache)
- assert(type(url)=="string","HttpGet URL must be text")
+ assert(type(url)=="string","invalid argument #1 (Instance expected, got "..tostring(type(url))..")")
  assert(cache==nil or type(cache)=="boolean","HttpGet cache flag must be boolean")
  local result=httpRequest({Url=url,Method="GET"})
  assert(result.Success,"HttpGet failed: HTTP "..tostring(result.StatusCode).." "..tostring(result.StatusMessage))
