@@ -14,13 +14,18 @@ class EngineClockTests(unittest.TestCase):
         result = host.call({'op': 'execute', 'source': '''
 local now=tick()
 math.randomseed(now)
-return now, type(math.random()), type(tick)
+return now, os.time(), type(math.random()), type(tick)
 ''', 'timeout_ms': 100})
         after = time.time()
         self.assertTrue(result['ok'], result)
-        timestamp, random_type, clock_type = result['values']
-        self.assertLessEqual(before, timestamp)
-        self.assertLessEqual(timestamp, after)
+        timestamp, epoch, random_type, clock_type = result['values']
+        # Roblox's tick() is epoch seconds in LOCAL time (os.time() plus the
+        # host timezone offset), unlike os.time() which stays UTC.
+        local = time.localtime()
+        offset = -(time.altzone if local.tm_isdst else time.timezone)
+        self.assertLessEqual(before + offset - 2, timestamp)
+        self.assertLessEqual(timestamp, after + offset + 2)
+        self.assertLess(abs((timestamp - epoch) - offset), 2)
         self.assertEqual((random_type, clock_type), ('number', 'function'))
 
 
