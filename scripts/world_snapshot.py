@@ -91,7 +91,7 @@ def _encode(value, type_id=None, depth=0):
 def _encode_python(value, type_id=None, depth=0):
     if depth > 16:
         raise ValueError('Snapshot property nesting exceeds limit')
-    if isinstance(value, dict) and set(value) == {'$remote_variant'}:
+    if isinstance(value, dict) and len(value) == 1 and '$remote_variant' in value:
         typed = value['$remote_variant']
         kind = typed['type']
         if kind == 30:
