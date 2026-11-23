@@ -2200,7 +2200,7 @@ int wait_for_child(lua_State* L) {
     auto deadline=Clock::time_point::max();
     if(!lua_isnoneornil(L,3)) {
         double duration=luaL_checknumber(L,3);
-        if(std::isnan(duration)||duration<=0){luaL_error(L,"timeOut must be greater than 0");return 0;}
+        if(std::isnan(duration)||duration<=0){luaL_error(L,"illegal argument #2 (timeOut must be greater than 0)");return 0;}
         auto remaining=std::chrono::duration<double>(Clock::time_point::max()-Clock::now()).count();
         if(duration<remaining)deadline=Clock::now()+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(duration));
     }

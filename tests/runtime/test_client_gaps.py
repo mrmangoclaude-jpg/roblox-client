@@ -49,6 +49,16 @@ local ok,message=pcall(gui.GetPropertyChangedSignal,gui,"NotAProperty")
 assert(not ok and string.find(message,"NotAProperty is not a valid property name",1,true))
 ''')
 
+    def test_wait_for_child_timeout_error_text_matches_the_client(self):
+        # Verified against the live client: obfuscators fingerprint exact error text.
+        self.execute('''
+local folder=Instance.new("Folder")
+for _,value in ipairs({0,-1}) do
+ local ok,message=pcall(folder.WaitForChild,folder,"x",value)
+ assert(not ok and message=="illegal argument #2 (timeOut must be greater than 0)",tostring(message))
+end
+''')
+
 
 if __name__ == '__main__':
     unittest.main()
