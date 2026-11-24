@@ -40,7 +40,9 @@ std::vector<Node*> pivot_descendants(World& w,Node& n,bool include_self=false) {
 std::pair<CFrameValue,FrameVector> pivot_bounds(World& w,Node& n,const CFrameValue& axes) {
     FrameVector low{},high{};bool any=false;auto inverse=pivot_inverse(axes);
     for(auto* child:pivot_descendants(w,n))if(pivot_part(w,*child)) {
-        auto frame=pivot_product(inverse,pivot_frame(w,*child,"CFrame"));
+        auto child_frame=pivot_frame(w,*child,"CFrame");
+        if(!child_frame.rotation_known)throw std::runtime_error("bounding-box part rotation is unavailable");
+        auto frame=pivot_product(inverse,child_frame);
         const auto* size=property_value(w,*child,"Size");
         if(!size||!size->is_object()||!size->contains("$vector3")||!(*size)["$vector3"].is_array()||(*size)["$vector3"].size()!=3)
             throw std::runtime_error("bounding-box part Size is unavailable");
@@ -128,7 +130,11 @@ int object_pivot_to(lua_State* L) {
         if(cached!=w.pivot_caches.end()&&cached->second["fingerprint"]==before)offsets=cached->second["offsets"];
         else {
             auto inverse=pivot_inverse(source);
-            for(auto* n:nodes)offsets.push_back(pivot_encode(pivot_product(inverse,pivot_model(w,*n)?model_world_pivot(w,*n):pivot_frame(w,*n,"CFrame"))));
+            for(auto* n:nodes) {
+                auto frame=pivot_model(w,*n)?model_world_pivot(w,*n):pivot_frame(w,*n,"CFrame");
+                if(!frame.rotation_known)throw std::runtime_error("descendant rotation is unavailable");
+                offsets.push_back(pivot_encode(pivot_product(inverse,frame)));
+            }
         }
         size_t cached_count=nodes.size();for(const auto& [id,cache]:w.pivot_caches)if(id!=h->node->id)cached_count+=cache["offsets"].size();
         if(cached_count>20000)throw std::runtime_error("local pivot cache limit exceeded");
