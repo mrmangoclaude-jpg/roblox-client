@@ -283,7 +283,7 @@ class ScrollingOneShotTests(unittest.TestCase):
         self.assertEqual(result['values'],[0])
 
     def test_authored_scroll_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,SETUP+'''
 scroll.CanvasPosition=Vector2.new(50,75)
 assert(scroll.AbsoluteWindowSize==Vector2.new(290,190))

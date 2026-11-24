@@ -239,7 +239,7 @@ return f.List.AbsoluteContentSize.X,f.List.AbsoluteContentSize.Y,
         self.assertEqual(result.get('task_errors',[]),[])
 
     def test_list_layout_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self, SETUP.replace('getgenv().','')+'''
 list.Padding=UDim.new(0,5)
 assert(list.AbsoluteContentSize==Vector2.new(80,70))

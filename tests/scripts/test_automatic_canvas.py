@@ -205,7 +205,7 @@ return s.AbsoluteCanvasSize.Y,s.List.AbsoluteContentSize.Y,s.Item999.AbsolutePos
         self.assertEqual(result['values'],[3014,3014,3012])
 
     def test_automatic_list_canvas_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,scrolling.SETUP+'''
 child.Position=UDim2.fromOffset(0,0);child.Size=UDim2.fromOffset(100,400)
 scroll.CanvasSize=UDim2.fromOffset(0,0);scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y

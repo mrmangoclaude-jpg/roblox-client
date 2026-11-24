@@ -250,7 +250,7 @@ return panel.AbsoluteSize.X,panel.AbsoluteSize.Y,panel.Item999.AbsolutePosition.
         self.assertEqual(result['values'],[20,2999,2997])
 
     def test_automatic_list_demo_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         demo=Path(__file__).resolve().parents[2]/'runtime/scripts/automatic_list_demo.luau'
         CFrameTransformTests.run_script(self,'local result=(function()\n'+demo.read_text()+'''
 end)()
@@ -276,7 +276,7 @@ return root.AbsoluteSize.X,root.AbsoluteSize.Y
         self.assertEqual(result['values'],[82,52])
 
     def test_automatic_lists_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,SETUP.replace('getgenv().','')+'''
 assert(panel.AbsoluteSize==Vector2.new(80,70))
 list.FillDirection=Enum.FillDirection.Horizontal

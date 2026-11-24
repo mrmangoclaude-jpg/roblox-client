@@ -248,7 +248,7 @@ return true
         self.assertEqual(result['values'],[True])
 
     def test_grid_demo_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         demo=Path(__file__).resolve().parents[2]/'runtime/scripts/grid_layout_demo.luau'
         CFrameTransformTests.run_script(self,'local result=(function()\n'+demo.read_text()+'''
 end)()
@@ -273,7 +273,7 @@ return initial,moved,scroll.AbsoluteCanvasSize.Y,scroll.CanvasPosition.Y
         self.assertEqual(result['values'],[50,10,20,0])
 
     def test_grid_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,SETUP.replace('getgenv().','')+'''
 assert(grid.AbsoluteCellSize==Vector2.new(40,20))
 assert(grid.AbsoluteCellCount==Vector2.new(3,2))

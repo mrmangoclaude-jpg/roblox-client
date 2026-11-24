@@ -287,7 +287,7 @@ return p.List.AbsoluteContentSize.X,p.Item0.AbsoluteSize.X,p.Item1.AbsoluteSize.
         for actual,expected in zip(result['values'],[3000,2,3,3.125]):self.assertAlmostEqual(actual,expected,places=6)
 
     def test_flex_demo_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         demo=Path(__file__).resolve().parents[2]/'runtime/scripts/flex_list_demo.luau'
         CFrameTransformTests.run_script(self,'local result=(function()\n'+demo.read_text()+'''
 end)()
@@ -296,7 +296,7 @@ assert(game:GetService("Players").LocalPlayer.Gui:FindFirstChild("FlexListDemo")
 ''',layout_snapshot())
 
     def test_flex_modes_and_enum_metadata_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,SETUP.replace('getgenv().','')+'''
 for index,item in Enum.UIFlexMode:GetEnumItems() do
  assert(item.Value==index-1 and item.EnumType==Enum.UIFlexMode)

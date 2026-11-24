@@ -172,7 +172,7 @@ return not bad,not negative,preserved,ok,string.find(err,"multiple active GUI co
 
 class GuiModifierOneShotTests(unittest.TestCase):
     def test_authored_layout_in_each_compiled_worker(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self, '''
 local screen=game:GetService("Players").LocalPlayer.Gui.Screen
 local f=Instance.new("Frame",screen);f.Size=UDim2.new(0,200,0,100)

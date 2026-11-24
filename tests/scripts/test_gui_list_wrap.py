@@ -210,7 +210,7 @@ return true
 
     def test_wrapped_demo_in_both_workers(self):
         from pathlib import Path
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         path=Path(__file__).resolve().parents[2]/'runtime/scripts/wrapped_list_demo.luau'
         CFrameTransformTests.run_script(self,'local result=(function()\n'+path.read_text()+'''
 end)()
@@ -236,7 +236,7 @@ return before,offset,scroll.AbsoluteCanvasSize.Y,scroll.CanvasPosition.Y,c.Absol
         self.assertEqual(result['values'],[50,10,30,10,-10])
 
     def test_wrapping_and_stretch_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,(SETUP+WRAP).replace('getgenv().','')+'''
 assert(list.AbsoluteContentSize==Vector2.new(130,50))
 assert(c.AbsolutePosition==Vector2.new(0,40))

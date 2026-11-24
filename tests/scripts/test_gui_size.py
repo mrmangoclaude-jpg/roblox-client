@@ -120,7 +120,7 @@ return ok,string.find(err,"multiple active GUI components",1,true)~=nil,
 
 class GuiSizeOneShotTests(unittest.TestCase):
     def test_size_constraint_and_unbounded_clone_in_both_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self,'''
 local f=game:GetService("Players").LocalPlayer.Gui.Screen.Frame
 local c=Instance.new("UISizeConstraint",f)

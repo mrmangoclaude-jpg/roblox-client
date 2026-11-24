@@ -186,7 +186,7 @@ return ok,string.find(err,"multiple active GUI components",1,true)~=nil,
 
 class GuiAspectOneShotTests(unittest.TestCase):
     def test_parent_scaling_in_both_compiled_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self, '''
 local screen=game:GetService("Players").LocalPlayer.Gui.Screen
 local frame=screen.Frame
@@ -205,7 +205,7 @@ assert(frame.AbsoluteSize==Vector2.new(300,150))
 ''', layout_snapshot())
 
     def test_fit_and_enum_clone_in_both_compiled_workers(self):
-        from runtime.test_cframe_transforms import CFrameTransformTests
+        from test_cframe_transforms import CFrameTransformTests
         CFrameTransformTests.run_script(self, '''
 local screen=game:GetService("Players").LocalPlayer.Gui.Screen
 local frame=screen.Frame
