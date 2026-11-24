@@ -62,7 +62,7 @@ return tostring(Enum.EasingStyle), tostring(Enum.EasingDirection)
         result = self.execute('''
 local a=TweenInfo.new()
 local b=TweenInfo.new(1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out,0,false,0)
-assert(typeof(a)=="TweenInfo" and tostring(a)=="TweenInfo" and a==b)
+assert(typeof(a)=="TweenInfo" and tostring(a)=="Time:1 DelayTime:0 RepeatCount:0 Reverses:False EasingDirection:Out EasingStyle:Quad" and a==b)
 assert(a.Time==1 and a.EasingStyle==Enum.EasingStyle.Quad)
 assert(a.EasingDirection==Enum.EasingDirection.Out and a.RepeatCount==0)
 assert(a.Reverses==false and a.DelayTime==0)
