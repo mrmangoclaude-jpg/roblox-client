@@ -3101,7 +3101,12 @@ void install(lua_State*L,World&w){
     install_instance_extended(L,w);
     assert(lua_gettop(L) == stack_base);
 }
-Json capture_value(lua_State* L,World& world,int index){return convert_lua_value(L,world,index);}
+Json capture_value(lua_State* L,World& world,int index){
+    // Return values are not property mutations: an executor script may return
+    // a large buffer/string. Keep the strict 96 KB budget for mutations only.
+    size_t budget=16*1024*1024;
+    return convert_lua_value(L,world,index,0,nullptr,&budget);
+}
 int clone_client_template(lua_State* L) {
     auto* handle=checked_handle(L,1);
     if(!handle->world->persistent){luaL_error(L,"template cloning requires a persistent world");return 0;}

@@ -171,7 +171,10 @@ int newcclosure(lua_State* L) {
         return 1;
     }
 
-    lua_pushcclosurek(L, call_wrapped_function, name, 0, wrapped_continuation);
+    // The wrapped Lua function is kept as upvalue 1 of the native trampoline,
+    // so getupvalue(wrapped, 1) exposes the original implementation.
+    lua_pushvalue(L, 1);
+    lua_pushcclosurek(L, call_wrapped_function, name, 1, wrapped_continuation);
     registry_table(L,kWrapped);lua_pushvalue(L,-2);lua_pushvalue(L,1);lua_rawset(L,-3);lua_pop(L,1);
 
     // Keep the visible environment consistent with the wrapped closure.
