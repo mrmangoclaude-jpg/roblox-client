@@ -268,24 +268,25 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
     // Keep authored globals in a shared overlay, while getgenv returns the
     // executor root. Raw getfenv writes must not change that root table.
     if(source_bindings){
-        // luaL_sandboxthread replaces the globals table; preserve everything
-        // installed so far (closure helpers, authored datatypes, executor API)
-        // and copy it into the fresh overlay, as a real executor's chunk sees.
-        lua_pushvalue(co,LUA_GLOBALSINDEX);
-        int saved_globals=lua_gettop(co);
-        luaL_sandboxthread(co);lua_setsafeenv(co,LUA_GLOBALSINDEX,false);
-        auto copy_globals=[&](int index){
-            if(!lua_istable(co,index))return;
-            lua_pushnil(co);
-            while(lua_next(co,index)){
-                lua_pushvalue(co,-2);lua_pushvalue(co,-2);
-                lua_settable(co,LUA_GLOBALSINDEX);lua_pop(co,1);
+        // co was sandboxed at creation, before the closure helpers and
+        // authored datatypes were installed on the main state. A real
+        // executor's chunk sees all of those in its globals, so copy them
+        // (plus the executor API) into co's globals table now.
+        auto copy_into_chunk=[&](lua_State* from,int index){
+            if(!lua_istable(from,index))return;
+            lua_pushnil(from);
+            while(lua_next(from,index)){
+                lua_pushvalue(from,-2);lua_pushvalue(from,-2);
+                lua_settable(co,LUA_GLOBALSINDEX);lua_pop(from,1);
             }
         };
-        copy_globals(saved_globals);
+        lua_pushvalue(L,LUA_GLOBALSINDEX);
+        int lglobals=lua_gettop(L);
+        copy_into_chunk(L,lglobals);
+        lua_pop(L,1);
         lua_getfield(co,LUA_REGISTRYINDEX,"Headless.ExecutorEnvironment");
-        copy_globals(lua_gettop(co));
-        lua_pop(co,2); // executor environment, saved globals
+        copy_into_chunk(co,lua_gettop(co));
+        lua_pop(co,1);
     }
     auto load=[&]() {
         if(world)return world->load_script(co,"=user-source",bytecode,is_bytecode?"":source);
