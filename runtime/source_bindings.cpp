@@ -239,9 +239,11 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
     {
         const char* sweep=
             "local env=getfenv() "
+            "local wrapped={} "
             "for k,v in pairs(env) do "
-            "if type(v)==\"function\" and not iscclosure(v) then env[k]=newcclosure(v,k) end "
-            "end";
+            "if type(v)==\"function\" and not iscclosure(v) then "
+            "local w=wrapped[v]; if not w then w=newcclosure(v,k); wrapped[v]=w end; env[k]=w "
+            "end end";
         std::string bytecode=Luau::compile(sweep);
         if(luau_load(L,"=executor-c-sweep",bytecode.data(),bytecode.size(),0)!=0)lua_error(L);
         mark_executor_closure(L,-1);lua_call(L,0,0);
