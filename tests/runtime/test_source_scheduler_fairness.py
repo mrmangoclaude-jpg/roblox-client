@@ -36,7 +36,8 @@ class SchedulerFairnessTests(unittest.TestCase):
             for include in includes:
                 command += ['-I', str(include)]
             command += [str(Path(__file__).with_suffix('.cpp')),
-                        str(RUNTIME / 'source_scheduler.cpp'), str(RUNTIME / 'closure_bindings.cpp')]
+                        str(RUNTIME / 'source_scheduler.cpp'), str(RUNTIME / 'closure_bindings.cpp'),
+                        str(RUNTIME / 'api_trace.cpp')]
             command += [str(path) for path in libraries]
             command += ['-pthread', '-o', str(binary)]
             subprocess.run(command, check=True, timeout=180)

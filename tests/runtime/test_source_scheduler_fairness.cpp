@@ -103,7 +103,11 @@ task.delay(0.001,function() table.insert(order,"timer") end)
 
     // A large authored job gets a bounded larger turn; callbacks still get
     // their short turn, and both are capped by the transaction deadline.
+#ifdef _WIN32
+    _putenv_s("RCR_LUAU_LARGE_TEST","1");
+#else
     setenv("RCR_LUAU_LARGE_TEST","1",1);
+#endif
     lua_State* authored=lua_newthread(environment);
     const auto authored_code=Luau::compile("task.wait(.001);task.defer(function() callbackRan=true end);authoredRan=true");
     assert(luau_load(authored,"=authored-quantum",authored_code.data(),authored_code.size(),0)==0);
