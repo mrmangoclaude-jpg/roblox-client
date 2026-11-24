@@ -1,4 +1,5 @@
 #include "datetime_bindings.hpp"
+#include "platform_support.hpp"
 
 #include <lua.h>
 #include <lualib.h>
@@ -155,6 +156,8 @@ int from_universal_time(lua_State* L) {
 // including dates in a different daylight-saving season. Do not use mktime
 // with the requested date: that would apply historical DST rules instead.
 int64_t current_local_offset() {
+    long from_env=0;
+    if(timezone_offset_from_env(from_env))return static_cast<int64_t>(from_env)*1000;
     const std::time_t now=std::time(nullptr);
     std::tm local{};
 #ifdef _WIN32

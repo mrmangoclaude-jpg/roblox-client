@@ -48,10 +48,32 @@ inline bool host_entropy(void* data,size_t size) {
 #endif
 }
 
+// The Windows CRT ignores POSIX TZ strings (e.g. Etc/GMT+8), while Roblox and
+// the Studio probe harness honour them. Parse the common forms ourselves so
+// local-time conversion and os.date("%z") agree with Studio on every platform.
+// POSIX Etc/GMT+N / GMT-N invert the sign; bare +HH:MM offsets do not.
+inline bool timezone_offset_from_env(long& out_seconds)
+{
+    const char* env=std::getenv("TZ");
+    if(!env||!*env)return false;
+    const std::string text(env);
+    const size_t sign=text.find_first_of("+-");
+    if(sign==std::string::npos)return false;
+    int hours=0,minutes=0;
+    if(std::sscanf(text.c_str()+sign+1,"%d:%d",&hours,&minutes)<1)return false;
+    if(hours<0||hours>23||minutes<0||minutes>59)return false;
+    int direction=(text[sign]=='-')?-1:1;
+    if(sign>0)direction=-direction; // GMT/UTC prefix: POSIX inverted sign
+    out_seconds=static_cast<long>(direction)*(hours*3600+minutes*60);
+    return true;
+}
+
 // Seconds by which local wall-clock time is ahead of UTC. MinGW's _mkgmtime
 // misbehaves on this toolchain, so derive it from the civil date fields.
 inline long local_timezone_offset_seconds()
 {
+    long from_env=0;
+    if(timezone_offset_from_env(from_env))return from_env;
     std::time_t stamp=std::time(nullptr);
     std::tm local{}, utc{};
 #if defined(_WIN32)
