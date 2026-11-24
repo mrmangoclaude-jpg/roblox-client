@@ -49,7 +49,9 @@ folder:GetAttributeChangedSignal("Yield"):Once(function()
  yieldingCallback=true
 end)
 folder:SetAttribute("Yield",true)
-task.wait(0.01)
+-- Give the yielding Once callback enough scheduler time on slower hosts.
+-- The assertion is that it eventually resumes, not that it does so in 10 ms.
+task.wait(0.05)
 out.yieldingCallback=yieldingCallback
 local destroying=0
 local destroyedConnection=child1.Destroying:Connect(function()destroying+=1 end)
