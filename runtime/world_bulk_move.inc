@@ -64,6 +64,13 @@ int world_root_bulk_move(lua_State* L) {
             components[index].anchor=part;components[index].target=target;
         }
 
+        // A non-anchor part in a rigid component is moved by composing a delta
+        // with its current pose. If its rotation metadata was never replicated,
+        // fail the whole batch before any part is committed (Studio-verified).
+        for(const auto& component:components)for(auto* part:component.parts)
+            if(part!=component.anchor&&!pivot_frame(w,*part,"CFrame").rotation_known)
+                throw std::runtime_error("connected part rotation is unavailable");
+
         std::vector<EnginePoseWrite> writes;std::vector<Json> entries;size_t bytes=0;
         for(const auto& component:components) {
             CFrameValue delta;
