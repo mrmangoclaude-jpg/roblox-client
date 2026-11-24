@@ -1,9 +1,8 @@
 R"LOCALWORKSPACE(
 local files, folders = {}, {[""]=true}
 local bytes, entries = 0, 0
-local FILE_LIMIT, TOTAL_LIMIT, ENTRY_LIMIT = 100*1024*1024, 256*1024*1024, 512
-local MIN_FILE_LIMIT, MIN_TOTAL_LIMIT = 128*1024, 1024*1024
-local MAX_FILE_LIMIT, MAX_TOTAL_LIMIT = 100*1024*1024, 256*1024*1024
+local FILE_LIMIT, TOTAL_LIMIT, ENTRY_LIMIT = 128*1024, 1024*1024, 512
+local MAX_FILE_LIMIT, MAX_TOTAL_LIMIT = 64*1024*1024, 128*1024*1024
 local blockedExtensions={}
 for extension in ("exe com scr pif cpl msc bat cmd ps1 psd1 vbs vbe js jse wsf wsh hta scf lnk zip rar 7z cab iso img xml msi msp reg inf url"):gmatch("%S+") do
     blockedExtensions[extension]=true
@@ -68,11 +67,11 @@ function getfileinfo(p)
 end
 function setworkspacequota(fileBytes, totalBytes)
     assert(type(fileBytes)=="number" and fileBytes==fileBytes and fileBytes%1==0
-        and fileBytes>=MIN_FILE_LIMIT and fileBytes<=MAX_FILE_LIMIT,
-        "per-file quota must be an integer from 131072 to 104857600")
+        and fileBytes>=FILE_LIMIT and fileBytes<=MAX_FILE_LIMIT,
+        "per-file quota must be an integer from 131072 to 67108864")
     assert(type(totalBytes)=="number" and totalBytes==totalBytes and totalBytes%1==0
-        and totalBytes>=MIN_TOTAL_LIMIT and totalBytes<=MAX_TOTAL_LIMIT,
-        "total quota must be an integer from 1048576 to 268435456")
+        and totalBytes>=TOTAL_LIMIT and totalBytes<=MAX_TOTAL_LIMIT,
+        "total quota must be an integer from 1048576 to 134217728")
     local largest=0
     for _,value in files do largest=math.max(largest,#value) end
     assert(fileBytes>=largest,"per-file quota is below current workspace usage")
