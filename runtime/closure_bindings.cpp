@@ -69,6 +69,10 @@ int wrapped_continuation(lua_State* L,int status) {
 
 int clonefunction(lua_State* L) {
     luaL_checktype(L, 1, LUA_TFUNCTION);
+    // The public clone API only exposes Lua closures; native/C functions have
+    // no cloneable prototype and must raise.
+    if (clvalue(luaA_toobject(L, 1))->isC)
+        return luaL_error(L, "clonefunction: cannot clone a C closure"), 0;
     push_closure_clone(L,1);
     return 1;
 }

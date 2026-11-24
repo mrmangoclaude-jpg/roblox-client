@@ -63,6 +63,9 @@ static double lenient_component(lua_State* L, int index) {
 int udim_new(lua_State* L) {
     int n=lua_gettop(L);if(n>2){luaL_error(L,"UDim.new accepts at most two numbers");return 0;}
     double scale=n>=1?lenient_component(L,1):0, offset=n>=2?lenient_component(L,2):0;
+    // A non-number component is coerced to zero, but a numeric NaN/inf is
+    // rejected by Roblox's UDim constructor.
+    if(!std::isfinite(scale)){luaL_error(L,"UDim scale must be finite");return 0;}
     if(!valid_offset(offset)){luaL_error(L,"UDim offset exceeds the supported integer range");return 0;}
     // UDim stores pixel offsets as signed integers. Match native integer conversion.
     push_udim(L,{scale,static_cast<int32_t>(std::trunc(offset))});return 1;

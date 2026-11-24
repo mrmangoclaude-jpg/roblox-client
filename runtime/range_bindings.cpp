@@ -91,7 +91,7 @@ int number_range_equal(lua_State* L) {
 int number_range_tostring(lua_State* L) {
     auto* value = static_cast<NumberRangeValue*>(luaL_checkudata(L, 1, kNumberRangeMeta));
     char buffer[128];
-    int length = std::snprintf(buffer, sizeof(buffer), "%g %g ", value->min, value->max);
+    int length = std::snprintf(buffer, sizeof(buffer), "%g, %g", value->min, value->max);
     lua_pushlstring(L, buffer, static_cast<size_t>(length));
     return 1;
 }
