@@ -330,8 +330,12 @@ int cframe_fuzzy_eq(lua_State* L) {
     bool equal=true;
     for(size_t i=0;i<3;++i)equal=equal&&runtime_fuzzy_component(a->p[i],b->p[i],epsilon);
     // Orientation tolerance is the total relative angle, not a comparison of
-    // matrix elements (which would depend on the world-space basis).
-    equal=equal&&(a->r==b->r||frame_rotation_angle(L,a->r,b->r)<=std::fabs(epsilon)*(1+1e-12));
+    // matrix elements (which would depend on the world-space basis). The
+    // relative angle is reconstructed from float32 matrix components, so a
+    // small roundoff slack is required: Studio's own reference case 12 has an
+    // angle of 0.010000037 for epsilon 0.01 and must compare equal. The slack
+    // is far below the smallest false-case gap in that reference (0.012).
+    equal=equal&&(a->r==b->r||frame_rotation_angle(L,a->r,b->r)<=std::fabs(epsilon)*(1+1e-4));
     lua_pushboolean(L,equal);return 1;
 }
 
