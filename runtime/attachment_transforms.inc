@@ -59,7 +59,12 @@ Json attachment_value(World& w,Node& n,const std::string& key) {
         auto local=part_vector(attachment_value(w,n,"Position"));auto p=frame_rotate(parent.r,local);
         for(int i=0;i<3;++i)p[i]+=parent.p[i];return Json{{"$vector3",p}};
     }
-    auto frame=pivot_product(parent,pivot_frame(w,n,"CFrame"));
+    auto local=pivot_frame(w,n,"CFrame");
+    // A received rotation whose metadata was not replicated must stay unknown.
+    // WorldPosition (handled above) only needs translation; every other computed
+    // world pose needs the rotation, so never silently substitute identity.
+    if(!local.rotation_known)throw std::runtime_error("attachment rotation is unavailable");
+    auto frame=pivot_product(parent,local);
     auto fields=attachment_local_fields(pivot_encode(frame));return fields.at(key.substr(5));
 }
 std::string attachment_origin(World& w,const Node& n,const std::string& key) {
