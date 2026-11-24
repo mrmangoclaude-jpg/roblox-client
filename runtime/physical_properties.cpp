@@ -136,7 +136,7 @@ int physical_properties_new(lua_State* L) {
     value.elasticity_weight = count >= 5
         ? checked_clamped_number(L, 5, "ElasticityWeight", 0.0, 100.0) : 1.0f;
     value.acoustic_absorption = count == 6
-        ? checked_clamped_number(L, 6, "AcousticAbsorption", 0.0, 1.0) : 0.0f;
+        ? checked_clamped_number(L, 6, "AcousticAbsorption", 0.0, 1.0) : 1.0f;
     push_value(L, value);
     return 1;
 }

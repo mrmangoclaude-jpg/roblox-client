@@ -71,7 +71,7 @@ assert(typeof(three)=="PhysicalProperties")
 local function near(a,b)return math.abs(a-b)<1e-6 end
 assert(near(three.Density,.7) and near(three.Friction,.3) and near(three.Elasticity,.5))
 assert(three.FrictionWeight==1 and three.ElasticityWeight==1)
-assert(three.AcousticAbsorption==0)
+assert(three.AcousticAbsorption==1)
 assert(three==five and six~=five)
 assert(six.AcousticAbsorption==.25)
 for _,key in ipairs({"Density","Friction","Elasticity","FrictionWeight","ElasticityWeight","AcousticAbsorption"}) do
@@ -81,7 +81,7 @@ return three.Density,three.Friction,three.Elasticity,
        three.FrictionWeight,three.ElasticityWeight,three.AcousticAbsorption,
        six.AcousticAbsorption
 ''')
-        self.assertEqual(result["values"], [f32(.7), f32(.3), f32(.5), 1, 1, 0, .25])
+        self.assertEqual(result["values"], [f32(.7), f32(.3), f32(.5), 1, 1, 1, .25])
 
     def test_values_clamp_to_documented_engine_ranges(self):
         result = self.execute('''
