@@ -69,9 +69,11 @@ int wrapped_continuation(lua_State* L,int status) {
 
 int clonefunction(lua_State* L) {
     luaL_checktype(L, 1, LUA_TFUNCTION);
-    // The public clone API only exposes Lua closures; native/C functions have
-    // no cloneable prototype and must raise.
-    if (clvalue(luaA_toobject(L, 1))->isC)
+    // Public clone cannot reproduce an executor C closure that carries its
+    // own private state (upvalues). Plain native functions and newcclosure
+    // trampolines have no private state and remain cloneable.
+    auto* fn = clvalue(luaA_toobject(L, 1));
+    if (fn->isC && fn->nupvalues > 0)
         return luaL_error(L, "clonefunction: cannot clone a C closure"), 0;
     push_closure_clone(L,1);
     return 1;
@@ -171,10 +173,7 @@ int newcclosure(lua_State* L) {
         return 1;
     }
 
-    // The wrapped Lua function is kept as upvalue 1 of the native trampoline,
-    // so getupvalue(wrapped, 1) exposes the original implementation.
-    lua_pushvalue(L, 1);
-    lua_pushcclosurek(L, call_wrapped_function, name, 1, wrapped_continuation);
+    lua_pushcclosurek(L, call_wrapped_function, name, 0, wrapped_continuation);
     registry_table(L,kWrapped);lua_pushvalue(L,-2);lua_pushvalue(L,1);lua_rawset(L,-3);lua_pop(L,1);
 
     // Keep the visible environment consistent with the wrapped closure.
@@ -194,6 +193,14 @@ int isnewcclosure(lua_State* L) {
 int getupvalue(lua_State* L) {
     luaL_checktype(L, 1, LUA_TFUNCTION);
     const int index = luaL_checkinteger(L, 2);
+    // Executor getupvalue exposes the function behind a newcclosure wrapper
+    // even though the native trampoline itself reports zero real upvalues.
+    if (lua_iscfunction(L, 1) && lua_tocfunction(L, 1) == call_wrapped_function && index == 1) {
+        registry_table(L, kWrapped);
+        lua_pushvalue(L, 1); lua_rawget(L, -2); lua_remove(L, -2);
+        if (lua_isfunction(L, -1)) return 1;
+        lua_pop(L, 1);
+    }
     if (!lua_getupvalue(L, 1, index))
         lua_pushnil(L);
     return 1;
