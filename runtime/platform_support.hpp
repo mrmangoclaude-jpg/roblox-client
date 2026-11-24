@@ -57,6 +57,18 @@ inline bool timezone_offset_from_env(long& out_seconds)
     const char* env=std::getenv("TZ");
     if(!env||!*env)return false;
     const std::string text(env);
+    // Common fixed-offset IANA names. The Windows CRT ignores TZ entirely, so
+    // non-hour zones (a real Studio probe might set one) need an explicit map.
+    static const struct { const char* name; long seconds; } kNamed[] = {
+        {"UTC",0}, {"GMT",0}, {"Etc/UTC",0}, {"Etc/GMT",0},
+        {"Asia/Kathmandu",5*3600+45*60}, {"Asia/Kolkata",5*3600+30*60},
+        {"Asia/Shanghai",8*3600}, {"Asia/Tokyo",9*3600},
+        {"Australia/Eucla",8*3600+45*60},
+    };
+    for(const auto& item : kNamed) if(text==item.name) {
+        out_seconds=item.seconds;
+        return true;
+    }
     const size_t sign=text.find_first_of("+-");
     if(sign==std::string::npos)return false;
     int hours=0,minutes=0;
