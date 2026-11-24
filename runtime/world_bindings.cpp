@@ -1828,7 +1828,9 @@ Node* ensure_client_service(World& w,const std::string& service) {
     }
     if(w.nodes.size()>=kMaxNodes)throw std::runtime_error("world node limit exceeded");
     Node node;do{node.id="local:"+std::to_string(w.next_local_id++);}while(w.nodes.count(node.id));node.class_name=service;
-    node.name=service;node.parent=w.game_id;node.server_owned=false;node.attributes_known=true;node.collection_tags_known=true;
+    // Studio names this service instance "Run Service" (verified by a live
+    // client probe); its ClassName and GetService key remain "RunService".
+    node.name=service=="RunService"?"Run Service":service;node.parent=w.game_id;node.server_owned=false;node.attributes_known=true;node.collection_tags_known=true;
     node.properties["Archivable"]=true;node.origins["Archivable"]="class_default";
     node.origins=Json{{"Name","local"},{"ClassName","local"},{"Parent","local"}};
     std::vector<Json> entries{Json{{"kind","create"},{"node",node_record(node)}}};check_mutation_budget(w,entries);
