@@ -48,7 +48,9 @@ namespace {
 using Clock = std::chrono::steady_clock;
 constexpr size_t kMaxSource = 100 * 1024 * 1024;
 constexpr size_t kMaxResult = 256 * 1024;
-constexpr size_t kMaxOutput = 300 * 1024;
+// Match the Rust host's 8 MiB response frame: large world mutations from
+// bulk-pose batches legitimately exceed the old 300 KiB diagnostic cap.
+constexpr size_t kMaxOutput = 8 * 1024 * 1024;
 constexpr size_t kMaxWorldSnapshot = 8 * 1024 * 1024;
 
 struct Limits {
