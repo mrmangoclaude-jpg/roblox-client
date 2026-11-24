@@ -84,7 +84,7 @@ CastWitness cast_convex_distance(Support support,size_t& work) {
         for(double& v:normal)v/=closest.distance;
         const auto next=support({-normal[0],-normal[1],-normal[2]});
         const double gap=query_dot(next.delta,normal);
-        if(closest.distance-gap<=1e-10*std::max(1.0,closest.distance))return closest;
+        if(closest.distance-gap<=1e-9*std::max(1.0,closest.distance))return closest;
         if(simplex.count==4)throw std::runtime_error("convex cast simplex did not converge");
         simplex.vertices[simplex.count++]=next;
     }
