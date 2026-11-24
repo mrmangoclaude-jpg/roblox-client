@@ -3,3 +3,4 @@ ui/world-viewer.js -whitespace linguist-generated=true
 vendor/** -whitespace linguist-vendored=true
 vendor/roblox-player-scripts-745/** -text
 tests/fixtures/unc_environment.luau -whitespace
+tests/fixtures/references/enums/*.yaml text eol=lf
