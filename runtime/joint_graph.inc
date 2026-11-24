@@ -185,6 +185,11 @@ bool joint_part_write(lua_State* L,World& w,Node& n,const std::string& key) {
     if(!part_transform_key(key)||!pivot_part(w,n))return false;
     JointGraph graph(w);auto connected=graph.connected(n,true);
     if(connected.empty())return false;
+    // Propagating a pose needs every connected part's current rotation. A
+    // received CFrame whose rotation metadata was not replicated must fail the
+    // whole write before any part is moved (Studio-verified atomicity).
+    for(auto* part:connected)if(!pivot_frame(w,*part,"CFrame").rotation_known)
+        throw std::runtime_error("connected part rotation is unavailable");
     if(key=="CFrame"){if(!has_meta(L,3,kCFrameMeta))throw std::runtime_error("CFrame must be a CFrame");}
     else if(!lua_isvector(L,3))throw std::runtime_error("part transform must be a Vector3");
     auto before=part_transform_state(w,n);auto after=prepare_part_transform(w,n,Json{{key,convert_lua_value(L,w,3)}});
