@@ -11,7 +11,7 @@ struct CastSimplex {
     int count=0;
 };
 struct CastWitness {FrameVector delta,target;double distance;};
-constexpr double kCastContactTolerance=1e-8;
+constexpr double kCastContactTolerance=1e-7;
 
 bool cast_affine_weights(const CastSimplex& simplex,const std::array<int,4>& indices,
                          int count,std::array<double,4>& weights) {
@@ -76,7 +76,7 @@ template<typename Support>
 CastWitness cast_convex_distance(Support support,size_t& work) {
     CastSimplex simplex;
     simplex.vertices[simplex.count++]=support({1,0,0});
-    for(int i=0;i<96;++i) {
+    for(int i=0;i<256;++i) {
         query_work(work,16);
         const auto closest=cast_reduce_simplex(simplex);
         if(closest.distance<=kCastContactTolerance)return closest;
@@ -97,7 +97,7 @@ std::optional<ConvexContact> cast_convex(const FrameVector& direction,double lim
         MovingSupport moving,TargetSupport target,size_t& work) {
     double travel=0;
     FrameVector previous_normal{};
-    for(int i=0;i<96;++i) {
+    for(int i=0;i<256;++i) {
         auto support=[&](const FrameVector& axis) {
             const auto target_point=target(FrameVector{-axis[0],-axis[1],-axis[2]});
             return CastVertex{query_subtract(cast_add_scaled(moving(axis),direction,travel),target_point),target_point};
