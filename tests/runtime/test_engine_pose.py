@@ -27,7 +27,7 @@ class EnginePoseTests(unittest.TestCase):
         })
         host_path = Path(os.environ.get('ENGINE_POSE_PERSISTENT_HOST',
                                        os.environ.get('CFRAME_PERSISTENT_HOST',
-                                                      str(ROOT / 'rust-client/target/release/headless-luau'))))
+                                                      str(persistent_runtime.RUST_HOST))))
         with mock.patch.object(persistent_runtime, 'RUST_HOST', host_path):
             self.host = persistent_runtime.PersistentLuauHost(copy.deepcopy(self.snapshot))
         self.addCleanup(self.host.close)
@@ -92,7 +92,7 @@ assert(client.propertyOrigin(root,"CFrame")=="received")
         self.host.close()
         host_path = Path(os.environ.get('ENGINE_POSE_PERSISTENT_HOST',
                                        os.environ.get('CFRAME_PERSISTENT_HOST',
-                                                      str(ROOT / 'rust-client/target/release/headless-luau'))))
+                                                      str(persistent_runtime.RUST_HOST))))
         with mock.patch.object(persistent_runtime, 'RUST_HOST', host_path):
             self.host = persistent_runtime.PersistentLuauHost(copy.deepcopy(self.snapshot))
         self.execute('''
