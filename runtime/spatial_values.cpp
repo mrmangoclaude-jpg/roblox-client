@@ -68,9 +68,10 @@ void push_region(lua_State* L, const std::array<float, 3>& minimum,
 }
 
 int region_new(lua_State* L) {
-    const std::array<float, 3> zero{0, 0, 0};
-    const auto minimum = lua_isnone(L, 1) ? zero : checked_vector(L, 1);
-    const auto maximum = lua_isnone(L, 2) ? zero : checked_vector(L, 2);
+    // Studio requires both min and max Vector3 arguments; a missing argument
+    // is an error, not a zero vector.
+    const auto minimum = checked_vector(L, 1);
+    const auto maximum = checked_vector(L, 2);
     push_region(L, minimum, maximum);
     return 1;
 }
