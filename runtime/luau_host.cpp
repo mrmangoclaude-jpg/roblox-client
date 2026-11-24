@@ -267,7 +267,22 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
     }
     // Keep authored globals in a shared overlay, while getgenv returns the
     // executor root. Raw getfenv writes must not change that root table.
-    if(source_bindings){luaL_sandboxthread(co);lua_setsafeenv(co,LUA_GLOBALSINDEX,false);}
+    if(source_bindings){
+        luaL_sandboxthread(co);lua_setsafeenv(co,LUA_GLOBALSINDEX,false);
+        // Real executors expose their API in the chunk's globals as well as
+        // through getgenv(). The sandbox overlay starts empty, so copy the
+        // executor environment into it without making it the same table (raw
+        // getfenv writes must still leave the executor root untouched).
+        lua_getfield(co,LUA_REGISTRYINDEX,"Headless.ExecutorEnvironment");
+        if(lua_istable(co,-1)){
+            lua_pushnil(co);
+            while(lua_next(co,-2)){
+                lua_pushvalue(co,-2);lua_pushvalue(co,-2);
+                lua_settable(co,LUA_GLOBALSINDEX);lua_pop(co,1);
+            }
+        }
+        lua_pop(co,1);
+    }
     auto load=[&]() {
         if(world)return world->load_script(co,"=user-source",bytecode,is_bytecode?"":source);
         auto payload=protected_scripts->make(is_bytecode?"":source,bytecode);
