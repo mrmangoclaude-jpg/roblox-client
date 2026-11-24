@@ -26,26 +26,12 @@ static int enums_index(lua_State* L) {
 }
 static int enums_tostring(lua_State* L) { lua_pushliteral(L,"Enums"); return 1; }
 static int enums_readonly(lua_State* L) { luaL_error(L,"%s is not a valid member of Enums",lua_tostring(L,2)?lua_tostring(L,2):"?"); return 0; }
-// Roblox's Enums userdata is iterable (`for name, enum in pairs(Enum) do`).
-static int enums_next(lua_State* L) {
-    lua_settop(L,2);
-    return lua_next(L,1) ? 2 : 0;
-}
-static int enums_pairs(lua_State* L) {
-    luaL_checkudata(L,1,kEnumsMeta);
-    lua_getfield(L,LUA_REGISTRYINDEX,"Headless.EnumCatalog");
-    lua_pushcfunction(L,enums_next,"next");
-    lua_pushvalue(L,-2);
-    lua_pushnil(L);
-    return 3;
-}
 // The engine exposes Enum as opaque userdata (typeof "Enums"), not a table.
 // Build the catalog as a table so the install_* helpers populate it unchanged,
 // then hide it behind a userdata wrapper whose __index reads the catalog.
 void install_enum_root(lua_State* L) {
     if(luaL_newmetatable(L,kEnumsMeta)) {
         lua_pushcfunction(L,enums_index,"__index");lua_setfield(L,-2,"__index");
-        lua_pushcfunction(L,enums_pairs,"__pairs");lua_setfield(L,-2,"__pairs");
         lua_pushcfunction(L,enums_tostring,"__tostring");lua_setfield(L,-2,"__tostring");
         lua_pushcfunction(L,enums_readonly,"__newindex");lua_setfield(L,-2,"__newindex");
         lua_pushliteral(L,"Enums");lua_setfield(L,-2,"__type");

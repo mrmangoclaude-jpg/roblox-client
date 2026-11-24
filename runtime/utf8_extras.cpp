@@ -327,33 +327,8 @@ static int roblox_os_date(lua_State* L)
     return 1;
 }
 
-// Roblox's Luau honours __pairs on userdata (notably Enum). Stock Luau's
-// pairs() hard-requires a table, so wrap it; the C-function name is kept as
-// "pairs" so debug.info still reports the exact same slnaf fingerprint.
-static int roblox_pairs(lua_State* L)
-{
-    if(lua_type(L,1)==LUA_TUSERDATA) {
-        if(luaL_getmetafield(L,1,"__pairs")!=LUA_TNIL) {
-            lua_pushvalue(L,1);
-            lua_call(L,1,3);
-            return 3;
-        }
-    }
-    lua_pushvalue(L,lua_upvalueindex(1));
-    lua_pushvalue(L,1);
-    lua_call(L,1,3);
-    return 3;
-}
-static void install_roblox_pairs(lua_State* L)
-{
-    lua_getglobal(L,"pairs");
-    lua_pushcclosurek(L,roblox_pairs,"pairs",1,nullptr);
-    lua_setglobal(L,"pairs");
-}
-
 void install_roblox_os_layout(lua_State* L)
 {
-    install_roblox_pairs(L);
     lua_getglobal(L, "os");
     if (!lua_istable(L, -1))
     {

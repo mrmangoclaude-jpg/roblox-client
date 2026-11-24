@@ -122,7 +122,9 @@ end
 local root=Enum
 local all=root:GetEnums()
 local count=0
-for name,value in pairs(root)do if typeof(value)=="Enum" then count+=1 end end
+-- The real client's `pairs(Enum)` errors (Enums is opaque userdata), so count
+-- through the supported GetEnums API instead of asserting non-Roblox behavior.
+for _,value in ipairs(all)do if typeof(value)=="Enum" then count+=1 end end
 assert(#all==count and count>10)
 local seen={}
 for i,value in ipairs(all)do
