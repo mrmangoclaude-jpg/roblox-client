@@ -125,18 +125,28 @@ int rect_new(lua_State* L) {
         lua_error(L);
         return 0;
     }
-    // Roblox coerces unusable Rect components to zero (Rect.new("x",1,1,1) == 0,1,1,1).
-    auto lenient = [](lua_State* L, int index) -> float {
+    // Roblox coerces unusable Rect components to zero (Rect.new("x",1,1,1) == 0,1,1,1),
+    // but a numeric value that is not representable as a float is rejected
+    // rather than silently converted to infinity (Studio-verified: 3.5e38 errors,
+    // FLT_MAX is accepted).
+    auto lenient = [](lua_State* L, int index) -> double {
         int type = lua_type(L, index);
-        double value = (type == LUA_TNUMBER || (type == LUA_TSTRING && lua_isnumber(L, index)))
+        return (type == LUA_TNUMBER || (type == LUA_TSTRING && lua_isnumber(L, index)))
             ? lua_tonumber(L, index) : 0.0;
-        return static_cast<float>(value);
     };
-    float min_x = lenient(L, 1);
-    float min_y = lenient(L, 2);
-    float max_x = lenient(L, 3);
-    float max_y = lenient(L, 4);
-    push_rect(L, min_x, min_y, max_x, max_y);
+    double min_x = lenient(L, 1);
+    double min_y = lenient(L, 2);
+    double max_x = lenient(L, 3);
+    double max_y = lenient(L, 4);
+    const double float_max = static_cast<double>(std::numeric_limits<float>::max());
+    if (!std::isfinite(min_x) || !std::isfinite(min_y) || !std::isfinite(max_x) || !std::isfinite(max_y)
+        || std::abs(min_x) > float_max || std::abs(min_y) > float_max
+        || std::abs(max_x) > float_max || std::abs(max_y) > float_max) {
+        luaL_error(L, "Rect coordinates must be finite and representable as floats");
+        return 0;
+    }
+    push_rect(L, static_cast<float>(min_x), static_cast<float>(min_y),
+              static_cast<float>(max_x), static_cast<float>(max_y));
     return 1;
 }
 
