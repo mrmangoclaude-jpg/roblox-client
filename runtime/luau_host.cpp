@@ -276,8 +276,12 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
             if(!lua_istable(from,index))return;
             lua_pushnil(from);
             while(lua_next(from,index)){
+                // from stack: table, key, value -- move copies of key/value
+                // onto the chunk thread before assigning into its globals.
                 lua_pushvalue(from,-2);lua_pushvalue(from,-2);
-                lua_settable(co,LUA_GLOBALSINDEX);lua_pop(from,1);
+                lua_xmove(from,co,2);
+                lua_settable(co,LUA_GLOBALSINDEX);
+                lua_pop(from,1);
             }
         };
         lua_pushvalue(L,LUA_GLOBALSINDEX);
