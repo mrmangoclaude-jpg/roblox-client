@@ -170,8 +170,11 @@ int color_to_hsv(lua_State* L) {
         if (maximum == r) hue = std::fmod((g - b) / delta, 6.0f);
         else if (maximum == g) hue = (b - r) / delta + 2.0f;
         else hue = (r - g) / delta + 4.0f;
-        hue /= 6.0f;
-        if (hue < 0.0f) hue += 1.0f;
+        // Roblox wraps a negative sector in float32 BEFORE dividing by six.
+        // Dividing first and adding one afterwards differs by one float32 ULP
+        // for channels such as (123, 45, 67).
+        if (hue < 0.0f) hue = std::fmod(hue + 6.0f, 6.0f);
+        hue = hue / 6.0f;
         // Roblox represents fully saturated red as hue 1 in ToHSV.
         if (hue == 0.0f) hue = 1.0f;
     }
