@@ -23,7 +23,7 @@ if sys.pycache_prefix is None:
 os.environ.setdefault('PYTHONPYCACHEPREFIX', sys.pycache_prefix)
 
 from join_allocation import write_private
-from roblox_session import ROOT, SessionError
+from roblox_session import ROOT, REPO_ROOT, SessionError
 from run_world_luau import read_source
 from script_console import send_source, send_request
 from run_ussi import resolve_export_path
@@ -56,7 +56,9 @@ def log(message, kind="info"):
 
 def selection_command(target):
     if target.isascii() and target.isdigit() and 1 <= int(target) < 2**53:
-        return [sys.executable, str(ROOT / 'scripts/select_test_place.py'),
+        # Scripts always live in the repository; ROOT is the state root when
+        # ROVE_STATE_ROOT is set, and that directory has no scripts/ tree.
+        return [sys.executable, str(REPO_ROOT / 'scripts/select_test_place.py'),
                 '--place-id', str(int(target))]
     parsed = urlsplit(target)
     query = parse_qs(parsed.query)
@@ -65,7 +67,7 @@ def selection_command(target):
             and parsed.path in ('/share', '/share-links')
             and query.get('type') == ['Server'] and len(codes) == 1
             and re.fullmatch(r'[a-fA-F0-9]{32}', codes[0])):
-        return [sys.executable, str(ROOT / 'scripts/select_private_server.py')]
+        return [sys.executable, str(REPO_ROOT / 'scripts/select_private_server.py')]
     raise ValueError('Enter a numeric place ID or a Roblox /share?code=…&type=Server link.')
 
 
@@ -103,7 +105,7 @@ def session_command(place_id, duration, *, physics=True, walk_for_minute=False, 
     if log_level not in ('verbose','normal','off'): raise ValueError('Invalid log level')
     if walk_for_minute and not physics:
         raise ValueError('The one-minute walk requires physics')
-    command = [sys.executable, '-u', str(ROOT / 'scripts/game_session.py'),
+    command = [sys.executable, '-u', str(REPO_ROOT / 'scripts/game_session.py'),
                '--refresh', '--protocol-sync', '--luau-range', '--ticket',
                '--time-sync', '--bytecode-auth', '--require-spawn',
                '--duration', str(duration), '--progress', '--script-console',
@@ -231,7 +233,7 @@ def parse_saveinstance_command(line):
 
 def saveinstance_command(socket_path, output, object_path=None):
     """Build a direct argv for the exporter; never start a command shell."""
-    command = [sys.executable, '-u', str(ROOT / 'scripts/run_ussi.py'),
+    command = [sys.executable, '-u', str(REPO_ROOT / 'scripts/run_ussi.py'),
                '--socket', str(socket_path), '--output', str(output)]
     if object_path is not None:
         command.extend(['--object', object_path])
