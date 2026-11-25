@@ -89,7 +89,6 @@ private:
         size_t sleeping_frame=0;
     };
     void set_owner(Task& task,const std::string& owner);
-    void set_callback_globals(lua_State* child);
     lua_State* main_;
     Clock::time_point deadline_;
     Clock::time_point started_=Clock::now();

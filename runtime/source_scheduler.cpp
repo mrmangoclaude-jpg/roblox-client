@@ -337,30 +337,15 @@ int SourceScheduler::task_api_inner(lua_State* L) {
     }
     return 1; // The new/existing thread was retained on this caller's stack.
 }
-// A callback runs on its registering script's owner but with the executor
-// globals available: inheriting a ModuleScript's restricted environment would
-// hide getcallingscript()/checkcaller() from the callback.
-void SourceScheduler::set_callback_globals(lua_State* child) {
-    // main_ is the root VM state, whose globals lack the executor bindings.
-    // The executor root is the registry table exposed by getgenv().
-    lua_getfield(child,LUA_REGISTRYINDEX,"Headless.ExecutorEnvironment");
-    lua_replace(child,LUA_GLOBALSINDEX);
-    // The callback closure was compiled with its registering script's fenv;
-    // a thread-globals change alone would not expose executor functions.
-    if(lua_isfunction(child,1)){
-        lua_pushvalue(child,LUA_GLOBALSINDEX);
-        lua_setfenv(child,1);
-    }
-}
 lua_State* SourceScheduler::callback_now(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,const std::string& owner_name,int callback_identity) {
     lua_State* child=lua_newthread(from);auto& task=track(child);
-    lua_getref(child,reference);set_callback_globals(child);task.arguments=arguments(child);
+    lua_getref(child,reference);task.arguments=arguments(child);
     set_owner(task,owner_name);if(callback_identity>=0)set_identity(child,callback_identity);
     task.state=Ready;resume(task,from);return child;
 }
 lua_State* SourceScheduler::callback(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,std::function<bool()> guard,const std::string& owner_name,int callback_identity) {
     lua_State* child=lua_newthread(from);auto& task=track(child);lua_pop(from,1);
-    lua_getref(child,reference);set_callback_globals(child);task.arguments=arguments(child);task.state=Ready;task.guard=std::move(guard);set_owner(task,owner_name);
+    lua_getref(child,reference);task.arguments=arguments(child);task.state=Ready;task.guard=std::move(guard);set_owner(task,owner_name);
     if(callback_identity>=0)set_identity(child,callback_identity);
     enqueue(task);return child;
 }
@@ -370,7 +355,7 @@ void SourceScheduler::wait_signal(lua_State* thread) {
 lua_State* SourceScheduler::invoke_callback(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,const std::string& owner_name,int callback_identity) {
     lua_State* child=lua_newthread(from);auto& task=track(child);lua_pop(from,1);
     try {
-        lua_getref(child,reference);set_callback_globals(child);task.arguments=arguments(child);
+        lua_getref(child,reference);task.arguments=arguments(child);
         set_owner(task,owner_name);if(callback_identity>=0)set_identity(child,callback_identity);
         task.retained=true;task.report_errors=false;task.state=Ready;
         enqueue(task);return child;
