@@ -266,27 +266,35 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
     for(const char* library:{"debug","cache","crypt","base64","Drawing","WebSocket","http","fs","filesystem"}) {
         lua_getglobal(L,library);
         if(lua_istable(L,-1)) {
+            const int table=lua_gettop(L);
+            // Collect alias replacements first: mutating a table while it is
+            // being traversed with lua_next has undefined behaviour.
+            std::vector<std::pair<int,int>> replacements; // registry refs: key, wrapper
             lua_pushnil(L);
-            while(lua_next(L,-2)) {
+            while(lua_next(L,table)) {
                 bool engine_debug=std::strcmp(library,"debug")==0&&lua_type(L,-2)==LUA_TSTRING&&
                     (std::strcmp(lua_tostring(L,-2),"info")==0||std::strcmp(lua_tostring(L,-2),"traceback")==0);
                 if(lua_isfunction(L,-1)&&!engine_debug) {
-                    // A library member that aliases a wrapped global must share
-                    // the exact same wrapper object (http.request == request).
-                    const int value=lua_gettop(L);          // stack: [t][k][v]
+                    const int value=lua_gettop(L);
                     lua_getfield(L,LUA_REGISTRYINDEX,"Headless.ExecutorWrappers");
-                    lua_pushvalue(L,value);lua_rawget(L,value+1); // push W
+                    lua_pushvalue(L,value);lua_rawget(L,value+1);
                     if(lua_isfunction(L,value+2)&&!lua_rawequal(L,value+2,value)) {
-                        lua_setreadonly(L,value-2,false);
-                        lua_pushvalue(L,value-1);           // key
-                        lua_pushvalue(L,value+2);           // wrapper
-                        lua_settable(L,value-2);            // t[k] = wrapper
-                        lua_setreadonly(L,value-2,true);
+                        int key=lua_ref(L,value-1),wrapper=lua_ref(L,value+2);
+                        replacements.emplace_back(key,wrapper);
                     }
-                    lua_pop(L,2);                            // W, wrapped
+                    lua_pop(L,2);
                     mark_executor_closure(L,value);
                 }
                 lua_pop(L,1);
+            }
+            if(!replacements.empty()) {
+                bool was_readonly=lua_getreadonly(L,table);
+                lua_setreadonly(L,table,false);
+                for(auto& [key,wrapper]:replacements) {
+                    lua_getref(L,key);lua_getref(L,wrapper);lua_settable(L,table);
+                    lua_unref(L,key);lua_unref(L,wrapper);
+                }
+                lua_setreadonly(L,table,was_readonly);
             }
         }
         lua_pop(L,1);

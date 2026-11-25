@@ -114,6 +114,10 @@ def prepare(session):
     manifest = json.loads((ROOT/"vendor/ussi-bundle.json").read_text())
     for target, path in files.items():
         data = path.read_bytes()
+        # The pinned manifest was generated with LF line endings. Windows
+        # checkouts use CRLF, so normalize before hashing and uploading; an
+        # actual content change is still caught (it changes the LF hash too).
+        data = data.replace(b'\r\n', b'\n')
         relative = path.relative_to(ROOT).as_posix()
         if hashlib.sha256(data).hexdigest() != manifest["files"][relative]:
             raise RuntimeError("Bundled dependency checksum mismatch: " + relative)
