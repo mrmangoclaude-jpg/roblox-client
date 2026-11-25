@@ -663,7 +663,7 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                     current().emit('runtime.feed', world_revision=getattr(script_runtime.world, 'revision', None),
                                    host_revision=script_runtime.revision,
                                    catalog_streamed=script_runtime.startup_catalog_streamed(),
-                                   initial_replication_complete=bool(script_runtime.initial_replication_complete),
+                                   initial_replication_complete=bool(getattr(script_runtime, 'initial_replication_complete', False)),
                                    catalog_pending=script_runtime._pending_script_catalog is not None,
                                    catalog_catchup_needed=bool(script_runtime._catalog_catchup_needed),
                                    catalog_entries=len(script_runtime.script_catalog or ()),
