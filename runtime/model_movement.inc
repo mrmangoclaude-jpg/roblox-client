@@ -55,6 +55,18 @@ int model_move_legacy(lua_State* L) {
             writes.push_back({&n,std::move(before),std::move(after)});
         };
         auto nodes=pivot_descendants(w,*h->node,true);
+        // Every descendant must have a complete pose before any write is staged;
+        // otherwise a part whose rotation was not replicated would silently be
+        // moved with an assumed identity rotation. Fail the whole batch so it
+        // stays atomic and retryable once the received state is complete.
+        for(auto* node:nodes)if(pivot_part(w,*node)&&node!=primary) {
+            auto frame=pivot_frame(w,*node,"CFrame");
+            if(!frame.rotation_known)throw std::runtime_error("part rotation is unavailable");
+        }
+        if(primary) {
+            auto frame=pivot_frame(w,*primary,"CFrame");
+            if(!frame.rotation_known)throw std::runtime_error("primary part rotation is unavailable");
+        }
         for(auto* node:nodes) {
             if(pivot_part(w,*node)) {
                 auto frame=node==primary?target:moved(pivot_frame(w,*node,"CFrame"));
