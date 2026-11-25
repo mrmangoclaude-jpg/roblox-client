@@ -5,7 +5,9 @@ assert(range.Min == -2 and range.Max == 7)
 assert(single == NumberRange.new(3.5))
 assert(single ~= range)
 assert(typeof(range) == "NumberRange")
-assert(tostring(range) == "-2, 7")
+-- Studio renders NumberRange as two %g values separated by a space with a
+-- trailing space (deobf's Studio-verified datatype model); Luraph hashes this.
+assert(tostring(range) == "-2 7 ")
 assert(not pcall(function() NumberRange.new(2, 1) end))
 assert(not pcall(function() NumberRange.new(0/0) end))
 assert(not pcall(function() single.Min = 0 end))
