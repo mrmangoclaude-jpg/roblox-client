@@ -2956,7 +2956,9 @@ World parse_snapshot(const std::string& text) {
     Json root=Json::parse(text);
     if(!root.is_object()||root.value("version",0)!=1)throw std::runtime_error("unsupported world snapshot version");
     if(!root.contains("nodes")||!root["nodes"].is_array()||root["nodes"].size()>kMaxNodes)throw std::runtime_error("snapshot nodes must be an array of at most "+std::to_string(kMaxNodes)+" records");
-    if(!root.contains("services")||!root["services"].is_object()||root["services"].size()>128)throw std::runtime_error("snapshot services must be an object");
+    // Real Roblox DataModels routinely expose more than 128 services; the
+    // old cap rejected faithfully captured snapshots.
+    if(!root.contains("services")||!root["services"].is_object()||root["services"].size()>512)throw std::runtime_error("snapshot services must be an object");
     World w;
     if(root.contains("session_stats"))w.session_stats=validated_session_stats(root.at("session_stats"));
     if(root.contains("input_capabilities"))w.input_capabilities=validated_input_capabilities(root.at("input_capabilities"));

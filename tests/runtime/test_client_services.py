@@ -32,6 +32,21 @@ def with_debris_service():
     return snapshot
 
 
+def with_many_services():
+    """A captured DataModel can expose well over 128 services (real Roblox does)."""
+    snapshot = copy.deepcopy(SNAPSHOT)
+    for i in range(130):
+        name = 'ProbeService%03d' % i
+        node_id = 'scope:probe-service-%03d' % i
+        snapshot['class_parents'][name] = 'Instance'
+        snapshot['nodes'].append({
+            'id': node_id, 'class_name': name, 'name': name,
+            'parent': None, 'properties': {},
+        })
+        snapshot['services'][name] = node_id
+    return snapshot
+
+
 def with_negative_id_player():
     snapshot = with_debris_service()
     snapshot['nodes'].extend([
@@ -103,6 +118,18 @@ return game == Game, workspace == Workspace,
 ''')
         self.assertTrue(result['ok'], result)
         self.assertEqual(result['values'], [True, True, 'Instance', 'Instance', True, 'DataModel', True, True, True, True])
+
+    def test_snapshot_with_more_than_128_services_loads(self):
+        host = persistent_runtime.PersistentLuauHost(with_many_services())
+        self.addCleanup(host.close)
+        result = host.call({
+            'op': 'execute',
+            'source': 'return game:GetService("ProbeService129").Name, '
+                      'game:GetService("Workspace").ClassName',
+            'timeout_ms': 1000,
+        })
+        self.assertTrue(result.get('ok'), result)
+        self.assertEqual(result['values'], ['ProbeService129', 'Workspace'])
 
     def test_encoding_service_base64_uses_buffers(self):
         result = self.execute('''
