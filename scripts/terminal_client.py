@@ -504,9 +504,10 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
-    if not sys.stdin.isatty():
+    if not sys.stdin.isatty() and not os.environ.get('ROVE_ALLOW_PIPED_STDIN'):
         raise SystemExit('Run this in an interactive terminal')
-    target = args.place or input('Roblox place ID or private server share link: ').strip()
+    target = args.place or ('' if not sys.stdin.isatty() else
+                            input('Roblox place ID or private server share link: ').strip())
     place_id = prepare_target(target)
     log(f'Target verified: place {place_id}. Requesting a fresh join.', 'join')
     process = subprocess.Popen(session_command(place_id, args.duration,
