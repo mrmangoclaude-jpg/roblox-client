@@ -243,11 +243,7 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
             "for k,v in pairs(env) do "
             "if type(v)==\"function\" and not iscclosure(v) then "
             "local w=wrapped[v]; if not w then w=newcclosure(v,k); wrapped[v]=w end; env[k]=w "
-            "end end "
-            "-- Library members must alias the same wrapped function object as "
-            "-- their global names (real executors expose one closure per API). "
-            "if type(env.http)=='table' and type(env.request)=='function' then "
-            "pcall(function() env.http.request=env.request end) end";
+            "end end";
         std::string bytecode=Luau::compile(sweep);
         if(luau_load(L,"=executor-c-sweep",bytecode.data(),bytecode.size(),0)!=0)lua_error(L);
         mark_executor_closure(L,-1);lua_call(L,0,0);
