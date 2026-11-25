@@ -664,9 +664,9 @@ def _run_session(args, *, ping_stats_provider=None, ping_status_provider=None, r
                                    host_revision=script_runtime.revision,
                                    catalog_streamed=script_runtime.startup_catalog_streamed(),
                                    initial_replication_complete=bool(getattr(script_runtime, 'initial_replication_complete', False)),
-                                   catalog_pending=script_runtime._pending_script_catalog is not None,
-                                   catalog_catchup_needed=bool(script_runtime._catalog_catchup_needed),
-                                   catalog_entries=len(script_runtime.script_catalog or ()),
+                                   catalog_pending=getattr(script_runtime, '_pending_script_catalog', None) is not None,
+                                   catalog_catchup_needed=bool(getattr(script_runtime, '_catalog_catchup_needed', False)),
+                                   catalog_entries=len(getattr(script_runtime, 'script_catalog', None) or ()),
                                    initial_tag_seen=13 in getattr(script_runtime.world, 'tags', ()),
                                    host_timing={op: [round(v, 3) if isinstance(v, float) else v for v in row]
                                                 for op, row in dict(getattr(script_runtime.host, 'timing', {})).items()})
