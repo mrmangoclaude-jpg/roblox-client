@@ -87,7 +87,16 @@ CFrameValue joint_relative_frame(World& w,Node& joint,const Json& override_field
         return pivot_frame(w,joint,key);
     };
     auto c0=get("C0"),c1=get("C1");
-    if(joint.class_name=="Motor6D")c0=pivot_product(c0,get("Transform"));
+    // A joint offset or motor transform must carry rotation metadata. The
+    // replication wire can omit it, but solving with a silently assumed
+    // identity (or stale) rotation produces a wrong pose; reject the whole
+    // batch instead so the received transaction stays atomic and retryable.
+    if(!c0.rotation_known||!c1.rotation_known)throw std::runtime_error("joint offset rotation is unavailable");
+    if(joint.class_name=="Motor6D") {
+        auto transform=get("Transform");
+        if(!transform.rotation_known)throw std::runtime_error("motor transform rotation is unavailable");
+        c0=pivot_product(c0,transform);
+    }
     return pivot_product(c0,pivot_inverse(c1));
 }
 PoseChanges prepare_joint_poses(World& w,JointGraph& graph,Node& root,const std::unordered_map<std::string,Json>& modified,bool pending,const std::unordered_set<std::string>& authoritative={}) {
@@ -221,6 +230,22 @@ void flush_joint_poses(World& w,std::unordered_set<std::string> pending,const st
     const bool authored_motor=!w.pending_motor_transforms.empty();
     pending.insert(w.pending_motor_transforms.begin(),w.pending_motor_transforms.end());w.pending_motor_transforms.clear();
     try {
+        // Reject a received joint pose that lacks rotation metadata before any
+        // member of the batch is committed. Roblox joint offsets are full
+        // CFrames; a translation-only wire value would otherwise be solved
+        // with a silently assumed rotation. The transaction stays atomic.
+        for(const auto& id:pending) {
+            auto* joint=find_node(w,id);
+            if(!joint||joint->destroyed||!joint_rigid(*joint)||joint->class_name=="WeldConstraint")continue;
+            for(const char* key:{"C0","C1","Transform"}) {
+                auto* value=property_value(w,*joint,key);
+                if(!value||!value->is_object()||!value->contains("$cframe"))continue;
+                auto origin=joint->origins.find(key);
+                if(origin==joint->origins.end()||!origin->is_string())continue;
+                auto frame=pivot_decode(*value);
+                if(!frame.rotation_known)throw std::runtime_error(std::string("joint pose rotation unavailable: ")+id+"."+key);
+            }
+        }
         JointGraph graph(w);std::unordered_map<std::string,Json> modified;
         if(w.joint_topology_dirty)collect_joint_activation(w,graph,pending);
         std::unordered_map<std::string,Node*> roots;
