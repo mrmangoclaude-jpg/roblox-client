@@ -126,14 +126,29 @@ int object_pivot_to(lua_State* L) {
             throw std::runtime_error("PivotTo requires the PrimaryPart to be inside the model");
         // Include the pivot itself, since external primary parts can affect it.
         before.push_back(pivot_encode(source));
-        Json offsets=Json::array();auto cached=w.pivot_caches.find(h->node->id);
-        if(cached!=w.pivot_caches.end()&&cached->second["fingerprint"]==before)offsets=cached->second["offsets"];
+        Json offsets=Json::array();Json referenceFrames=Json::array();bool exactRestore=false;
+        auto cached=w.pivot_caches.find(h->node->id);
+        if(cached!=w.pivot_caches.end()&&cached->second["fingerprint"]==before) {
+            offsets=cached->second["offsets"];
+            // Returning to the exact pivot the offsets were derived from can be
+            // restored verbatim. Recomposing source * inverse(source) with the
+            // engine's float32 rotation matrices otherwise adds a one-ULP drift
+            // to descendant positions on every PivotTo roundtrip.
+            if(cached->second.contains("reference_pivot")) {
+                auto reference=pivot_decode(cached->second["reference_pivot"]);
+                if(reference.p==target.p&&reference.r==target.r&&
+                        cached->second.contains("reference_frames")) {
+                    referenceFrames=cached->second["reference_frames"];exactRestore=true;
+                }
+            }
+        }
         else {
             auto inverse=pivot_inverse(source);
             for(auto* n:nodes) {
                 auto frame=pivot_model(w,*n)?model_world_pivot(w,*n):pivot_frame(w,*n,"CFrame");
                 if(!frame.rotation_known)throw std::runtime_error("descendant rotation is unavailable");
                 offsets.push_back(pivot_encode(pivot_product(inverse,frame)));
+                referenceFrames.push_back(pivot_encode(frame));
             }
         }
         size_t cached_count=nodes.size();for(const auto& [id,cache]:w.pivot_caches)if(id!=h->node->id)cached_count+=cache["offsets"].size();
@@ -141,7 +156,8 @@ int object_pivot_to(lua_State* L) {
         std::vector<Json> entries;std::vector<std::pair<Node*,std::pair<std::string,Json>>> writes;
         auto add=[&](Node* n,const std::string& key,Json value){entries.push_back(Json{{"kind","set"},{"id",n->id},{"property",key},{"value",value}});writes.push_back({n,{key,std::move(value)}});};
         for(size_t i=0;i<nodes.size();++i) {
-            auto* n=nodes[i];auto transformed=pivot_product(target,pivot_decode(offsets[i]));
+            auto* n=nodes[i];auto transformed=exactRestore?pivot_decode(referenceFrames[i]):
+                pivot_product(target,pivot_decode(offsets[i]));
             // Revalidate computed output before committing any local property.
             auto value=pivot_encode(transformed);pivot_decode(value);
             if(pivot_model(w,*n))add(n,"WorldPivot",value);
@@ -156,7 +172,8 @@ int object_pivot_to(lua_State* L) {
         for(auto& [n,field]:writes){auto* old=property_value(w,*n,field.first);if(!old||*old!=field.second)changed.push_back({n,field.first});w.local_properties[n->id][field.first]=field.second;}
         append_mutations(w,std::move(entries));
         auto after=pivot_fingerprint(w,nodes);after.push_back(pivot_encode(object_pivot(w,*h->node)));
-        w.pivot_caches[h->node->id]=Json{{"fingerprint",std::move(after)},{"offsets",std::move(offsets)}};
+        w.pivot_caches[h->node->id]=Json{{"fingerprint",std::move(after)},{"offsets",std::move(offsets)},
+            {"reference_pivot",pivot_encode(source)},{"reference_frames",std::move(referenceFrames)}};
         // PivotTo changes CFrame but deliberately suppresses Position events.
         for(auto& [n,key]:changed)if(key!="Position"&&key!="Orientation"&&key!="Rotation")property_events(w,*n,key);
         return 0;
