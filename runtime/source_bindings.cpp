@@ -240,21 +240,13 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
         const char* sweep=
             "local env=getfenv() "
             "local wrapped={} "
-            "local function wrap(v,k) "
-            "local w=wrapped[v]; if not w then w=newcclosure(v,k); wrapped[v]=w end; return w "
-            "end "
             "for k,v in pairs(env) do "
-            "if type(v)==\"function\" and not iscclosure(v) then env[k]=wrap(v,k) end "
-            "end "
-            "-- Library members share the same memoized wrapper as their global "
-            "-- aliases (e.g. http.request == request), as real executors do. "
-            "for k,v in pairs(env) do "
-            "if type(v)=='function' and not iscclosure(v) then env[k]=wrap(v,k) end "
-            "end return wrapped";
+            "if type(v)==\"function\" and not iscclosure(v) then "
+            "local w=wrapped[v]; if not w then w=newcclosure(v,k); wrapped[v]=w end; env[k]=w "
+            "end end";
         std::string bytecode=Luau::compile(sweep);
         if(luau_load(L,"=executor-c-sweep",bytecode.data(),bytecode.size(),0)!=0)lua_error(L);
-        mark_executor_closure(L,-1);lua_call(L,0,1);
-        lua_setfield(L,LUA_REGISTRYINDEX,"Headless.ExecutorWrappers");
+        mark_executor_closure(L,-1);lua_call(L,0,0);
     }
     // These functions were installed by the executor; engine/library functions
     // inherited from the base environment keep their original classification.
@@ -266,35 +258,12 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
     for(const char* library:{"debug","cache","crypt","base64","Drawing","WebSocket","http","fs","filesystem"}) {
         lua_getglobal(L,library);
         if(lua_istable(L,-1)) {
-            const int table=lua_gettop(L);
-            // Collect alias replacements first: mutating a table while it is
-            // being traversed with lua_next has undefined behaviour.
-            std::vector<std::pair<int,int>> replacements; // registry refs: key, wrapper
             lua_pushnil(L);
-            while(lua_next(L,table)) {
+            while(lua_next(L,-2)) {
                 bool engine_debug=std::strcmp(library,"debug")==0&&lua_type(L,-2)==LUA_TSTRING&&
                     (std::strcmp(lua_tostring(L,-2),"info")==0||std::strcmp(lua_tostring(L,-2),"traceback")==0);
-                if(lua_isfunction(L,-1)&&!engine_debug) {
-                    const int value=lua_gettop(L);
-                    lua_getfield(L,LUA_REGISTRYINDEX,"Headless.ExecutorWrappers");
-                    lua_pushvalue(L,value);lua_rawget(L,value+1);
-                    if(lua_isfunction(L,value+2)&&!lua_rawequal(L,value+2,value)) {
-                        int key=lua_ref(L,value-1),wrapper=lua_ref(L,value+2);
-                        replacements.emplace_back(key,wrapper);
-                    }
-                    lua_pop(L,2);
-                    mark_executor_closure(L,value);
-                }
+                if(lua_isfunction(L,-1)&&!engine_debug)mark_executor_closure(L,-1);
                 lua_pop(L,1);
-            }
-            if(!replacements.empty()) {
-                bool was_readonly=lua_getreadonly(L,table);
-                lua_setreadonly(L,table,false);
-                for(auto& [key,wrapper]:replacements) {
-                    lua_getref(L,key);lua_getref(L,wrapper);lua_settable(L,table);
-                    lua_unref(L,key);lua_unref(L,wrapper);
-                }
-                lua_setreadonly(L,table,was_readonly);
             }
         }
         lua_pop(L,1);
