@@ -257,8 +257,14 @@ int SourceScheduler::legacy_wait_continue(lua_State* L,int) {
 int SourceScheduler::legacy_wait_api(lua_State* L) {
     auto& self=*static_cast<SourceScheduler*>(lua_touserdata(L,lua_upvalueindex(1)));
     if(api_trace_enabled())api_trace(L,"wait","wait");
-    double duration=lua_isnumber(L,1)?lua_tonumber(L,1):.03;
-    if(std::isnan(duration))duration=.03;
+    // An explicitly supplied but unusable duration (NaN or a non-number) is
+    // rejected; only an absent argument takes the default .03s delay.
+    double duration=.03;
+    if(!lua_isnoneornil(L,1)){
+        if(!lua_isnumber(L,1)){luaL_error(L,"invalid wait duration");return 0;}
+        duration=lua_tonumber(L,1);
+        if(std::isnan(duration)){luaL_error(L,"invalid wait duration");return 0;}
+    }
     if(std::isinf(duration)||duration>86400){luaL_error(L,"invalid wait duration");return 0;}
     if(!lua_isyieldable(L)){luaL_error(L,"wait requires a yieldable thread");return 0;}
     try {
