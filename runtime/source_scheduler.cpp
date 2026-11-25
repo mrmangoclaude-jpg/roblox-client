@@ -341,8 +341,9 @@ int SourceScheduler::task_api_inner(lua_State* L) {
 // globals available: inheriting a ModuleScript's restricted environment would
 // hide getcallingscript()/checkcaller() from the callback.
 void SourceScheduler::set_callback_globals(lua_State* child) {
-    lua_pushvalue(main_,LUA_GLOBALSINDEX);
-    lua_xmove(main_,child,1);
+    // main_ is the root VM state, whose globals lack the executor bindings.
+    // The executor root is the registry table exposed by getgenv().
+    lua_getfield(child,LUA_REGISTRYINDEX,"Headless.ExecutorEnvironment");
     lua_replace(child,LUA_GLOBALSINDEX);
     // The callback closure was compiled with its registering script's fenv;
     // a thread-globals change alone would not expose executor functions.
