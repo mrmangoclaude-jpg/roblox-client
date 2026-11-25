@@ -337,14 +337,22 @@ int SourceScheduler::task_api_inner(lua_State* L) {
     }
     return 1; // The new/existing thread was retained on this caller's stack.
 }
+// A callback runs on its registering script's owner but with the executor
+// globals available: inheriting a ModuleScript's restricted environment would
+// hide getcallingscript()/checkcaller() from the callback.
+void SourceScheduler::set_callback_globals(lua_State* child) {
+    lua_pushvalue(main_,LUA_GLOBALSINDEX);
+    lua_xmove(main_,child,1);
+    lua_replace(child,LUA_GLOBALSINDEX);
+}
 lua_State* SourceScheduler::callback_now(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,const std::string& owner_name,int callback_identity) {
-    lua_State* child=lua_newthread(from);auto& task=track(child);
+    lua_State* child=lua_newthread(from);set_callback_globals(child);auto& task=track(child);
     lua_getref(child,reference);task.arguments=arguments(child);
     set_owner(task,owner_name);if(callback_identity>=0)set_identity(child,callback_identity);
     task.state=Ready;resume(task,from);return child;
 }
 lua_State* SourceScheduler::callback(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,std::function<bool()> guard,const std::string& owner_name,int callback_identity) {
-    lua_State* child=lua_newthread(from);auto& task=track(child);lua_pop(from,1);
+    lua_State* child=lua_newthread(from);set_callback_globals(child);auto& task=track(child);lua_pop(from,1);
     lua_getref(child,reference);task.arguments=arguments(child);task.state=Ready;task.guard=std::move(guard);set_owner(task,owner_name);
     if(callback_identity>=0)set_identity(child,callback_identity);
     enqueue(task);return child;
@@ -353,7 +361,7 @@ void SourceScheduler::wait_signal(lua_State* thread) {
     auto& task=track(thread);task.state=Waiting;task.elapsed=false;
 }
 lua_State* SourceScheduler::invoke_callback(lua_State* from,int reference,const std::function<int(lua_State*)>& arguments,const std::string& owner_name,int callback_identity) {
-    lua_State* child=lua_newthread(from);auto& task=track(child);lua_pop(from,1);
+    lua_State* child=lua_newthread(from);set_callback_globals(child);auto& task=track(child);lua_pop(from,1);
     try {
         lua_getref(child,reference);task.arguments=arguments(child);
         set_owner(task,owner_name);if(callback_identity>=0)set_identity(child,callback_identity);
