@@ -913,10 +913,10 @@ struct GuiLayoutPass {
             while(parent&&parent->class_name!="PlayerGui"&&parent->class_name!="CoreGui"&&parent->id!=w.overlay_root&&++hops<=128)
                 parent=find_node(w,parent_id(w,*parent));
             if((!parent&&n.id!=w.overlay_root)||hops>128) {
-                // A ScreenGui detached from PlayerGui/CoreGui still reports
-                // Studio's default 800x600 surface at the origin; GUI insets
-                // do not apply to that detached surface.
-                b.attached=true;b.width=800;b.height=600;
+                // A ScreenGui that is not under PlayerGui/CoreGui has no
+                // display surface; its own and its children's absolute extents
+                // are zero. The old 800x600 fallback reported geometry for a
+                // detached root that has no area in the engine.
                 if(!natural)boxes[n.id]=b;return b;
             }
             b.attached=w.display["size"][0].get<double>()>0&&w.display["size"][1].get<double>()>0;
