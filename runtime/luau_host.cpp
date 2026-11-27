@@ -541,7 +541,7 @@ public:
         // the scheduler's accumulated non-yielding task limit still applies.
         limits.deadline=std::max(limits.deadline,Clock::now()+std::chrono::milliseconds(std::min(budget,5)));
         request_stage="scheduler";
-        scheduler->step(limits.deadline,[&](){world_bindings::dispatch_events(environment,*world);},8192,
+        scheduler->step(limits.deadline,[&](){world_bindings::dispatch_events(environment,*world);},256,
                         [&](Clock::time_point deadline){limits.deadline=deadline;limits.stuck_since={};},
                         [&](){world_bindings::progress_invocations(environment,*world);},
                         [&](){
