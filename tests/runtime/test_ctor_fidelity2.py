@@ -145,6 +145,27 @@ return true
 ''')
         self.assertEqual(result['values'], [True])
 
+    def test_tween_info_nonfinite_and_extra_arguments(self):
+        # Verified on the live client: inf/NaN Time and DelayTime are stored
+        # as-is; RepeatCount truncates toward zero with int32 saturation;
+        # arguments past the sixth are ignored.
+        result = self.execute('''
+local E = Enum.EasingStyle.Quad
+local D = Enum.EasingDirection.Out
+assert(TweenInfo.new(math.huge).Time == math.huge)
+assert(TweenInfo.new(0/0).Time ~= TweenInfo.new(0/0).Time)
+assert(TweenInfo.new(1, E, D, 0, false, math.huge).DelayTime == math.huge)
+assert(TweenInfo.new(1, E, D, 0.5).RepeatCount == 0)
+assert(TweenInfo.new(1, E, D, -1.7).RepeatCount == -1)
+assert(TweenInfo.new(1, E, D, math.huge).RepeatCount == 2147483647)
+assert(TweenInfo.new(1, E, D, -math.huge).RepeatCount == -2147483648)
+assert(TweenInfo.new(1, E, D, 0/0).RepeatCount == 0)
+local extra = TweenInfo.new(1, E, D, 0, false, 0, "ignored")
+assert(extra.Time == 1 and extra.RepeatCount == 0)
+return true
+''')
+        self.assertEqual(result['values'], [True])
+
 
 if __name__ == '__main__':
     unittest.main()

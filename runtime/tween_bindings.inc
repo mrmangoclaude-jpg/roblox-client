@@ -81,13 +81,8 @@ double tween_finite_number(lua_State* L, int index, const char* name, double fal
         luaL_error(L, "%s", type_error);
         return 0;
     }
-    double value = lua_tonumber(L, index);
-    // Studio accepts negative Time and DelayTime values.
-    if (!std::isfinite(value)) {
-        luaL_error(L, "TweenInfo.%s must be finite", name);
-        return 0;
-    }
-    return value;
+    // Live client accepts negative, infinite and NaN Time/DelayTime values.
+    return lua_tonumber(L, index);
 }
 
 int tween_enum_option(lua_State* L, int index, int kind, int fallback,
@@ -123,11 +118,11 @@ lua_Integer tween_repeat_option(lua_State* L, int index) {
         return 0;
     }
     double value = lua_tonumber(L, index);
-    if (!std::isfinite(value) || std::floor(value) != value
-        || value < -2147483648.0 || value > 2147483647.0) {
-        luaL_error(L, "TweenInfo.RepeatCount must be a 32-bit integer");
-        return 0;
-    }
+    // Verified on a live client: RepeatCount truncates toward zero, +inf
+    // saturates to INT_MAX, -inf to INT_MIN, and NaN becomes 0.
+    if (std::isnan(value)) return 0;
+    if (value >= 2147483647.0) return 2147483647;
+    if (value <= -2147483648.0) return -2147483648;
     return static_cast<lua_Integer>(value);
 }
 
@@ -141,10 +136,7 @@ int tween_boolean_option(lua_State* L, int index) {
 }
 
 int tween_info_constructor(lua_State* L) {
-    if (lua_gettop(L) > 6) {
-        luaL_error(L, "TweenInfo.new accepts at most 6 arguments");
-        return 0;
-    }
+    // Additional arguments are silently ignored by the live client.
     TweenInfoValue value;
     value.time = tween_finite_number(L, 1, "Time", 1.0,
         "TweenInfo.new first argument expects a number for time.");
