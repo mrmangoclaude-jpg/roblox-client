@@ -188,6 +188,8 @@ int source_encoding_codec(lua_State* L,EncodingCodec operation,int input_index,i
 
 #include "local_compat.inc"
 #include "vm_debug_compat.inc"
+#include "debug_global_compat.inc"
+#include "thread_compat.inc"
 #include "network_compat.inc"
 #include "host_io_compat.inc"
 
