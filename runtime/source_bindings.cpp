@@ -229,6 +229,8 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
     lua_setreadonly(L,-1,true);lua_setglobal(L,"crypt");lua_pop(L,1);
     install_local_compat(L);
     install_vm_debug(L);
+    install_debug_globals(L);
+    install_thread_compat(L);
     install_network_compat(L,bindings);
     install_host_io(L,bindings);
     lua_pushcfunction(L,lz4_compress,"lz4compress");lua_setglobal(L,"lz4compress");
