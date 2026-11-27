@@ -3288,6 +3288,7 @@ void dispatch_events(lua_State* from,World& world) {
     }
     for(auto it=world.handle_waiters.begin();it!=world.handle_waiters.end();) {
         Node* found=find_node(world,it->id);
+        if(getenv("ROVE_DEBUG_HANDLE_WAITERS")) { FILE* f=fopen("C:/Users/Eigenaar/AppData/Local/Temp/rove_waiters.log","a"); if(f){fprintf(f,"id=%s found=%d now=%lld deadline=%lld\n",it->id.c_str(),found?1:0,(long long)std::chrono::steady_clock::now().time_since_epoch().count(),(long long)it->deadline.time_since_epoch().count());fclose(f);} }
         if(found||std::chrono::steady_clock::now()>=it->deadline) {
             world.scheduler->wake_signal(it->thread,[&](lua_State* target){if(found)push_node(target,world,found);else lua_pushnil(target);return 1;});
             lua_unref(from,it->reference);it=world.handle_waiters.erase(it);
