@@ -229,15 +229,6 @@ void install_source_bindings(lua_State* L, const SourceBindings* bindings,
     lua_setreadonly(L,-1,true);lua_setglobal(L,"crypt");lua_pop(L,1);
     install_local_compat(L);
     install_vm_debug(L);
-    // Executor inventories expect the debug-library helpers as globals too.
-    lua_getglobal(L,"debug");
-    lua_pushnil(L);
-    while(lua_next(L,-2)){
-        const char* name=lua_tostring(L,-2);
-        if(name){lua_pushvalue(L,-1);lua_setglobal(L,name);}
-        lua_pop(L,1);
-    }
-    lua_pop(L,1);
     install_network_compat(L,bindings);
     install_host_io(L,bindings);
     lua_pushcfunction(L,lz4_compress,"lz4compress");lua_setglobal(L,"lz4compress");
