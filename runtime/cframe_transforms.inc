@@ -166,6 +166,11 @@ FrameMatrix euler_float_matrix(float x, float y, float z, const char* axes) {
     return r;
 }
 int cframe_euler(lua_State* L, bool yxz) {
+    // Real Roblox validates the argument count first and reports a missing
+    // angle as "Argument N missing or nil" (verified against a live client),
+    // rather than Luau's luaL_checknumber "missing argument #N to '...'".
+    for (int i = 1; i <= 3; ++i)
+        if (lua_isnoneornil(L, i)) { luaL_error(L, "Argument %d missing or nil", i); return 0; }
     float x = static_cast<float>(finite_frame_angle(L, 1));
     float y = static_cast<float>(finite_frame_angle(L, 2));
     float z = static_cast<float>(finite_frame_angle(L, 3));

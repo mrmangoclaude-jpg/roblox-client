@@ -100,6 +100,13 @@ FrameF3 f3_unit_reciprocal(const FrameF3& a) {
 //   forward = (target - position, in float) * (1/|.|);  right = unit(forward x up);  up' = right x forward;  back = -forward
 // with |.| = sqrtf(left-to-right float dot) and 1/|.| a float reciprocal. No renormalization of up'.
 int cframe_look(lua_State* L, bool target_point) {
+    // Real Roblox reports "Argument N missing or nil" and "Vector3 expected"
+    // for lookAt/lookAlong (verified live); luaL_checkvector emits the generic
+    // "vector expected" / "missing argument #N" text otherwise.
+    for (int i = 1; i <= 2; ++i) {
+        if (lua_isnoneornil(L, i)) { luaL_error(L, "Argument %d missing or nil", i); return 0; }
+        if (!lua_isvector(L, i)) { luaL_argerror(L, i, "Vector3 expected"); return 0; }
+    }
     auto p=finite_frame_vector(L, 1);
     auto direction=finite_frame_vector(L, 2);
     FrameF3 d{static_cast<float>(direction[0]),static_cast<float>(direction[1]),static_cast<float>(direction[2])};
