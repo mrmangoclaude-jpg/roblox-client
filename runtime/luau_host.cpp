@@ -283,6 +283,23 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
             lua_rawset(co,2);                        // overlay[key] = value
             lua_pop(co,1);                           // co: [filled, overlay, key]
         }
+        // World bindings (getcallingscript, hookfunction, firetouchinterest,
+        // ...) are installed on the main state, not on this thread. Mirror any
+        // still-missing globals from there as well.
+        lua_pushvalue(L,LUA_GLOBALSINDEX);           // L: [main globals]
+        lua_pushnil(L);
+        while(lua_next(L,-2)){                       // L: [main, key, value]
+            lua_pushvalue(L,-2);                     // key
+            lua_pushvalue(L,-2);                     // value
+            lua_xmove(L,co,2);                       // co: [filled, overlay, key, value]
+            lua_pushvalue(co,-2);                    // key
+            lua_rawget(co,2);                        // ... existing
+            if(lua_isnil(co,-1)){
+                lua_pop(co,1);                       // co: [filled, overlay, key, value]
+                lua_rawset(co,2);                    // overlay[key] = value
+            }else lua_pop(co,3);                     // co: [filled, overlay]
+        }                                            // L: [main, key]
+        lua_pop(L,1);                                // L: empty
         lua_pop(co,2);
     } else {
         luaL_sandboxthread(co);
