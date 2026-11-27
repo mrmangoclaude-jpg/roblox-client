@@ -555,6 +555,12 @@ void SourceScheduler::step(Clock::time_point deadline,std::function<void()> pump
             if(output_ready())break;
         }
     }
+    // The world pump also expires time-based waiters (InstanceHandle:Wait,
+    // WaitForChild, chat/text replies). On a short step the ready queue can
+    // stay non-empty past the pump point, leaving those deadlines unobserved
+    // indefinitely. Guarantee one pump per step so a waiter's timeout is
+    // checked even when no simulation frame is due.
+    if(!pumped&&pump)pump();
     collect_finished();
 }
 int SourceScheduler::run(lua_State* root,int arguments,std::function<void()> pump) {
