@@ -118,7 +118,12 @@ static int math_floor(lua_State* L)
 
 static int math_fmod(lua_State* L)
 {
-    lua_pushnumber(L, fmod(luaL_checknumber(L, 1), luaL_checknumber(L, 2)));
+    // Bind operands in index order: C++ argument evaluation order is
+    // unspecified and this build checks #2 before #1, producing the wrong
+    // "missing argument #2" error for fmod() where the engine reports #1.
+    double a = luaL_checknumber(L, 1);
+    double b = luaL_checknumber(L, 2);
+    lua_pushnumber(L, fmod(a, b));
     return 1;
 }
 
@@ -139,7 +144,9 @@ static int math_sqrt(lua_State* L)
 
 static int math_pow(lua_State* L)
 {
-    lua_pushnumber(L, pow(luaL_checknumber(L, 1), luaL_checknumber(L, 2)));
+    double a = luaL_checknumber(L, 1);
+    double b = luaL_checknumber(L, 2);
+    lua_pushnumber(L, pow(a, b));
     return 1;
 }
 
@@ -197,7 +204,9 @@ static int math_frexp(lua_State* L)
 
 static int math_ldexp(lua_State* L)
 {
-    lua_pushnumber(L, ldexp(luaL_checknumber(L, 1), luaL_checkinteger(L, 2)));
+    double a = luaL_checknumber(L, 1);
+    int b = luaL_checkinteger(L, 2);
+    lua_pushnumber(L, ldexp(a, b));
     return 1;
 }
 
