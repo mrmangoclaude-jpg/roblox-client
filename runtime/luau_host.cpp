@@ -267,7 +267,27 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
     }
     // Keep authored globals in a shared overlay, while getgenv returns the
     // executor root. Raw getfenv writes must not change that root table.
-    if(source_bindings){luaL_sandboxthread(co);lua_setsafeenv(co,LUA_GLOBALSINDEX,false);}
+    if(source_bindings){
+        // Capture the globals table that install_source_bindings just filled,
+        // then let sandboxthread install its per-thread overlay. Real Roblox
+        // exposes globals as RAW entries of getfenv(0); mirror them into the
+        // overlay without touching the shared root, so raw writes stay local.
+        lua_pushvalue(co,LUA_GLOBALSINDEX);          // co: [filled globals]
+        luaL_sandboxthread(co);
+        lua_setsafeenv(co,LUA_GLOBALSINDEX,false);
+        lua_pushvalue(co,LUA_GLOBALSINDEX);          // co: [filled, overlay]
+        lua_pushnil(co);
+        while(lua_next(co,1)){                       // co: [filled, overlay, key, value]
+            lua_pushvalue(co,-2);                    // key
+            lua_pushvalue(co,-2);                    // value
+            lua_rawset(co,2);                        // overlay[key] = value
+            lua_pop(co,1);                           // co: [filled, overlay, key]
+        }
+        lua_pop(co,2);
+    } else {
+        luaL_sandboxthread(co);
+        lua_setsafeenv(co,LUA_GLOBALSINDEX,false);
+    }
     auto load=[&]() {
         if(world)return world->load_script(co,"=user-source",bytecode,is_bytecode?"":source);
         auto payload=protected_scripts->make(is_bytecode?"":source,bytecode);
