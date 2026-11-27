@@ -83,7 +83,11 @@
 
 // LUAI_MAXCALLS limits the number of nested calls
 #ifndef LUAI_MAXCALLS
-#define LUAI_MAXCALLS 20000
+// Measured against the live Roblox client (2026-11-27): plain recursion
+// overflows at 19992 and pcall-nested recursion at 9996, vs 19997/9999 with
+// 20000. Luraph v15 mixes the stack-overflow depth into its decryption key,
+// so match the engine exactly (generic Luau VM fidelity, affects all games).
+#define LUAI_MAXCALLS 19995
 #endif
 
 // LUAI_MAXCCALLS is the maximum depth for nested C calls; this limit depends on native stack size
