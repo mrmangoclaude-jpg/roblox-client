@@ -267,12 +267,7 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
     }
     // Keep authored globals in a shared overlay, while getgenv returns the
     // executor root. Raw getfenv writes must not change that root table.
-    // A second luaL_sandboxthread here would replace the thread globals that
-    // install_source_bindings just populated with a fresh empty overlay, so
-    // getfenv(0) would have no raw entries. Real Roblox exposes globals as
-    // raw table entries, which Luraph fingerprints via pairs/rawget.
-    if(!source_bindings) luaL_sandboxthread(co);
-    lua_setsafeenv(co,LUA_GLOBALSINDEX,false);
+    if(source_bindings){luaL_sandboxthread(co);lua_setsafeenv(co,LUA_GLOBALSINDEX,false);}
     auto load=[&]() {
         if(world)return world->load_script(co,"=user-source",bytecode,is_bytecode?"":source);
         auto payload=protected_scripts->make(is_bytecode?"":source,bytecode);
