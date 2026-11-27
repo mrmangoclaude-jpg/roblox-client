@@ -292,7 +292,7 @@ std::string run_vm(const std::string& source, const std::vector<double>& args,
             lua_pushvalue(L,-2);                     // key
             lua_pushvalue(L,-2);                     // value
             lua_xmove(L,co,2);                       // co: [filled, overlay, key, value]
-            lua_pop(L,2);                            // L: [main, key] -- resume lua_next
+            lua_pop(L,1);                            // L: [main, key] -- lua_next consumes key
             lua_pushvalue(co,-2);                    // key
             lua_rawget(co,2);                        // ... existing
             if(lua_isnil(co,-1)){
