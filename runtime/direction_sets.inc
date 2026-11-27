@@ -29,6 +29,13 @@ int construct(lua_State* L) {
             const int value=enumeration.at("value").get<int>();
             if(enumeration.at("type")=="NormalId") {mask|=1u<<(is_axes?value%3:value);continue;}
             if(is_axes&&enumeration.at("type")=="Axis"){mask|=1u<<value;continue;}
+            // A real enum item of the WRONG enum is an error (verified live):
+            // Axes.new(Enum.EasingStyle.Linear) ->
+            //   "Axes.new expects Enum.Axis or Enum.NormalId inputs"
+            // Faces.new(Enum.Axis.Y) -> "Faces.new expects Enum.NormalId inputs"
+            luaL_error(L,is_axes?"Axes.new expects Enum.Axis or Enum.NormalId inputs"
+                               :"Faces.new expects Enum.NormalId inputs");
+            return 0;
         }
         // Both direction-set constructors ignore arguments that are not the
         // expected enum items (measured on a real client for Axes.new).

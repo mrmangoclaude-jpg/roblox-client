@@ -24,8 +24,10 @@ local function items(enum) local t = {} for _, item in enum:GetEnumItems() do t[
 assert(items(Enum.PartType) == "Ball=0,Block=1,Cylinder=2,Wedge=3,CornerWedge=4,Capsule=5", items(Enum.PartType))
 assert(items(Enum.EasingStyle) == "Linear=0,Sine=1,Back=2,Quad=3,Quart=4,Quint=5,Bounce=6,Elastic=7,Exponential=8,Circular=9,Cubic=10,Bezier=11,Spring=12", items(Enum.EasingStyle))
 assert(Enum.PartType:FromValue(5) == Enum.PartType.Capsule and Enum.EasingStyle:FromName("Spring") == Enum.EasingStyle.Spring)
-local info = TweenInfo.new(1, Enum.EasingStyle.Bezier)
-assert(info.EasingStyle == Enum.EasingStyle.Bezier)
+-- The live client exposes Bezier/Spring in the enum but rejects them in TweenInfo.new.
+local ok, message = pcall(function() return TweenInfo.new(1, Enum.EasingStyle.Bezier) end)
+assert(not ok and string.find(message, "does not support Enum.EasingStyle.Spring or Enum.EasingStyle.Bezier", 1, true), tostring(message))
+assert(TweenInfo.new(1, Enum.EasingStyle.Quad).EasingStyle == Enum.EasingStyle.Quad)
 local part = Instance.new("Part")
 part.Shape = Enum.PartType.Capsule
 assert(part.Shape == Enum.PartType.Capsule)

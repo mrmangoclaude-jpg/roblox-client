@@ -373,9 +373,14 @@ int color_sequence_new(lua_State* L) {
             luaL_error(L, "ColorSequence.new(): table expected.");
             return 0;
         }
-        if (count == 2 && !read_color3(L, 2, last.r, last.g, last.b)) {
-            luaL_error(L, "ColorSequence.new(): table expected.");
-            return 0;
+        if (count == 2) {
+            if (!read_color3(L, 2, last.r, last.g, last.b)) {
+                luaL_error(L, "ColorSequence.new(): table expected.");
+                return 0;
+            }
+        } else {
+            // One color creates a constant sequence: both keypoints use it.
+            last = first;
         }
         sequence->points.push_back(ColorKeypoint{0, first, 0});
         sequence->points.push_back(ColorKeypoint{1, last, 0});

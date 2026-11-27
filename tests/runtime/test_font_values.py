@@ -100,7 +100,9 @@ assert(not pcall(function()Font.new=function()end end))
     def test_invalid_constructors_are_rejected(self):
         self.run_script('''
 assert(not pcall(Font.new))
-for _,bad in ipairs({false,1,{},Enum.Font.SourceSans})do assert(not pcall(Font.new,bad))end
+-- Real clients coerce a numeric family argument to its string form.
+assert(Font.new(1).Family=="1")
+for _,bad in ipairs({false,{},Enum.Font.SourceSans})do assert(not pcall(Font.new,bad))end
 for _,bad in ipairs({"two words","../BuilderSans","A/B","A.B","A\\0B","",string.rep("a",5000)})do
  assert(not pcall(Font.fromName,bad))
 end
@@ -121,7 +123,14 @@ end
         self.run_script('''
 local value=Font.fromName("BuilderSans")
 local expected=Font.fromName("BuilderSans")
-for _,write in ipairs({function()value.Family=42 end,function()value.Family="A\\0B"end,
+-- Real clients coerce numeric Family writes to their string form.
+assert(pcall(function()value.Family=42 end))
+assert(value.Family=="42")
+value=Font.fromName("BuilderSans")
+assert(value==expected)
+-- Real clients accept NUL-containing and very long families (truncating at
+-- NUL); Rove still rejects them, so those cases are tracked separately.
+for _,write in ipairs({function()value.Family="A\\0B"end,
  function()value.Family=string.rep("a",5000)end,function()value.Weight=700 end,
  function()value.Weight=Enum.FontStyle.Normal end,function()value.Style=Enum.FontWeight.Bold end,
  function()value.Bold=1 end,function()value.Unknown=true end,

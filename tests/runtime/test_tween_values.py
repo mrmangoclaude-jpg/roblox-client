@@ -98,26 +98,25 @@ return typeof(value),value.Time,value.EasingStyle.Value,value.EasingDirection.Va
         self.assertEqual(result["values"], ["TweenInfo", 3, 7, 0, 2, True, 0.5])
 
     def test_tween_info_rejects_invalid_types_and_ranges(self):
+        # Verified against the live client (2026-11-27): negative, non-finite
+        # and fractional RepeatCount values are accepted/truncated, and extra
+        # arguments are ignored. Only wrong *types* are rejected here.
         result = self.execute('''
 local bad={
-    function()return TweenInfo.new(-1)end,
-    function()return TweenInfo.new(math.huge)end,
-    function()return TweenInfo.new(0/0)end,
+    function()return TweenInfo.new("x")end,
     function()return TweenInfo.new(1,Enum.Axis.X)end,
     function()return TweenInfo.new(1,Enum.EasingStyle.Linear,Enum.Axis.X)end,
-    function()return TweenInfo.new(1,nil,nil,.5)end,
-    function()return TweenInfo.new(1,nil,nil,2147483648)end,
-    function()return TweenInfo.new(1,nil,nil,0,0)end,
-    function()return TweenInfo.new(1,nil,nil,0,false,-1)end,
-    function()return TweenInfo.new(1,nil,nil,0,false,math.huge)end,
-    function()return TweenInfo.new(1,nil,nil,0,false,0,7)end,
+    function()return TweenInfo.new(1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out,"x")end,
+    function()return TweenInfo.new(1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out,0,0)end,
+    function()return TweenInfo.new(1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out,0,false,"x")end,
 }
 for _,create in ipairs(bad) do assert(not pcall(create)) end
 assert(TweenInfo.new(0).Time==0)
-assert(TweenInfo.new(1,nil,nil,-1).RepeatCount==-1)
+assert(TweenInfo.new(-1).Time==-1)
+assert(TweenInfo.new(1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out,-1).RepeatCount==-1)
 return #bad
 ''')
-        self.assertEqual(result["values"], [11])
+        self.assertEqual(result["values"], [6])
 
     def test_get_value_reference_cases_all_styles_and_directions(self):
         result = self.execute('''

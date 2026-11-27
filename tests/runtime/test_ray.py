@@ -63,12 +63,16 @@ end
     def test_immutable_values_and_invalid_arguments(self):
         self.run_script('''
 local r=Ray.new(Vector3.zero,Vector3.xAxis)
+-- Real clients default absent components to zero vectors.
+local blank=Ray.new()
+vec(blank.Origin,Vector3.zero);vec(blank.Direction,Vector3.zero)
+local one=Ray.new(Vector3.new(1,2,3))
+vec(one.Origin,Vector3.new(1,2,3));vec(one.Direction,Vector3.zero)
 for _,f in {
     function()r.Origin=Vector3.one end,
     function()r.Direction=Vector3.yAxis end,
     function()r.Unit=r end,
     function()Ray.new={}end,
-    function()Ray.new()end,
     function()Ray.new(Vector3.zero,42)end,
     function()Ray.new({},Vector3.zero)end,
     function()r:ClosestPoint({})end,
