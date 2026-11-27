@@ -319,15 +319,18 @@ int palette(lua_State* L) {
             lua_error(L);return 0;
         }
     }
-    // Roblox rounds the index half away from zero, converts to int32 (non-finite
-    // input saturates to INT_MIN), then bounds-checks against the 128-entry palette.
+    // Roblox rounds the index half away from zero and bounds-checks against
+    // the palette. Verified on a live client: +inf saturates to INT_MAX,
+    // -inf to INT_MIN, but NaN casts to 0 ("Earth green").
     int index;
-    if(std::isfinite(value)){
+    if(std::isnan(value))index=0;
+    else if(std::isinf(value))index=value>0?2147483647:-2147483648;
+    else {
         const double rounded=std::round(value);
         if(rounded>2147483647.0)index=2147483647;
         else if(rounded<-2147483648.0)index=-2147483648;
         else index=static_cast<int>(rounded);
-    }else index=-2147483648;
+    }
     if(index<0||index>=128){lua_pushfstring(L,"palette index out of bounds (%d)",index);lua_error(L);return 0;}
     push_value(L,by_number(kPalette[index]));return 1;
 }
