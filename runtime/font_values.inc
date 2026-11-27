@@ -56,7 +56,7 @@ std::string string_argument(lua_State* L,int index) {
 }
 int construct(lua_State* L) {
     // A missing or nil family reads as "missing argument" in the real client.
-    if(lua_isnoneornil(L,1)){lua_pushliteral(L,"missing argument #1 to 'new' (string expected)");lua_error(L);return 0;}
+    if(lua_isnoneornil(L,1)){luaL_error(L,"missing argument #1 to 'new' (string expected)");return 0;}
     // Argument 1 is validated before the enums (the real client reports a bad
     // family first). Check its type here without allocating, then validate the
     // enums before building the family string so longjmp cannot leak it.

@@ -81,10 +81,15 @@ math=oldmath;Random=oldrandom
 
     def test_palette_validation_and_immutable_values(self):
         self.execute('''
-for _,value in ipairs({-1,128,129,200,math.huge,-math.huge,0/0,true,{},Color3.new()})do
+-- Verified on a live Roblox client: out-of-range numbers and non-coercible
+-- types error, but booleans coerce (true=1, false=0) and NaN coerces to 0.
+for _,value in ipairs({-1,128,129,200,math.huge,-math.huge,{},Color3.new()})do
  assert(not pcall(BrickColor.palette,value))
 end
 assert(not pcall(BrickColor.palette))
+assert(BrickColor.palette(true)==BrickColor.palette(1))
+assert(BrickColor.palette(false)==BrickColor.palette(0))
+assert(BrickColor.palette(0/0)==BrickColor.palette(0))
 assert(not pcall(BrickColor.random,1))
 -- Roblox rounds the palette index half away from zero and coerces numeric strings.
 assert(BrickColor.palette(0.5)==BrickColor.palette(1))
