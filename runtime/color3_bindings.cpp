@@ -64,13 +64,20 @@ int color_new(lua_State* L) {
 }
 
 int color_from_rgb(lua_State* L) {
-    if (lua_gettop(L) != 3) {
-        luaL_error(L, "Color3.fromRGB expects red, green, and blue");
+    // Real Roblox Color3.fromRGB accepts 1-3 numbers, defaulting omitted
+    // components to 0 (and clamping each to 0..255), just like Color3.new
+    // with byte scaling. Requiring exactly 3 args diverges from the engine:
+    // observed live fromRGB(1) -> <0.00392157, 0, 0>, fromRGB(1,2) ->
+    // <0.00392157, 0.00784314, 0>.
+    const int count = lua_gettop(L);
+    if (count > 3) {
+        luaL_error(L, "Color3.fromRGB accepts up to red, green, and blue");
         return 0;
     }
-    return push_color_value(L, finite_number(L, 1, "red") / 255.0,
-                            finite_number(L, 2, "green") / 255.0,
-                            finite_number(L, 3, "blue") / 255.0);
+    const double r = lua_isnoneornil(L, 1) ? 0.0 : finite_number(L, 1, "red");
+    const double g = lua_isnoneornil(L, 2) ? 0.0 : finite_number(L, 2, "green");
+    const double b = lua_isnoneornil(L, 3) ? 0.0 : finite_number(L, 3, "blue");
+    return push_color_value(L, r / 255.0, g / 255.0, b / 255.0);
 }
 
 Color hsv_to_rgb(double h, double s, double v) {
