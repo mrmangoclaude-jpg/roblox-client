@@ -98,7 +98,7 @@ Color hsv_to_rgb(double h, double s, double v) {
 
 int color_from_hsv(lua_State* L) {
     if (lua_gettop(L) != 3) {
-        luaL_error(L, "Color3.fromHSV expects hue, saturation, and value");
+        luaL_error(L, "Color3.fromHSV requires three arguments");
         return 0;
     }
     const double h = finite_number(L, 1, "hue");

@@ -22,7 +22,6 @@ void push(lua_State* L,unsigned mask,bool is_axes) {
 int construct(lua_State* L) {
     const bool is_axes=lua_toboolean(L,lua_upvalueindex(1));
     const int count=lua_gettop(L);unsigned mask=0;
-    if(is_axes&&count>6){luaL_error(L,"Axes.new accepts up to six Axis or NormalId items");return 0;}
     for(int i=1;i<=count;++i) {
         nlohmann::json item;
         if(world_bindings::capture_geometry_enum_item(L,i,item)) {
@@ -31,8 +30,8 @@ int construct(lua_State* L) {
             if(enumeration.at("type")=="NormalId") {mask|=1u<<(is_axes?value%3:value);continue;}
             if(is_axes&&enumeration.at("type")=="Axis"){mask|=1u<<value;continue;}
         }
-        // Faces explicitly ignores non-NormalId arguments in its public API.
-        if(is_axes){luaL_argerror(L,i,"Enum.Axis or Enum.NormalId expected");return 0;}
+        // Both direction-set constructors ignore arguments that are not the
+        // expected enum items (measured on a real client for Axes.new).
     }
     push(L,mask,is_axes);return 1;
 }

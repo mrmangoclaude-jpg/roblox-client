@@ -103,19 +103,23 @@ constexpr MaterialDefault kMaterialDefaults[] = {
 int physical_properties_new(lua_State* L) {
     const int count = lua_gettop(L);
     if (count == 1) {
-        if (!lua_isuserdata(L, 1))
-            luaL_error(L, "PhysicalProperties.new with 1 argument expects Enum.Material inputs");
-        lua_getfield(L, 1, "Name");
-        const char* name = lua_tostring(L, -1);
+        // Studio accepts any single value: a real Enum.Material selects its
+        // material defaults, everything else yields the all-zero "default"
+        // PhysicalProperties (verified against a live client, 2026-11-27).
         const MaterialDefault* found = nullptr;
-        if (name)
-            for (const auto& m : kMaterialDefaults)
-                if (std::strcmp(m.name, name) == 0) { found = &m; break; }
-        lua_pop(L, 1);
-        if (!found)
-            luaL_error(L, "PhysicalProperties.new with 1 argument expects Enum.Material inputs");
-        push_value(L, PhysicalPropertiesValue{found->density, found->friction, found->elasticity,
-            found->friction_weight, found->elasticity_weight, found->acoustic_absorption});
+        if (lua_isuserdata(L, 1) || lua_istable(L, 1)) {
+            lua_getfield(L, 1, "Name");
+            const char* name = lua_tostring(L, -1);
+            if (name)
+                for (const auto& m : kMaterialDefaults)
+                    if (std::strcmp(m.name, name) == 0) { found = &m; break; }
+            lua_pop(L, 1);
+        }
+        if (found)
+            push_value(L, PhysicalPropertiesValue{found->density, found->friction, found->elasticity,
+                found->friction_weight, found->elasticity_weight, found->acoustic_absorption});
+        else
+            push_value(L, PhysicalPropertiesValue{});
         return 1;
     }
     if (count != 3 && count != 5 && count != 6) {
@@ -143,6 +147,12 @@ int physical_properties_new(lua_State* L) {
 
 int physical_properties_tostring(lua_State* L) {
     auto* value = checked(L, 1);
+    if (value->density == 0 && value->friction == 0 && value->elasticity == 0
+        && value->friction_weight == 0 && value->elasticity_weight == 0
+        && value->acoustic_absorption == 0) {
+        lua_pushliteral(L, "default");
+        return 1;
+    }
     char text[160];
     std::snprintf(text, sizeof(text), "%.9g, %.9g, %.9g, %.9g, %.9g, %.9g",
         double(value->density), double(value->friction), double(value->elasticity),

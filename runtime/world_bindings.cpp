@@ -2610,7 +2610,8 @@ int instance_from_existing(lua_State* L) {
 }
 int instance_new(lua_State*L){
     auto*w=static_cast<World*>(lua_touserdata(L,lua_upvalueindex(1)));
-    if(lua_gettop(L)<1){luaL_error(L,"missing argument #1 to 'new' (string expected)");return 0;}
+    // Engine argument errors are raw strings (no script source location).
+    if(lua_gettop(L)<1){lua_pushliteral(L,"missing argument #1 to 'new' (string expected)");lua_error(L);return 0;}
     size_t class_len=0;const char*raw=luaL_checklstring(L,1,&class_len);std::string cls(raw,class_len);
     if(api_trace_enabled())api_trace(L,"new",cls);
     const auto& classes=constructors();
@@ -2625,7 +2626,7 @@ int instance_new(lua_State*L){
             {"Character",{{"value",nullptr}}},{"GameplayPaused",{{"value",false}}}}}};
         constructor=&player;
     }
-    if(!constructor || !constructor->value("creatable",false)){luaL_error(L,"Unable to create an Instance of type \"%s\"",cls.c_str());return 0;}
+    if(!constructor || !constructor->value("creatable",false)){lua_pushfstring(L,"Unable to create an Instance of type \"%s\"",cls.c_str());lua_error(L);return 0;}
     Handle*parent=nullptr;
     if(lua_gettop(L)>=2&&!lua_isnil(L,2)){if(lua_type(L,2)!=LUA_TUSERDATA||!has_meta(L,2,kInstanceMeta))luaL_typeerror(L,2,"Instance");parent=checked_handle(L,2);if(parent->world!=w){luaL_error(L,"Parent belongs to a different world snapshot");return 0;}}
     if(w->nodes.size()>=kMaxNodes+1000){luaL_error(L,"local instance limit exceeded");return 0;}

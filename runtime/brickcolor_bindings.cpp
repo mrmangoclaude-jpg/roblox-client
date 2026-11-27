@@ -260,7 +260,9 @@ const Entry* check_entry(lua_State* L,int index) {
 }
 int create(lua_State* L) {
     int count=lua_gettop(L);const Entry* entry=nullptr;
-    if(count==1&&lua_type(L,1)==LUA_TNUMBER) {
+    // Measured on a real client: BrickColor.new() defaults to "Really black".
+    if(count==0)entry=by_number(1003);
+    else if(count==1&&lua_type(L,1)==LUA_TNUMBER) {
         double number=lua_tonumber(L,1);
         // Roblox floors the value to a palette id; ids without a palette entry
         // (including non-finite input) fall back to Medium stone grey below.
@@ -273,17 +275,27 @@ int create(lua_State* L) {
     } else if(count==1&&lua_type(L,1)==LUA_TUSERDATA) {
         // Read the documented Color3 components without depending on the
         // Color3 module's private userdata layout.
-        if(!lua_getmetatable(L,1)){luaL_error(L,"BrickColor.new expects Color3 userdata");return 0;}
+        if(!lua_getmetatable(L,1)){luaL_argerror(L,1,lua_pushfstring(L,"Color3 expected, got %s",luaL_typename(L,1)));return 0;}
         lua_getfield(L,-1,"__type");bool color3=lua_isstring(L,-1)&&std::strcmp(lua_tostring(L,-1),"Color3")==0;
-        lua_pop(L,2);if(!color3){luaL_error(L,"BrickColor.new expects Color3 userdata");return 0;}
+        lua_pop(L,2);if(!color3){luaL_argerror(L,1,lua_pushfstring(L,"Color3 expected, got %s",luaL_typename(L,1)));return 0;}
         const char* fields[]={"R","G","B"};double channels[3];
         for(int i=0;i<3;i++){
             lua_getfield(L,1,fields[i]);channels[i]=lua_tonumber(L,-1);lua_pop(L,1);
             if(!std::isfinite(channels[i])){luaL_error(L,"Color3 channels must be finite");return 0;}
         }
         entry=closest_color(channels[0],channels[1],channels[2]);
-    } else if(count==3) {
-        double rgb[3];for(int i=0;i<3;i++){rgb[i]=luaL_checknumber(L,i+1);if(!std::isfinite(rgb[i])||rgb[i]<0||rgb[i]>1){luaL_error(L,"BrickColor channels must be normalized finite values");return 0;}}
+    } else if(count>=2) {
+        // The engine accepts one, two, or three RGB components. Every supplied
+        // component is coerced to a number, clamped to [0,1], and components
+        // beyond the third are ignored (e.g. new(1,2) == new(1,2,0)).
+        double rgb[3]={0.0,0.0,0.0};
+        for(int i=0;i<3&&i<count;i++){
+            double channel=lua_tonumber(L,i+1);
+            if(std::isnan(channel))channel=0.0;
+            else if(channel<0.0)channel=0.0;
+            else if(channel>1.0)channel=1.0;
+            rgb[i]=channel;
+        }
         entry=closest_color(rgb[0],rgb[1],rgb[2]);
     } else if(count==1){luaL_argerror(L,1,lua_pushfstring(L,"Color3 expected, got %s",luaL_typename(L,1)));return 0;}
     else {luaL_error(L,"BrickColor.new expects a palette id, name, Color3, or three RGB numbers");return 0;}
@@ -291,8 +303,22 @@ int create(lua_State* L) {
     push_value(L,entry);return 1;
 }
 int palette(lua_State* L) {
-    if(lua_gettop(L)<1){luaL_error(L,"Argument 1 missing or nil");return 0;}
-    const double value=luaL_checknumber(L,1);
+    // The engine raises these as plain strings: no source-location prefix is
+    // added to a BrickColor.palette error in the real client.
+    if(lua_gettop(L)<1||lua_type(L,1)==LUA_TNIL){lua_pushliteral(L,"Argument 1 missing or nil");lua_error(L);return 0;}
+    double value=0.0;
+    const int kind=lua_type(L,1);
+    if(kind==LUA_TBOOLEAN) value=lua_toboolean(L,1)?1.0:0.0;
+    else {
+        int isnum=0;value=lua_tonumberx(L,1,&isnum);
+        if(!isnum){
+            const char* name=luaL_typename(L,1);
+            // Engine cast errors spell CFrame with its class name.
+            if(std::strcmp(name,"CFrame")==0)name="CoordinateFrame";
+            lua_pushfstring(L,"Unable to cast %s to int",name);
+            lua_error(L);return 0;
+        }
+    }
     // Roblox rounds the index half away from zero, converts to int32 (non-finite
     // input saturates to INT_MIN), then bounds-checks against the 128-entry palette.
     int index;
@@ -302,7 +328,7 @@ int palette(lua_State* L) {
         else if(rounded<-2147483648.0)index=-2147483648;
         else index=static_cast<int>(rounded);
     }else index=-2147483648;
-    if(index<0||index>=128){luaL_error(L,"palette index out of bounds (%d)",index);return 0;}
+    if(index<0||index>=128){lua_pushfstring(L,"palette index out of bounds (%d)",index);lua_error(L);return 0;}
     push_value(L,by_number(kPalette[index]));return 1;
 }
 int random_color(lua_State* L) {

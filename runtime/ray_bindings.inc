@@ -13,10 +13,19 @@ void push_ray(lua_State* L, const float* origin, const float* direction) {
     luaL_getmetatable(L, kRayMeta); lua_setmetatable(L, -2);
 }
 int ray_new(lua_State* L) {
-    if (!lua_isvector(L, 1)) { luaL_argerror(L, 1, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, 1))); return 0; }
-    if (!lua_isvector(L, 2)) { luaL_argerror(L, 2, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, 2))); return 0; }
-    const float* origin = lua_tovector(L, 1);
-    const float* direction = lua_tovector(L, 2);
+    // Studio defaults an *absent* component to a zero vector, while an
+    // explicitly supplied non-Vector3 value is a normal argument error.
+    const float zero[3] = {0, 0, 0};
+    const float* origin = zero;
+    const float* direction = zero;
+    if (lua_gettop(L) >= 1) {
+        if (!lua_isvector(L, 1)) { luaL_argerror(L, 1, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, 1))); return 0; }
+        origin = lua_tovector(L, 1);
+    }
+    if (lua_gettop(L) >= 2) {
+        if (!lua_isvector(L, 2)) { luaL_argerror(L, 2, lua_pushfstring(L, "Vector3 expected, got %s", luaL_typename(L, 2))); return 0; }
+        direction = lua_tovector(L, 2);
+    }
     push_ray(L, origin, direction); return 1;
 }
 void ray_projection(const RayValue& ray, const float* point, double* closest) {

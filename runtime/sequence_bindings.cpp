@@ -80,14 +80,6 @@ bool is_color_sequence(lua_State* L, int index) {
     lua_pop(L, 2);
     return result;
 }
-Color check_color3(lua_State* L, int index) {
-    // Color3 is installed by the adjacent binding module before this one.
-    Color color{};
-    if (!read_color3(L, index, color.r, color.g, color.b)) {
-        luaL_argerror(L, index, "Color3 expected");
-    }
-    return color;
-}
 int push_color3(lua_State* L, Color color) {
     return ::push_color3(L, color.r, color.g, color.b);
 }
@@ -210,12 +202,19 @@ int sequence_new(lua_State* L) {
             return 0;
         }
     } else if (count == 1 || count == 2) {
+        if (!lua_isnumber(L, 1) && !lua_istable(L, 1)) {
+            luaL_error(L, "NumberSequence.new(): table of NumberSequenceKeypoints expected.");
+            return 0;
+        }
         double first = finite_number(L, 1, "first value");
         double last = count == 2 ? finite_number(L, 2, "last value") : first;
         sequence->points.push_back(Keypoint{0, first, 0});
         sequence->points.push_back(Keypoint{1, last, 0});
     } else {
-        luaL_error(L, "NumberSequence.new expects a value, value and envelope, or keypoint array");
+        if (count == 0)
+            luaL_error(L, "NumberSequence.new(): table of NumberSequenceKeypoints expected.");
+        else
+            luaL_error(L, "NumberSequence.new expects a value, value and envelope, or keypoint array");
         return 0;
     }
     validate_endpoints(L, *sequence);
@@ -368,12 +367,20 @@ int color_sequence_new(lua_State* L) {
             return 0;
         }
     } else if (count == 1 || count == 2) {
-        Color first = check_color3(L, 1);
-        Color last = count == 2 ? check_color3(L, 2) : first;
+        Color first{};
+        Color last{};
+        if (!read_color3(L, 1, first.r, first.g, first.b)) {
+            luaL_error(L, "ColorSequence.new(): table expected.");
+            return 0;
+        }
+        if (count == 2 && !read_color3(L, 2, last.r, last.g, last.b)) {
+            luaL_error(L, "ColorSequence.new(): table expected.");
+            return 0;
+        }
         sequence->points.push_back(ColorKeypoint{0, first, 0});
         sequence->points.push_back(ColorKeypoint{1, last, 0});
     } else {
-        luaL_error(L, "ColorSequence.new expects one color, two endpoint colors, or a keypoint array");
+        luaL_error(L, "ColorSequence.new(): table expected.");
         return 0;
     }
     validate_color_endpoints(L, *sequence);

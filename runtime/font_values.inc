@@ -36,19 +36,32 @@ int enum_number(lua_State* L,int index,const char* type,int fallback=-1) {
     if(lua_isnoneornil(L,index)&&fallback>=0)return fallback;
     int value=0;
     if(!world_bindings::read_geometry_enum_item(L,index,type,value)) {
-        luaL_argerror(L,index,type);return 0;
+        // Real clients reject raw numbers for enum arguments and report the
+        // engine's coercion error (no argument index or function name).
+        // A plain lua_error preserves the engine's bare engine-error text;
+        // luaL_error prefixes script location information that the client omits.
+        lua_pushfstring(L,"Invalid value for enum '%s'",type);
+        lua_error(L);return 0;
     }
     return value;
 }
 std::string string_argument(lua_State* L,int index) {
-    if(lua_type(L,index)!=LUA_TSTRING){luaL_argerror(L,index,lua_pushfstring(L,"string expected, got %s",luaL_typename(L,index)));return {};}
-    size_t size=0;const char* raw=luaL_checklstring(L,index,&size);
+    // Roblox coerces numeric families to their string form; booleans and other
+    // datatypes keep the standard argument-error wording.
+    const int kind=lua_type(L,index);
+    if(kind!=LUA_TSTRING&&kind!=LUA_TNUMBER){luaL_argerror(L,index,lua_pushfstring(L,"string expected, got %s",luaL_typename(L,index)));return {};}
+    size_t size=0;const char* raw=lua_tolstring(L,index,&size);
     if(size>family_limit||std::memchr(raw,0,size)){luaL_argerror(L,index,"font string exceeds limit or contains NUL");return {};}
     return std::string(raw,size);
 }
 int construct(lua_State* L) {
-    // Validate enum arguments before allocating the family string; Luau errors
-    // use a longjmp and do not unwind C++ automatic objects.
+    // A missing or nil family reads as "missing argument" in the real client.
+    if(lua_isnoneornil(L,1)){lua_pushliteral(L,"missing argument #1 to 'new' (string expected)");lua_error(L);return 0;}
+    // Argument 1 is validated before the enums (the real client reports a bad
+    // family first). Check its type here without allocating, then validate the
+    // enums before building the family string so longjmp cannot leak it.
+    const int kind=lua_type(L,1);
+    if(kind!=LUA_TSTRING&&kind!=LUA_TNUMBER){luaL_argerror(L,1,lua_pushfstring(L,"string expected, got %s",luaL_typename(L,1)));return 0;}
     const int weight=enum_number(L,2,"FontWeight",400),style=enum_number(L,3,"FontStyle",0);
     auto family=string_argument(L,1);push(L,{std::move(family),weight,style});return 1;
 }
@@ -96,9 +109,15 @@ int equal(lua_State* L) {
     auto* a=read(L,1);auto* b=read(L,2);
     lua_pushboolean(L,a&&b&&a->family==b->family&&a->weight==b->weight&&a->style==b->style);return 1;
 }
+// Enum.FontWeight values are 100..900 in 100 steps; Enum.FontStyle is 0..1.
+const char* weight_name(int weight) {
+    static constexpr const char* names[]={"Thin","ExtraLight","Light","Regular","Medium","SemiBold","Bold","ExtraBold","Heavy"};
+    const int index=weight/100-1;return index>=0&&index<9?names[index]:"Unknown";
+}
+const char* style_name(int style) {return style==1?"Italic":"Normal";}
 int text(lua_State* L) {
     auto* value=static_cast<Value*>(luaL_checkudata(L,1,meta));
-    lua_pushfstring(L,"Font { Family = %s, Weight = %d, Style = %d }",value->family.c_str(),value->weight,value->style);return 1;
+    lua_pushfstring(L,"Font { Family = %s, Weight = %s, Style = %s }",value->family.c_str(),weight_name(value->weight),style_name(value->style));return 1;
 }
 void method(lua_State* L,const char* name,lua_CFunction fn){lua_pushcfunction(L,fn,name);lua_setfield(L,-2,name);}
 void install(lua_State* L) {

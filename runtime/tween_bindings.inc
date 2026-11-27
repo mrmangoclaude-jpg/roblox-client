@@ -74,25 +74,52 @@ int tween_info_equal(lua_State* L) {
     return 1;
 }
 
-double tween_finite_number(lua_State* L, int index, const char* name, double fallback) {
+double tween_finite_number(lua_State* L, int index, const char* name, double fallback,
+                           const char* type_error) {
     if (lua_isnoneornil(L, index)) return fallback;
-    double value = luaL_checknumber(L, index);
-    if (!std::isfinite(value) || value < 0.0) {
-        luaL_error(L, "TweenInfo.%s must be finite and nonnegative", name);
+    if (lua_type(L, index) != LUA_TNUMBER) {
+        luaL_error(L, "%s", type_error);
+        return 0;
+    }
+    double value = lua_tonumber(L, index);
+    // Studio accepts negative Time and DelayTime values.
+    if (!std::isfinite(value)) {
+        luaL_error(L, "TweenInfo.%s must be finite", name);
         return 0;
     }
     return value;
 }
 
-int tween_enum_option(lua_State* L, int index, int kind, int fallback) {
-    if (lua_isnoneornil(L, index)) return fallback;
-    return checked_geometry_value(L, index, kind);
+int tween_enum_option(lua_State* L, int index, int kind, int fallback,
+                      const char* ordinal, const char* enum_name) {
+    if (lua_isnone(L, index)) return fallback;
+    if (lua_type(L, index) == LUA_TNUMBER) {
+        // Studio truncates raw numbers toward zero into an enum value, then
+        // clamps into range (0.5 -> Linear, 2.9 -> Back, -0.5 -> Linear).
+        double number = lua_tonumber(L, index);
+        int value = static_cast<int>(number);
+        if (std::isfinite(number) && value >= 0 && value < kGeometryEnums[kind].count) {
+            if (kind == kGeometryTweenStyle && value >= 11)
+                luaL_error(L, "TweenInfo.new does not support Enum.EasingStyle.Spring or Enum.EasingStyle.Bezier");
+            return value;
+        }
+        luaL_error(L, "TweenInfo.new %s argument expects Enum.%s input", ordinal, enum_name);
+        return 0;
+    }
+    if (!has_meta(L, index, kGeometryItemMeta)) {
+        luaL_error(L, "TweenInfo.new %s argument expects Enum.%s input", ordinal, enum_name);
+        return 0;
+    }
+    int value = checked_geometry_value(L, index, kind);
+    if (kind == kGeometryTweenStyle && value >= 11)
+        luaL_error(L, "TweenInfo.new does not support Enum.EasingStyle.Spring or Enum.EasingStyle.Bezier");
+    return value;
 }
 
 lua_Integer tween_repeat_option(lua_State* L, int index) {
     if (lua_isnoneornil(L, index)) return 0;
     if (!lua_isnumber(L, index)) {
-        luaL_error(L, "TweenInfo.RepeatCount must be an integer");
+        luaL_error(L, "TweenInfo.new fourth arg should be a number for RepeatCount.");
         return 0;
     }
     double value = lua_tonumber(L, index);
@@ -107,7 +134,7 @@ lua_Integer tween_repeat_option(lua_State* L, int index) {
 int tween_boolean_option(lua_State* L, int index) {
     if (lua_isnoneornil(L, index)) return 0;
     if (lua_type(L, index) != LUA_TBOOLEAN) {
-        luaL_error(L, "TweenInfo.Reverses must be a boolean");
+        luaL_error(L, "TweenInfo.new fifth arg should be a boolean for Reverses.");
         return 0;
     }
     return lua_toboolean(L, index);
@@ -119,12 +146,14 @@ int tween_info_constructor(lua_State* L) {
         return 0;
     }
     TweenInfoValue value;
-    value.time = tween_finite_number(L, 1, "Time", 1.0);
-    value.style = tween_enum_option(L, 2, kGeometryTweenStyle, 3);
-    value.direction = tween_enum_option(L, 3, kGeometryEasingDirection, 1);
+    value.time = tween_finite_number(L, 1, "Time", 1.0,
+        "TweenInfo.new first argument expects a number for time.");
+    value.style = tween_enum_option(L, 2, kGeometryTweenStyle, 3, "second", "EasingStyle");
+    value.direction = tween_enum_option(L, 3, kGeometryEasingDirection, 1, "third", "EasingDirection");
     value.repeat_count = tween_repeat_option(L, 4);
     value.reverses = tween_boolean_option(L, 5) != 0;
-    value.delay_time = tween_finite_number(L, 6, "DelayTime", 0.0);
+    value.delay_time = tween_finite_number(L, 6, "DelayTime", 0.0,
+        "TweenInfo.new sixth arg should be a number for DelayTime.");
     push_tween_info(L, value);
     return 1;
 }

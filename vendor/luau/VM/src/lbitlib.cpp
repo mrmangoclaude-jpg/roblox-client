@@ -91,12 +91,20 @@ static int b_shift(lua_State* L, b_uint r, int i)
 
 static int b_lshift(lua_State* L)
 {
-    return b_shift(L, luaL_checkunsigned(L, 1), luaL_checkinteger(L, 2));
+    // Check arguments left-to-right to match the Roblox engine. Passing both
+    // checks directly to b_shift leaves their order unspecified in C++, which
+    // lets the compiler validate argument #2 before #1 and produce the wrong
+    // "missing/invalid argument #2" error for bad/missing first arguments.
+    b_uint r = luaL_checkunsigned(L, 1);
+    int i = luaL_checkinteger(L, 2);
+    return b_shift(L, r, i);
 }
 
 static int b_rshift(lua_State* L)
 {
-    return b_shift(L, luaL_checkunsigned(L, 1), -luaL_checkinteger(L, 2));
+    b_uint r = luaL_checkunsigned(L, 1);
+    int i = luaL_checkinteger(L, 2);
+    return b_shift(L, r, -i);
 }
 
 static int b_arshift(lua_State* L)

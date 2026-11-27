@@ -55,6 +55,10 @@ int number_range_new(lua_State* L) {
         push_number_range(L, value, value);
         return 1;
     }
+    if (count == 0) {
+        luaL_error(L, "missing argument #1 to 'new' (number expected)");
+        return 0;
+    }
     if (count != 2) {
         luaL_error(L, "NumberRange.new expects one or two numbers");
         return 0;
@@ -105,11 +109,11 @@ int rect_new(lua_State* L) {
     if (count == 2) {
         double min_x, min_y, max_x, max_y;
         if (!read_vector2(L, 1, min_x, min_y)) {
-            luaL_error(L, "Rect.new expects Vector2 min and max values");
+            luaL_argerror(L, 1, lua_pushfstring(L, "Vector2 expected, got %s", luaL_typename(L, 1)));
             return 0;
         }
         if (!read_vector2(L, 2, max_x, max_y)) {
-            luaL_error(L, "Rect.new expects Vector2 min and max values");
+            luaL_argerror(L, 2, lua_pushfstring(L, "Vector2 expected, got %s", luaL_typename(L, 2)));
             return 0;
         }
         const double float_max = static_cast<double>(std::numeric_limits<float>::max());
